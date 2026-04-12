@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Financial Agent Lab</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <aside class="control-panel">
+      <div class="panel-intro">
+        <p class="eyebrow">Financial Agent Lab</p>
+        <h1>调试工作台</h1>
+        <p class="intro-copy">
+          左边控制输入，右边看 Agent 每一步到底做了什么。结构化模式适合接口联调，自然语言模式适合验证真正的 Agent 闭环。
+        </p>
+      </div>
+
+      <div class="mode-switch" role="tablist" aria-label="Debug mode">
+        <button type="button" class="mode-button active" data-mode="structured">结构化调试</button>
+        <button type="button" class="mode-button" data-mode="agent">自然语言 Agent</button>
+      </div>
+
+      <section id="structured-panel" class="form-panel">
+        <form id="structured-form" class="debug-form">
+          <label>
+            <span>股票代码</span>
+            <textarea id="tickers" placeholder="例如: AAPL, MSFT, NVDA"></textarea>
+          </label>
+
+          <label>
+            <span>偏好板块</span>
+            <textarea id="sectors" placeholder="例如: Technology, Healthcare"></textarea>
+          </label>
+
+          <label>
+            <span>偏好行业</span>
+            <textarea id="industries" placeholder="例如: Semiconductors, Software"></textarea>
+          </label>
+
+          <div class="field-grid">
+            <label>
+              <span>风险偏好</span>
+              <select id="risk-level">
+                <option value="conservative">conservative</option>
+                <option value="medium" selected>medium</option>
+                <option value="aggressive">aggressive</option>
+              </select>
+            </label>
+
+            <label>
+              <span>最多返回</span>
+              <input id="max-results" type="number" min="1" max="20" value="5">
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>PE 上限</span>
+              <input id="max-pe" type="number" step="0.1" placeholder="例如 30">
+            </label>
+
+            <label>
+              <span>ROE 下限 (%)</span>
+              <input id="min-roe" type="number" step="0.1" placeholder="例如 15">
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>股息率下限 (%)</span>
+              <input id="min-dividend-yield" type="number" step="0.1" placeholder="例如 3">
+            </label>
+
+            <label>
+              <span>分析师评级</span>
+              <select id="analyst-rating">
+                <option value="">不限</option>
+                <option value="buy">buy</option>
+                <option value="strong_buy">strong_buy</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="checkbox-row">
+            <input id="require-positive-fcf" type="checkbox">
+            <span>要求正向自由现金流</span>
+          </label>
+
+          <label class="checkbox-row">
+            <input id="fetch-live-data" type="checkbox" checked>
+            <span>拉取实时行情 / 新闻 / 技术面 / 审计 / 宏观 / Smart Money</span>
+          </label>
+
+          <div class="button-row">
+            <button type="submit" class="primary-button">运行结构化分析</button>
+            <button type="button" id="fill-structured-sample" class="secondary-button">填入示例</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="agent-panel" class="form-panel hidden">
+        <form id="agent-form" class="debug-form">
+          <label>
+            <span>用户自然语言问题</span>
+            <textarea id="agent-query" placeholder="例如：我有 5 万美元，想找低风险、能长期持有的分红股，最好 PE 不要太高。"></textarea>
+          </label>
+
+          <label>
+            <span>最多返回</span>
+            <input id="agent-max-results" type="number" min="1" max="20" value="5">
+          </label>
+
+          <label class="checkbox-row">
+            <input id="agent-fetch-live-data" type="checkbox" checked>
+            <span>Agent 运行时同步拉取实时数据</span>
+          </label>
+
+          <p class="form-tip">
+            演示页不需要手动指定模型。API Key 和模型配置都由后端环境统一读取。
+          </p>
+
+          <div class="button-row">
+            <button type="submit" class="primary-button">运行自然语言 Agent</button>
+            <button type="button" id="fill-agent-sample" class="secondary-button">填入 Agent 示例</button>
+          </div>
+        </form>
+      </section>
+    </aside>
+
+    <main class="result-panel">
+      <section class="hero-card">
+        <p class="eyebrow">Debug View</p>
+        <h2>从后端链路，升级到真正的 Agent 闭环</h2>
+        <p id="status-text" class="status-text">等待运行。你可以先选择一种模式，再填入示例。</p>
+      </section>
+
+      <section id="run-section" class="content-block hidden"></section>
+      <section id="history-section" class="content-block"></section>
+      <section id="runtime-section" class="content-block hidden"></section>
+      <section id="intent-section" class="content-block hidden"></section>
+      <section id="artifact-section" class="content-block hidden"></section>
+      <section id="stage-section" class="content-block hidden"></section>
+      <section id="follow-up-section" class="content-block hidden"></section>
+      <section id="overview-section" class="content-block hidden"></section>
+      <section id="macro-section" class="content-block hidden"></section>
+      <section id="report-section" class="content-block hidden"></section>
+      <section id="ticker-section" class="ticker-grid hidden"></section>
+
+      <section id="raw-section" class="content-block hidden">
+        <details open>
+          <summary>查看原始 JSON</summary>
+          <pre id="raw-json"></pre>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

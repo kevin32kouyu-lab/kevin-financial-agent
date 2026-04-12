@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  financial-agent:
+    build: .
+    container_name: financial-agent
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=8001
+      - HOST=0.0.0.0
+      # Uncomment and set your API key for authentication
+      # - API_KEY=your-secret-api-key-here
+      # Uncomment and set your Alpaca API credentials
+      # - ALPACA_API_KEY=your-alpaca-key
+      # - ALPACA_API_SECRET=your-alpaca-secret
+      # - ALPACA_BASE_URL=https://paper-api.alpaca.markets
+      - FINANCIAL_AGENT_DB_PATH=/app/data/financial_agent_runs.sqlite3
+      - FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/financial_agent_market.sqlite3
+    # If you need proxy for external API requests, uncomment:
+    # network_mode: "host"
