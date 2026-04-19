@@ -1,16 +1,31 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 正在做“稳定版修复收尾”，重点是前端 hook 入口收敛、构建恢复和回归验证。
-- 已恢复正式 `useResearchConsole` 单入口，避免拆分 hook 后状态冲突和引用混乱。
-- 已将 backup / legacy hook 移到 `web/archive/hooks`，不再参与前台运行链路。
+- 正在为明天远程展示准备公网访问版本，重点是：保留当前可演示版本、把代码发布到 GitHub 演示分支，并提供一个所有人都能直接打开的网址。
+- 已将当前可演示版本提交并推送到 `codex/demo-2026-04-20`。
+- 当前公网入口先采用 localtunnel 备份方案，已验证外网可打开首页、终端和健康检查。
 
 ## 上次停在哪个位置
-- 前端构建已恢复：`npm run build` 通过。
-- 后端回归通过：`py_compile` 通过，`pytest` 通过（12 passed）。
-- 已完成受控密钥扫描（仅 git 跟踪文件）：未发现已知真实 key 命中。
+- 本地发布前验收已完成：
+  - `npm run build` 通过
+  - `pytest -q` 通过（23 passed）
+  - `http://127.0.0.1:8001/healthz` 正常
+- GitHub 演示分支已推送成功：
+  - `codex/demo-2026-04-20`
+- 公网地址已生成并验证：
+  - `https://rose-financial-agent-demo-20260420.loca.lt`
+  - `/healthz` 返回正常
+  - `/terminal` 返回 200
+- 已通过公网地址跑通 3 条演示链路：
+  - 中文研究：completed
+  - 英文研究：completed
+  - 历史模式：completed
+- Railway 正式部署未完成，原因是当前机器没有现成 Railway 登录态，无法在无人值守情况下创建并绑定服务。
 
 ## 近期关键决定与原因
+- 在没有 Railway 登录态的情况下，优先切到 localtunnel，是为了先满足“醒来就有一个所有人都能打开的网址”。
+- 使用自定义子域名 `rose-financial-agent-demo-20260420`，是为了比随机域名更适合直接分享给老师或观众。
+- GitHub 发布采用独立演示分支，而不是直接继续改 `main`，是为了把明天展示版本固定住，避免后续改动影响线上。
 - 历史模式采用“严格 as_of_date”原则：拿不到历史数据就显式降级，避免未来数据污染历史结论。
 - 回测分两类：`replay` 给历史模式，`reference` 给实时模式，避免概念混淆。
 - 保留 `/terminal`（用户）和 `/debug`（开发者）双界面，兼顾产品体验和可观测性。
