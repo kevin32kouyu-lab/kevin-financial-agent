@@ -13,7 +13,7 @@ from app.domain.contracts import RunCreateRequest
 
 router = APIRouter(prefix="/api/runs", tags=["runs"], dependencies=[Depends(get_api_key)])
 
-TERMINAL_STATUSES = {"completed", "failed", "needs_clarification"}
+TERMINAL_STATUSES = {"completed", "failed", "needs_clarification", "cancelled"}
 
 
 def _format_sse(event_id: int, event_type: str, payload: dict) -> str:
@@ -69,6 +69,12 @@ async def get_run_artifacts(request: Request, run_id: str) -> dict:
 async def retry_run(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
     return await runtime.run_service.retry_run_or_404(run_id)
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(request: Request, run_id: str) -> dict:
+    runtime = get_runtime(request.app)
+    return await runtime.run_service.cancel_run_or_404(run_id)
 
 
 @router.get("/{run_id}/events")

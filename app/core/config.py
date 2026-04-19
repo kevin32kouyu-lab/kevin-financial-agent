@@ -6,6 +6,31 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_MARKET_NO_PROXY_HOSTS = (
+    "query1.finance.yahoo.com",
+    "query2.finance.yahoo.com",
+    "finance.yahoo.com",
+)
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key:
+            continue
+        os.environ.setdefault(key, value)
+
+
+def _split_csv(value: str) -> tuple[str, ...]:
+    parts = [item.strip() for item in value.split(",")]
+    return tuple(item for item in parts if item)
 
 
 @dataclass(slots=True)
@@ -28,10 +53,17 @@ class AppSettings:
     alpaca_api_key: str | None = None
     alpaca_api_secret: str | None = None
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
+    longbridge_app_key: str | None = None
+    longbridge_app_secret: str | None = None
+    longbridge_access_token: str | None = None
     fred_api_key: str | None = None
+    market_proxy_mode: str = "auto"
+    market_proxy_url: str | None = None
+    market_no_proxy_hosts: tuple[str, ...] = DEFAULT_MARKET_NO_PROXY_HOSTS
 
     @classmethod
     def from_env(cls) -> "AppSettings":
+        _load_env_file(ROOT_DIR / ".env")
         port_raw = os.getenv("PORT", "8001").strip()
         try:
             port = int(port_raw)
@@ -87,7 +119,30 @@ class AppSettings:
             or "https://paper-api.alpaca.markets"
         )
 
+        longbridge_app_key = (
+            os.getenv("LONGBRIDGE_APP_KEY", "").strip()
+            or os.getenv("LB_APP_KEY", "").strip()
+        ) or None
+        longbridge_app_secret = (
+            os.getenv("LONGBRIDGE_APP_SECRET", "").strip()
+            or os.getenv("LB_APP_SECRET", "").strip()
+        ) or None
+        longbridge_access_token = (
+            os.getenv("LONGBRIDGE_ACCESS_TOKEN", "").strip()
+            or os.getenv("LB_ACCESS_TOKEN", "").strip()
+        ) or None
+
         fred_api_key = os.getenv("FRED_API_KEY", "").strip() or None
+        market_proxy_mode = (os.getenv("MARKET_PROXY_MODE", "auto").strip() or "auto").lower()
+        if market_proxy_mode not in {"auto", "direct", "proxy"}:
+            market_proxy_mode = "auto"
+        market_proxy_url = os.getenv("MARKET_PROXY_URL", "").strip() or None
+        market_no_proxy_hosts_raw = os.getenv("MARKET_NO_PROXY_HOSTS", "").strip()
+        market_no_proxy_hosts = (
+            _split_csv(market_no_proxy_hosts_raw)
+            if market_no_proxy_hosts_raw
+            else DEFAULT_MARKET_NO_PROXY_HOSTS
+        )
 
         return cls(
             host=os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0",
@@ -102,7 +157,13 @@ class AppSettings:
             alpaca_api_key=alpaca_api_key,
             alpaca_api_secret=alpaca_api_secret,
             alpaca_base_url=alpaca_base_url,
+            longbridge_app_key=longbridge_app_key,
+            longbridge_app_secret=longbridge_app_secret,
+            longbridge_access_token=longbridge_access_token,
             fred_api_key=fred_api_key,
+            market_proxy_mode=market_proxy_mode,
+            market_proxy_url=market_proxy_url,
+            market_no_proxy_hosts=market_no_proxy_hosts,
         )
 
     @property
@@ -112,6 +173,10 @@ class AppSettings:
     @property
     def alpaca_configured(self) -> bool:
         return bool(self.alpaca_api_key and self.alpaca_api_secret)
+
+    @property
+    def longbridge_configured(self) -> bool:
+        return bool(self.longbridge_app_key and self.longbridge_app_secret and self.longbridge_access_token)
 
     @property
     def frontend_index_path(self) -> Path:

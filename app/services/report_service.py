@@ -18,6 +18,43 @@ from app.services.investment_memo import (
 
 
 class ReportService:
+    def _attach_report_mode_notes(self, bundle: dict[str, Any], *, language_code: str) -> None:
+        """把报告模式与校验结果同步到用户可读摘要里。"""
+        meta = bundle.get("report_briefing", {}).get("meta", {}) or {}
+        validation_summary = meta.get("validation_summary", {}) or {}
+        safety_summary = meta.get("safety_summary", {}) or {}
+        validation_items = validation_summary.get("items", []) or []
+        degraded_modules = safety_summary.get("degraded_modules", []) or []
+
+        if bundle.get("report_mode") == "fallback":
+            note = (
+                "本次正式长文未直接采用模型输出，系统已回落到结构化报告。"
+                if language_code == "zh"
+                else "The long-form memo fell back to the structured report instead of using raw model output."
+            )
+            if note not in validation_items:
+                validation_items.append(note)
+            if note not in degraded_modules:
+                degraded_modules.append(note)
+            if validation_summary.get("level") in {None, "", "pass"}:
+                validation_summary["level"] = "warning"
+
+        validation_summary["items"] = validation_items
+        safety_summary["degraded_modules"] = degraded_modules
+        meta["validation_summary"] = validation_summary
+        meta["safety_summary"] = safety_summary
+        meta["validation_flags"] = list(validation_items)
+        meta["coverage_flags"] = list(degraded_modules)
+        if not meta.get("confidence_level"):
+            meta["confidence_level"] = (
+                "high"
+                if validation_summary.get("level") == "pass"
+                else "medium"
+                if validation_summary.get("level") == "caution"
+                else "low"
+            )
+        bundle["report_briefing"]["meta"] = meta
+
     def get_runtime_config(self, *, model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
         return VolcengineChatConfig.from_overrides(model=model, base_url=base_url).public_view()
 
@@ -58,7 +95,7 @@ class ReportService:
                 timeout=18.0,
             )
             bundle["llm_raw"]["report_response"] = report_result["content"]
-            validation_error = validate_report_output(report_result["content"], report_briefing)
+            validation_error = validate_report_output(report_result["content"], intent, report_briefing)
             if validation_error:
                 bundle["final_report"] = build_rule_based_report(intent, report_briefing)
                 bundle["report_mode"] = "fallback"
@@ -74,4 +111,5 @@ class ReportService:
             bundle["report_error"] = str(exc)
             bundle["report_briefing"]["meta"]["report_mode"] = "fallback"
 
+        self._attach_report_mode_notes(bundle, language_code=intent.system_context.language)
         return bundle

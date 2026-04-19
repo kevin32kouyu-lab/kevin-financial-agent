@@ -9,6 +9,11 @@ from volcenginesdkarkruntime import Ark
 
 DEFAULT_MODEL = "ark-code-latest"
 DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3"
+PLACEHOLDER_API_KEY_VALUES = {
+    "your-ark-api-key-here",
+    "replace-with-your-ark-key",
+    "your-api-key-here",
+}
 
 
 def _get_first_env(*names: str) -> str | None:
@@ -17,6 +22,19 @@ def _get_first_env(*names: str) -> str | None:
         if value:
             return value.strip()
     return None
+
+
+def _is_placeholder_api_key(value: str | None) -> bool:
+    """判断当前 Key 是否仍是示例占位值，避免把假 Key 发到火山。"""
+    if value is None:
+        return False
+    normalized = value.strip().strip('"').strip("'")
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if lowered in PLACEHOLDER_API_KEY_VALUES:
+        return True
+    return "your-ark-api-key" in lowered or "replace-with-your-ark-key" in lowered
 
 
 class LlmConfigError(ValueError):
@@ -66,6 +84,10 @@ class VolcengineChatConfig:
             raise LlmConfigError(
                 "未检测到火山 API Key。请先设置环境变量 VOLCENGINE_ARK_API_KEY、VOLCENGINE_API_KEY 或 ARK_API_KEY。"
             )
+        if _is_placeholder_api_key(self.api_key):
+            raise LlmConfigError(
+                "当前检测到的火山 API Key 仍是占位值，请把 .env 里的 VOLCENGINE_ARK_API_KEY 或 ARK_API_KEY 换成真实密钥后再启动服务。"
+            )
         if not self.model:
             raise LlmConfigError(
                 "未检测到模型配置。请先设置 VOLCENGINE_ARK_MODEL、VOLCENGINE_MODEL 或 ARK_MODEL。"
@@ -76,7 +98,7 @@ class VolcengineChatConfig:
         billing_mode = "subscription_plan" if route_mode == "coding_plan" else "token_postpaid"
         return {
             "provider": "volcengine-ark",
-            "api_key_configured": bool(self.api_key),
+            "api_key_configured": bool(self.api_key) and not _is_placeholder_api_key(self.api_key),
             "model": self.model,
             "base_url": self.base_url,
             "route_mode": route_mode,

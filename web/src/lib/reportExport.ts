@@ -1,5 +1,6 @@
+/** 报告导出：保证导出内容与页面看到的结论、依据和回测尽量一致。 */
 import { repairText } from "./format";
-import type { Locale } from "./types";
+import type { BacktestDetail, Locale } from "./types";
 
 type GenericRecord = Record<string, unknown>;
 export type ReportExportFormat = "markdown" | "html" | "json" | "pdf";
@@ -14,6 +15,10 @@ function asArray(value: unknown): GenericRecord[] {
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => repairText(item, "")).filter(Boolean) : [];
+}
+
+function asRecordArray(value: unknown): GenericRecord[] {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") as GenericRecord[] : [];
 }
 
 function escapeHtml(value: unknown): string {
@@ -50,24 +55,88 @@ function downloadBlob(filename: string, content: string, mime: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function buildReportMarkdown(result: Record<string, unknown>, locale: Locale): string {
-  const finalReport = repairText(result.final_report, "");
-  if (finalReport) {
-    return finalReport;
-  }
+function buildBulletLines(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => repairText(item, "")).filter(Boolean) : [];
+}
 
+function buildBacktestSummary(backtest: BacktestDetail | null | undefined, locale: Locale): string[] {
+  if (!backtest?.summary?.metrics) return [];
+  const metrics = backtest.summary.metrics;
+  return [
+    locale === "zh" ? "## 回测摘要" : "## Backtest summary",
+    `- ${locale === "zh" ? "组合收益" : "Portfolio return"}: ${repairText(metrics.total_return_pct)}%`,
+    `- ${locale === "zh" ? "SPY 基准" : "SPY benchmark"}: ${repairText(metrics.benchmark_return_pct)}%`,
+    `- ${locale === "zh" ? "超额收益" : "Excess return"}: ${repairText(metrics.excess_return_pct)}%`,
+    `- ${locale === "zh" ? "买入日" : "Entry date"}: ${repairText(backtest.summary.entry_date)}`,
+    `- ${locale === "zh" ? "结束日" : "End date"}: ${repairText(backtest.summary.end_date)}`,
+    "",
+  ];
+}
+
+function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null): string {
+  const finalReport = repairText(result.final_report, "");
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
   const executive = asRecord(reportBriefing?.executive);
   const macro = asRecord(reportBriefing?.macro);
   const scoreboard = asArray(reportBriefing?.scoreboard);
+  const researchContext = asRecord(result.research_context);
+  const userProfile = asRecord(meta?.user_profile);
+  const evidenceSummary = asRecord(meta?.evidence_summary);
+  const validationSummary = asRecord(meta?.validation_summary);
+  const safetySummary = asRecord(meta?.safety_summary);
+  const memorySummary = asRecord(result.memory_summary);
+  const confidenceLevel = repairText(meta?.confidence_level, "");
+  const coverageFlags = asStringArray(meta?.coverage_flags);
+  const memoryAppliedFields = asStringArray(result.memory_applied_fields);
+  const queryText = repairText(result.query, locale === "zh" ? "暂无原始问题。" : "No original request.");
 
   const lines = [
     `# ${repairText(meta?.title, locale === "zh" ? "投资研究报告" : "Investment Research Report")}`,
     "",
+    `## ${locale === "zh" ? "原始投资问题" : "Original request"}`,
+    `- ${queryText}`,
+    `- ${locale === "zh" ? "研究模式" : "Research mode"}: ${
+      repairText(researchContext?.research_mode, "realtime") === "historical"
+        ? locale === "zh"
+          ? "历史研究"
+          : "Historical research"
+        : locale === "zh"
+          ? "实时研究"
+          : "Realtime research"
+    }`,
+    ...(repairText(researchContext?.as_of_date, "") ? [`- as_of_date: ${repairText(researchContext?.as_of_date)}`] : []),
+    "",
+    `## ${locale === "zh" ? "本次任务理解" : "Mandate understanding"}`,
+    `- ${repairText(userProfile?.summary, locale === "zh" ? "暂无用户画像。" : "No mandate summary yet.")}`,
+    ...(repairText(memorySummary?.note, "") ? [`- ${repairText(memorySummary?.note)}`] : []),
+    "",
     `## ${locale === "zh" ? "执行结论" : "Executive verdict"}`,
-    `- ${repairText(executive?.primary_call, locale === "zh" ? "暂无结论" : "No verdict yet")}`,
-    `- ${repairText(executive?.action_summary, "")}`,
+    `- ${repairText(executive?.presentation_call || executive?.primary_call, locale === "zh" ? "暂无结论" : "No verdict yet")}`,
+    `- ${repairText(executive?.presentation_action_summary || executive?.action_summary, "")}`,
+    "",
+    `## ${locale === "zh" ? "结论依据" : "Decision evidence"}`,
+    `- ${repairText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}`,
+    ...buildBulletLines(evidenceSummary?.items).map((item) => `- ${item}`),
+    ...buildBulletLines(evidenceSummary?.source_points).map((item) => `- ${item}`),
+    "",
+    `## ${locale === "zh" ? "校验与谨慎提示" : "Validation & caveats"}`,
+    `- ${repairText(validationSummary?.headline, locale === "zh" ? "暂无校验摘要。" : "No validation summary yet.")}`,
+    ...buildBulletLines(validationSummary?.items).map((item) => `- ${item}`),
+    ...(confidenceLevel ? [`- ${locale === "zh" ? "可信度等级" : "Confidence level"}: ${confidenceLevel}`] : []),
+    "",
+    `## ${locale === "zh" ? "安全与数据覆盖" : "Safety & data coverage"}`,
+    `- ${repairText(safetySummary?.headline, locale === "zh" ? "暂无安全摘要。" : "No safety summary yet.")}`,
+    ...buildBulletLines(safetySummary?.used_sources).map((item) => `- ${item}`),
+    ...buildBulletLines(safetySummary?.degraded_modules).map((item) => `- ${item}`),
+    ...coverageFlags.map((item) => `- ${item}`),
+    ...(memoryAppliedFields.length
+      ? [
+          "",
+          `## ${locale === "zh" ? "本次沿用的偏好" : "Reused preferences"}`,
+          ...memoryAppliedFields.map((item) => `- ${item}`),
+        ]
+      : []),
     "",
     `## ${locale === "zh" ? "市场环境" : "Market regime"}`,
     `- ${repairText(macro?.risk_headline, locale === "zh" ? "暂无宏观摘要" : "No macro summary")}`,
@@ -81,10 +150,16 @@ function buildReportMarkdown(result: Record<string, unknown>, locale: Locale): s
     lines.push(`| ${repairText(item.ticker)} | ${repairText(item.composite_score)} | ${repairText(item.verdict_label)} |`);
   }
 
+  lines.push("", ...buildBacktestSummary(backtest, locale));
+
+  if (finalReport) {
+    lines.push(locale === "zh" ? "## 完整报告正文" : "## Full memo", "", finalReport);
+  }
+
   return lines.join("\n");
 }
 
-function buildReportHtml(result: Record<string, unknown>, locale: Locale): string {
+function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null): string {
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
   const executive = asRecord(reportBriefing?.executive);
@@ -92,7 +167,18 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale): strin
   const scoreboard = asArray(reportBriefing?.scoreboard);
   const tickerCards = asArray(reportBriefing?.ticker_cards);
   const riskRegister = asArray(reportBriefing?.risk_register);
+  const researchContext = asRecord(result.research_context);
   const assumptions = asStringArray(meta?.assumptions);
+  const userProfile = asRecord(meta?.user_profile);
+  const evidenceSummary = asRecord(meta?.evidence_summary);
+  const validationSummary = asRecord(meta?.validation_summary);
+  const safetySummary = asRecord(meta?.safety_summary);
+  const memorySummary = asRecord(result.memory_summary);
+  const confidenceLevel = repairText(meta?.confidence_level, "");
+  const coverageFlags = asStringArray(meta?.coverage_flags);
+  const memoryAppliedFields = asStringArray(result.memory_applied_fields);
+  const finalReport = repairText(result.final_report, "");
+  const queryText = repairText(result.query, locale === "zh" ? "暂无原始问题。" : "No original request.");
 
   const scoreboardRows = scoreboard
     .map(
@@ -109,7 +195,26 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale): strin
 
   const cardBlocks = tickerCards
     .map(
-      (item) => `
+      (item) => {
+        const newsLinks = asRecordArray(item.news_items)
+          .slice(0, 3)
+          .map((entry) => {
+            const title = escapeHtml(entry.title || "News");
+            const url = repairText(entry.url, "");
+            if (!url) return `<li>${title}</li>`;
+            return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${title}</a></li>`;
+          })
+          .join("");
+        const filingLinks = asRecordArray(item.audit_links)
+          .slice(0, 3)
+          .map((entry) => {
+            const label = `${escapeHtml(entry.form || "SEC")}${entry.filed_at ? ` (${escapeHtml(entry.filed_at)})` : ""}`;
+            const url = repairText(entry.filing_url, "");
+            if (!url) return `<li>${label}</li>`;
+            return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${label}</a></li>`;
+          })
+          .join("");
+        return `
         <article class="ticker-card">
           <div class="ticker-head">
             <div>
@@ -120,16 +225,29 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale): strin
           </div>
           <p><strong>${locale === "zh" ? "投资主线" : "Thesis"}:</strong> ${escapeHtml(item.thesis)}</p>
           <p><strong>${locale === "zh" ? "适配原因" : "Fit reason"}:</strong> ${escapeHtml(item.fit_reason)}</p>
-          <p><strong>${locale === "zh" ? "技术 / 新闻" : "Technical / News"}:</strong> ${escapeHtml(item.technical_summary)} / ${escapeHtml(item.news_label)} / ${escapeHtml(item.alignment)}</p>
+          ${buildBulletLines(item.evidence_points).length ? `<p><strong>${locale === "zh" ? "依据摘要" : "Evidence summary"}:</strong></p><ul>${buildBulletLines(item.evidence_points).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>` : ""}
+          ${buildBulletLines(item.caution_points).length ? `<p><strong>${locale === "zh" ? "谨慎提示" : "Caveats"}:</strong></p><ul>${buildBulletLines(item.caution_points).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>` : ""}
+          ${item.share_class ? `<p><strong>${locale === "zh" ? "股权类别" : "Share class"}:</strong> ${escapeHtml(item.share_class)}${item.share_class_note ? ` · ${escapeHtml(item.share_class_note)}` : ""}</p>` : ""}
+          <p><strong>${locale === "zh" ? "技术面" : "Technical"}:</strong> ${escapeHtml(item.technical_summary)}</p>
+          <p><strong>${locale === "zh" ? "新闻面" : "News"}:</strong> ${escapeHtml(item.news_narrative || item.news_label)}${item.alignment ? ` · ${escapeHtml(item.alignment)}` : ""}</p>
           <p><strong>${locale === "zh" ? "审计" : "Audit"}:</strong> ${escapeHtml(item.audit_summary)}</p>
+          ${newsLinks ? `<p><strong>${locale === "zh" ? "新闻链接" : "News links"}:</strong></p><ul>${newsLinks}</ul>` : ""}
+          ${filingLinks ? `<p><strong>${locale === "zh" ? "审计披露链接" : "Audit filing links"}:</strong></p><ul>${filingLinks}</ul>` : ""}
           <p><strong>${locale === "zh" ? "执行建议" : "Execution"}:</strong> ${escapeHtml(item.execution)}</p>
-        </article>`,
+        </article>`;
+      },
     )
     .join("");
 
   const riskItems = riskRegister
     .map((item) => `<li><strong>${escapeHtml(item.category)}${item.ticker ? ` / ${escapeHtml(item.ticker)}` : ""}</strong>: ${escapeHtml(item.summary)}</li>`)
     .join("");
+  const evidenceItems = buildBulletLines(evidenceSummary?.items).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const evidenceSources = buildBulletLines(evidenceSummary?.source_points).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const validationItems = buildBulletLines(validationSummary?.items).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const safetySources = buildBulletLines(safetySummary?.used_sources).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const safetyDegraded = buildBulletLines(safetySummary?.degraded_modules).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const backtestMetrics = backtest?.summary?.metrics;
 
   return `<!doctype html>
 <html lang="${locale}">
@@ -166,25 +284,71 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale): strin
     <section class="hero">
       <p>${escapeHtml(meta?.subtitle || "")}</p>
       <h1>${escapeHtml(meta?.title || (locale === "zh" ? "投资研究报告" : "Investment Research Report"))}</h1>
-      <p>${escapeHtml(executive?.primary_call)}</p>
+      <p>${escapeHtml(executive?.presentation_call || executive?.primary_call)}</p>
       <div class="pill-row">
         <span class="pill">Top Pick: ${escapeHtml(executive?.top_pick)}</span>
         <span class="pill">${locale === "zh" ? "市场姿态" : "Market Stance"}: ${escapeHtml(executive?.market_stance)}</span>
         <span class="pill">${locale === "zh" ? "适配度" : "Mandate Fit"}: ${escapeHtml(executive?.mandate_fit_score)}</span>
       </div>
       ${assumptions.length ? `<p><strong>${locale === "zh" ? "默认假设" : "Assumptions"}:</strong> ${escapeHtml(assumptions.join(locale === "zh" ? "；" : "; "))}</p>` : ""}
+      ${repairText(memorySummary?.note, "") ? `<p><strong>${locale === "zh" ? "记忆沿用" : "Memory reuse"}:</strong> ${escapeHtml(memorySummary?.note)}</p>` : ""}
+    </section>
+    <section class="section">
+      <h2>${locale === "zh" ? "原始投资问题" : "Original request"}</h2>
+      <p>${escapeHtml(queryText)}</p>
+      <p>
+        <strong>${locale === "zh" ? "研究模式" : "Research mode"}:</strong>
+        ${escapeHtml(
+          repairText(researchContext?.research_mode, "realtime") === "historical"
+            ? locale === "zh"
+              ? "历史研究"
+              : "Historical research"
+            : locale === "zh"
+              ? "实时研究"
+              : "Realtime research",
+        )}
+        ${repairText(researchContext?.as_of_date, "") ? ` | as_of_date: ${escapeHtml(repairText(researchContext?.as_of_date))}` : ""}
+      </p>
     </section>
     <div class="grid">
       <section class="section">
-        <h2>${locale === "zh" ? "市场环境" : "Market Regime"}</h2>
+        <h2>${locale === "zh" ? "本次任务理解" : "Mandate understanding"}</h2>
+        <p>${escapeHtml(userProfile?.summary || "")}</p>
+      </section>
+      <section class="section">
+        <h2>${locale === "zh" ? "执行摘要" : "Execution Summary"}</h2>
+        <p>${escapeHtml(executive?.presentation_action_summary || executive?.action_summary)}</p>
+      </section>
+    </div>
+    <div class="grid">
+      <section class="section">
+        <h2>${locale === "zh" ? "结论依据" : "Decision evidence"}</h2>
+        <p>${escapeHtml(evidenceSummary?.headline || "")}</p>
+        ${evidenceItems ? `<ul>${evidenceItems}</ul>` : ""}
+        ${evidenceSources ? `<ul>${evidenceSources}</ul>` : ""}
+      </section>
+    <section class="section">
+      <h2>${locale === "zh" ? "校验与谨慎提示" : "Validation & caveats"}</h2>
+      <p>${escapeHtml(validationSummary?.headline || "")}</p>
+      ${validationItems ? `<ul>${validationItems}</ul>` : ""}
+      ${confidenceLevel ? `<p><strong>${locale === "zh" ? "可信度等级" : "Confidence level"}:</strong> ${escapeHtml(confidenceLevel)}</p>` : ""}
+    </section>
+  </div>
+  <div class="grid">
+    <section class="section">
+      <h2>${locale === "zh" ? "市场环境" : "Market Regime"}</h2>
         <p>${escapeHtml(macro?.risk_headline)}</p>
         <p>Regime: ${escapeHtml(macro?.regime)} | VIX: ${escapeHtml(macro?.vix)}</p>
       </section>
       <section class="section">
-        <h2>${locale === "zh" ? "执行摘要" : "Execution Summary"}</h2>
-        <p>${escapeHtml(executive?.action_summary)}</p>
-      </section>
-    </div>
+      <h2>${locale === "zh" ? "安全与数据覆盖" : "Safety & data coverage"}</h2>
+      <p>${escapeHtml(safetySummary?.headline || "")}</p>
+      ${safetySources ? `<ul>${safetySources}</ul>` : ""}
+      ${safetyDegraded ? `<ul>${safetyDegraded}</ul>` : ""}
+      ${coverageFlags.length ? `<ul>${coverageFlags.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+      ${memoryAppliedFields.length ? `<p><strong>${locale === "zh" ? "本次沿用的偏好" : "Reused preferences"}:</strong> ${escapeHtml(memoryAppliedFields.join(locale === "zh" ? "、" : ", "))}</p>` : ""}
+    </section>
+  </div>
     <section class="section">
       <h2>${locale === "zh" ? "候选池评分板" : "Candidate Scoreboard"}</h2>
       <table>
@@ -200,6 +364,19 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale): strin
       <h2>${locale === "zh" ? "风险登记" : "Risk Register"}</h2>
       <ul>${riskItems}</ul>
     </section>
+    ${backtest && backtestMetrics ? `
+    <section class="section">
+      <h2>${locale === "zh" ? "回测摘要" : "Backtest summary"}</h2>
+      <p>${locale === "zh" ? "组合收益" : "Portfolio return"}: ${escapeHtml(backtestMetrics.total_return_pct)}%</p>
+      <p>${locale === "zh" ? "SPY 基准" : "SPY benchmark"}: ${escapeHtml(backtestMetrics.benchmark_return_pct)}%</p>
+      <p>${locale === "zh" ? "超额收益" : "Excess return"}: ${escapeHtml(backtestMetrics.excess_return_pct)}%</p>
+      <p>${locale === "zh" ? "区间" : "Period"}: ${escapeHtml(backtest.summary.entry_date)} → ${escapeHtml(backtest.summary.end_date)}</p>
+    </section>` : ""}
+    ${finalReport ? `
+    <section class="section">
+      <h2>${locale === "zh" ? "完整报告正文" : "Full memo"}</h2>
+      <pre style="white-space:pre-wrap;font-family:inherit;line-height:1.8;">${escapeHtml(finalReport)}</pre>
+    </section>` : ""}
   </div>
 </body>
 </html>`;
@@ -222,14 +399,19 @@ function openPrintPreview(filename: string, html: string) {
   printWindow.focus();
 }
 
-export function exportReport(result: Record<string, unknown>, locale: Locale, format: ReportExportFormat) {
+export function exportReport(
+  result: Record<string, unknown>,
+  locale: Locale,
+  format: ReportExportFormat,
+  backtest?: BacktestDetail | null,
+) {
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
-  const html = buildReportHtml(result, locale);
+  const html = buildReportHtml(result, locale, backtest);
   const baseName = `${slugify(repairText(meta?.title, locale === "zh" ? "投资研究报告" : "investment-report"))}-${timestampStamp()}`;
 
   if (format === "markdown") {
-    downloadBlob(`${baseName}.md`, buildReportMarkdown(result, locale), "text/markdown;charset=utf-8");
+    downloadBlob(`${baseName}.md`, buildReportMarkdown(result, locale, backtest), "text/markdown;charset=utf-8");
     return;
   }
   if (format === "html") {
@@ -240,5 +422,9 @@ export function exportReport(result: Record<string, unknown>, locale: Locale, fo
     openPrintPreview(baseName, html);
     return;
   }
-  downloadBlob(`${baseName}.json`, JSON.stringify(result, null, 2), "application/json;charset=utf-8");
+  downloadBlob(
+    `${baseName}.json`,
+    JSON.stringify({ result, backtest: backtest || null }, null, 2),
+    "application/json;charset=utf-8",
+  );
 }

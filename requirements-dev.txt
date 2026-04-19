@@ -1,3 +1,5 @@
 # 开发依赖 - 测试工具
 pytest>=8.0
 pytest-asyncio>=0.23
+pytest-cov>=4.0
+mypy>=1.8.0

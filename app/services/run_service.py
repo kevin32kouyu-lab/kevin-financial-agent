@@ -7,8 +7,11 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from app.domain.contracts import PreferenceUpdateRequest
 from app.domain.contracts import RunCreateRequest
 from app.repositories.sqlite_run_repository import SqliteRunRepository
+from app.services.profile_service import ProfileService
+from app.services.run_audit_service import RunAuditService
 from app.workflows.base import Workflow, WorkflowContext
 
 
@@ -17,6 +20,10 @@ class WorkflowRunner:
     repository: SqliteRunRepository
     workflows: dict[str, Workflow]
     _tasks: dict[str, asyncio.Task[Any]] = field(init=False, default_factory=dict)
+    _terminal_statuses: set[str] = field(
+        init=False,
+        default_factory=lambda: {"completed", "failed", "needs_clarification", "cancelled"},
+    )
 
     async def start(self) -> None:
         for run in self.repository.list_resumable_runs():
@@ -36,10 +43,40 @@ class WorkflowRunner:
             return
         self._tasks[run_id] = asyncio.create_task(self._run(run_id))
 
+    async def cancel(self, run_id: str) -> bool:
+        run = self.repository.get_run(run_id)
+        if run is None:
+            return False
+        if run.status in self._terminal_statuses:
+            return False
+
+        self.repository.mark_run_finished(
+            run_id,
+            status="cancelled",
+            error_message="Cancelled by user.",
+        )
+        self.repository.add_event(
+            run_id,
+            event_type="run.cancelled",
+            payload={"status": "cancelled", "message": "Cancelled by user."},
+        )
+        snapshot = self.repository.get_artifact_content(run_id, kind="snapshot", name="current")
+        if isinstance(snapshot, dict):
+            snapshot["status"] = "cancelled"
+            snapshot["cancel_reason"] = "Cancelled by user."
+            self.repository.replace_artifact(run_id, kind="snapshot", name="current", content=snapshot)
+
+        task = self._tasks.get(run_id)
+        if run.status == "queued" and task and not task.done():
+            task.cancel()
+        return True
+
     async def _run(self, run_id: str) -> None:
         try:
             run = self.repository.get_run(run_id)
             if run is None:
+                return
+            if run.status == "cancelled":
                 return
 
             workflow_key = run.workflow_key or run.mode
@@ -63,6 +100,12 @@ class WorkflowRunner:
             typed_payload = self._materialize_payload(run.mode, request_payload)
             result = await workflow.execute(typed_payload, context)
 
+            latest_run = self.repository.get_run(run_id)
+            if latest_run is None:
+                return
+            if latest_run.status == "cancelled":
+                return
+
             self.repository.mark_run_finished(
                 run_id,
                 status=result.status,
@@ -77,10 +120,25 @@ class WorkflowRunner:
                     "report_mode": result.report_mode,
                 },
             )
+        except asyncio.CancelledError:
+            latest_run = self.repository.get_run(run_id)
+            if latest_run and latest_run.status != "cancelled":
+                self.repository.mark_run_finished(
+                    run_id,
+                    status="cancelled",
+                    error_message="Cancelled by user.",
+                )
+                self.repository.add_event(
+                    run_id,
+                    event_type="run.cancelled",
+                    payload={"status": "cancelled", "message": "Cancelled by user."},
+                )
+            raise
         except Exception as exc:
-            self.repository.mark_run_finished(run_id, status="failed", error_message=str(exc))
-            self.repository.replace_artifact(run_id, kind="output", name="error", content={"message": str(exc)})
-            self.repository.add_event(run_id, event_type="run.failed", payload={"message": str(exc)})
+            error_message = str(exc).strip() or "Workflow execution failed with an unknown error."
+            self.repository.mark_run_finished(run_id, status="failed", error_message=error_message)
+            self.repository.replace_artifact(run_id, kind="output", name="error", content={"message": error_message})
+            self.repository.add_event(run_id, event_type="run.failed", payload={"message": error_message})
         finally:
             self._tasks.pop(run_id, None)
 
@@ -91,9 +149,18 @@ class WorkflowRunner:
 
 
 class RunService:
-    def __init__(self, repository: SqliteRunRepository, runner: WorkflowRunner):
+    def __init__(
+        self,
+        repository: SqliteRunRepository,
+        runner: WorkflowRunner,
+        *,
+        profile_service: ProfileService,
+        run_audit_service: RunAuditService,
+    ):
         self.repository = repository
         self.runner = runner
+        self.profile_service = profile_service
+        self.run_audit_service = run_audit_service
 
     @staticmethod
     def _make_title(payload: RunCreateRequest) -> str:
@@ -185,3 +252,30 @@ class RunService:
             raise HTTPException(status_code=404, detail="未找到该 run 的原始输入，无法重试。")
         payload = RunCreateRequest.model_validate(payload_data)
         return await self.create_run(payload, parent_run_id=run_id)
+
+    async def cancel_run_or_404(self, run_id: str) -> dict[str, Any]:
+        run = self.get_run_or_404(run_id)
+        if run.status in {"completed", "failed", "needs_clarification", "cancelled"}:
+            raise HTTPException(status_code=400, detail="当前任务已结束，无法撤回。")
+        cancelled = await self.runner.cancel(run_id)
+        if not cancelled:
+            raise HTTPException(status_code=409, detail="任务状态已变化，请刷新后重试。")
+        return self.get_run_detail_or_404(run_id)
+
+    def get_user_preferences(self) -> dict[str, Any]:
+        preferences = self.profile_service.get_preferences()
+        if preferences is None:
+            raise HTTPException(status_code=404, detail="当前还没有可复用的用户偏好。")
+        return preferences.model_dump()
+
+    def update_user_preferences(self, payload: PreferenceUpdateRequest) -> dict[str, Any]:
+        return self.profile_service.update_preferences(payload).model_dump()
+
+    def list_run_history(self, *, limit: int = 20, mode: str | None = None, status: str | None = None, search: str | None = None) -> dict[str, Any]:
+        return self.list_run_summaries(limit=limit, mode=mode, status=status, search=search)
+
+    def get_run_audit_summary_or_404(self, run_id: str) -> dict[str, Any]:
+        detail = self.repository.build_run_detail(run_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="未找到对应的 run。")
+        return self.run_audit_service.build_summary(detail).model_dump()

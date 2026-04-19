@@ -1,6 +1,100 @@
 export type RunMode = "agent" | "structured";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "needs_clarification";
+export type RunStatus = "queued" | "running" | "completed" | "failed" | "needs_clarification" | "cancelled";
 export type Locale = "zh" | "en";
+export type TerminalMode = "realtime" | "historical";
+export type BacktestMode = "replay" | "reference";
+export type AllocationMode = "score_weighted" | "equal_weight" | "custom_weight";
+
+export interface AgentMemoryContext {
+  capital_amount?: number | null;
+  currency?: string | null;
+  risk_tolerance?: string | null;
+  investment_horizon?: string | null;
+  investment_style?: string | null;
+  preferred_sectors?: string[];
+  preferred_industries?: string[];
+  explicit_tickers?: string[];
+}
+
+export interface BacktestCreateRequest {
+  mode?: BacktestMode;
+  source_run_id: string;
+  entry_date?: string | null;
+  end_date?: string | null;
+}
+
+export interface BacktestMetrics {
+  initial_capital: number;
+  final_value: number;
+  benchmark_final_value: number;
+  total_return_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  annualized_return_pct?: number | null;
+  max_drawdown_pct?: number | null;
+  trading_days: number;
+}
+
+export interface BacktestSummary {
+  id: string;
+  source_run_id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  entry_date: string;
+  end_date: string;
+  benchmark_ticker: string;
+  metrics: BacktestMetrics;
+  requested_count: number;
+  coverage_count: number;
+  dropped_tickers: Array<{
+    ticker: string;
+    reason: string;
+  }>;
+}
+
+export interface BacktestPoint {
+  point_date: string;
+  portfolio_value: number;
+  benchmark_value: number;
+  portfolio_return_pct: number;
+  benchmark_return_pct: number;
+}
+
+export interface BacktestPosition {
+  timeseries: BacktestPositionPoint[];
+  ticker: string;
+  weight: number;
+  verdict: string;
+  entry_date: string;
+  entry_price: number;
+  latest_price: number;
+  shares: number;
+  invested_amount: number;
+  current_value: number;
+  return_pct: number;
+  contribution_pct: number;
+}
+
+export interface BacktestPositionPoint {
+  point_date: string;
+  close_price: number;
+  daily_return_pct: number;
+  cumulative_return_pct: number;
+  contribution_pct: number;
+}
+
+export interface BacktestDetail {
+  summary: BacktestSummary;
+  positions: BacktestPosition[];
+  points: BacktestPoint[];
+  meta: Record<string, unknown>;
+}
+
+export interface BacktestListResponse {
+  items: BacktestSummary[];
+}
 
 export interface RuntimeConfig {
   provider: string;
@@ -60,11 +154,18 @@ export interface AgentRunRequest {
   options: {
     fetch_live_data: boolean;
     max_results: number;
+    allocation_mode?: AllocationMode;
+    custom_weights?: Record<string, number>;
+  };
+  research_context?: {
+    research_mode: TerminalMode;
+    as_of_date?: string | null;
   };
   llm?: {
     model?: string | null;
     base_url?: string | null;
   };
+  memory_context?: AgentMemoryContext | null;
 }
 
 export interface StructuredRunRequest {
@@ -149,6 +250,52 @@ export interface RunDetailResponse {
   result: Record<string, unknown> | null;
 }
 
+export interface PreferenceValues {
+  capital_amount?: number | null;
+  currency?: string | null;
+  risk_tolerance?: string | null;
+  investment_horizon?: string | null;
+  investment_style?: string | null;
+  preferred_sectors?: string[];
+  preferred_industries?: string[];
+  explicit_tickers?: string[];
+}
+
+export interface UserPreferenceSummary {
+  profile_id: string;
+  updated_at: string;
+  source_run_id?: string | null;
+  source_query?: string | null;
+  research_mode?: string | null;
+  locale: string;
+  memory_applied_fields: string[];
+  values: PreferenceValues;
+}
+
+export interface PreferenceUpdateRequest extends PreferenceValues {
+  locale?: string;
+  research_mode?: string | null;
+  source_query?: string | null;
+}
+
+export interface RunAuditSummary {
+  run_id: string;
+  title: string;
+  status: string;
+  query?: string | null;
+  report_mode?: string | null;
+  research_mode?: string | null;
+  as_of_date?: string | null;
+  top_pick?: string | null;
+  confidence_level?: string | null;
+  validation_flags: string[];
+  coverage_flags: string[];
+  used_sources: string[];
+  degraded_modules: string[];
+  memory_applied_fields: string[];
+  follow_up_question?: string | null;
+}
+
 export interface RunArtifactsResponse {
   run_id: string;
   artifacts: ArtifactRecord[];
@@ -178,6 +325,8 @@ export interface AgentFormState {
   query: string;
   maxResults: number;
   fetchLiveData: boolean;
+  allocationMode: AllocationMode;
+  customWeights: string;
 }
 
 export interface StructuredFormState {

@@ -1,6 +1,8 @@
-import { formatDateTime, formatJson, formatPercent, formatScore, repairText } from "../lib/format";
+/** 正式报告面板：负责渲染报告正文、依据摘要、逐票研究卡与导出入口。 */
+import { useEffect, useRef, useState } from "react";
+import { formatDateTime, formatJson, formatScore, repairText } from "../lib/format";
 import { exportReport } from "../lib/reportExport";
-import type { DataStatus, Locale } from "../lib/types";
+import type { BacktestDetail, DataStatus, Locale } from "../lib/types";
 import type { LocalePack } from "../lib/i18n";
 import { ResearchCharts } from "./ResearchCharts";
 
@@ -11,6 +13,7 @@ interface ReportPanelProps {
   copy: LocalePack;
   result: Record<string, unknown> | null;
   dataStatus: DataStatus | null;
+  backtest?: BacktestDetail | null;
   variant?: "terminal" | "debug";
 }
 
@@ -26,6 +29,10 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => repairText(item, "")).filter(Boolean) : [];
 }
 
+function asRecordArray(value: unknown): GenericRecord[] {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") as GenericRecord[] : [];
+}
+
 function toNumber(value: unknown): number | null {
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
@@ -33,6 +40,10 @@ function toNumber(value: unknown): number | null {
 
 function toText(value: unknown, fallback = "N/A"): string {
   return repairText(value, fallback);
+}
+
+function hasText(value: unknown): boolean {
+  return !!repairText(value, "").trim();
 }
 
 function parseTableRow(line: string): string[] {
@@ -60,6 +71,88 @@ function scoreTone(score: number | null): string {
   if (score >= 75) return "positive";
   if (score >= 55) return "neutral";
   return "negative";
+}
+
+function sourceAlias(locale: Locale, raw: unknown): string {
+  const source = toText(raw, "").toLowerCase();
+  if (!source) return locale === "zh" ? "未知来源" : "Unknown source";
+  const mapZh: Record<string, string> = {
+    yfinance: "Yahoo Finance",
+    yfinance_batch: "Yahoo Finance",
+    yfinance_proxy: "Yahoo Finance",
+    yahoo_rss: "Yahoo Finance 新闻",
+    finnhub: "Finnhub 新闻",
+    sec_edgar: "SEC EDGAR 披露",
+    alpha_vantage: "Alpha Vantage",
+    alpaca_iex: "Alpaca Market Data",
+    longbridge_daily: "Longbridge 行情",
+    historical_unavailable: "历史数据暂不可用",
+    none: "暂无覆盖",
+    unavailable: "暂不可用",
+  };
+  const mapEn: Record<string, string> = {
+    yfinance: "Yahoo Finance",
+    yfinance_batch: "Yahoo Finance",
+    yfinance_proxy: "Yahoo Finance",
+    yahoo_rss: "Yahoo Finance News",
+    finnhub: "Finnhub News",
+    sec_edgar: "SEC EDGAR Filings",
+    alpha_vantage: "Alpha Vantage",
+    alpaca_iex: "Alpaca Market Data",
+    longbridge_daily: "Longbridge Market Data",
+    historical_unavailable: "Historical data unavailable",
+    none: "No coverage",
+    unavailable: "Unavailable",
+  };
+  const map = locale === "zh" ? mapZh : mapEn;
+  return map[source] || String(raw);
+}
+
+function formatMissingField(locale: Locale, value: string): string {
+  const mappingZh: Record<string, string> = {
+    capital_amount: "投入金额",
+    risk_tolerance: "风险偏好",
+    investment_horizon: "投资期限",
+    investment_style: "投资风格",
+    preferred_sectors: "偏好板块",
+    fundamental_filters: "筛选条件",
+  };
+  const mappingEn: Record<string, string> = {
+    capital_amount: "capital",
+    risk_tolerance: "risk preference",
+    investment_horizon: "horizon",
+    investment_style: "investment style",
+    preferred_sectors: "sector preference",
+    fundamental_filters: "filters",
+  };
+  const mapping = locale === "zh" ? mappingZh : mappingEn;
+  return mapping[value] || value;
+}
+
+function buildProfileFacts(locale: Locale, userProfile: GenericRecord | null): string[] {
+  if (!userProfile) return [];
+  return [
+    userProfile.capital_amount
+      ? locale === "zh"
+        ? `资金 ${toText(userProfile.capital_amount)} ${toText(userProfile.currency, "USD")}`
+        : `Capital ${toText(userProfile.capital_amount)} ${toText(userProfile.currency, "USD")}`
+      : "",
+    userProfile.risk_tolerance
+      ? locale === "zh"
+        ? `风险 ${toText(userProfile.risk_tolerance)}`
+        : `Risk ${toText(userProfile.risk_tolerance)}`
+      : "",
+    userProfile.investment_horizon
+      ? locale === "zh"
+        ? `期限 ${toText(userProfile.investment_horizon)}`
+        : `Horizon ${toText(userProfile.investment_horizon)}`
+      : "",
+    userProfile.investment_style
+      ? locale === "zh"
+        ? `风格 ${toText(userProfile.investment_style)}`
+        : `Style ${toText(userProfile.investment_style)}`
+      : "",
+  ].filter(Boolean);
 }
 
 function renderReportMarkdown(text: string) {
@@ -184,7 +277,7 @@ function ClarificationState({
   const parsedIntent = asRecord(result.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
   const explicitTargets = asRecord(parsedIntent?.explicit_targets);
-  const missing = asStringArray(agentControl?.missing_critical_info);
+  const missing = asStringArray(agentControl?.missing_critical_info).map((item) => formatMissingField(locale, item));
   const tickers = asStringArray(explicitTargets?.tickers);
   const followUpQuestion = toText(result.follow_up_question, copy.report.empty);
 
@@ -202,7 +295,7 @@ function ClarificationState({
         <h3>{followUpQuestion}</h3>
         <p className="section-note">
           {locale === "zh"
-            ? "如果只是轻微缺项，系统会带着默认假设继续分析；只有资金、风险、期限这类核心约束不足时，才会停在这里等待你确认。"
+            ? "如果只是轻微缺项，系统会带着默认假设继续分析；只有资金、风险、期限这些核心约束不足时，才会停在这里等待你确认。"
             : "If only minor details are missing, the system will continue with explicit assumptions. It stops here only when core constraints such as capital, risk, or horizon are still missing."}
         </p>
       </div>
@@ -298,7 +391,34 @@ function StructuredSnapshot({ locale, copy, result }: { locale: Locale; copy: Lo
   );
 }
 
-export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug" }: ReportPanelProps) {
+export function ReportPanel({ locale, copy, result, dataStatus, backtest = null, variant = "debug" }: ReportPanelProps) {
+  const [activeMetricHelpId, setActiveMetricHelpId] = useState<string | null>(null);
+  const metricHelpRootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onDocumentMouseDown(event: MouseEvent) {
+      if (!activeMetricHelpId) {
+        return;
+      }
+      if (metricHelpRootRef.current && event.target instanceof Node && !metricHelpRootRef.current.contains(event.target)) {
+        setActiveMetricHelpId(null);
+      }
+    }
+
+    function onDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActiveMetricHelpId(null);
+      }
+    }
+
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocumentMouseDown);
+      document.removeEventListener("keydown", onDocumentKeyDown);
+    };
+  }, [activeMetricHelpId]);
+
   if (!result) {
     return <section className="panel-surface report-surface empty-state">{copy.report.empty}</section>;
   }
@@ -322,6 +442,9 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
   const macro = asRecord(reportBriefing.macro);
   const parsedIntent = asRecord(result.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
+  const researchContext = asRecord(result.research_context);
+  const analysis = asRecord(result.analysis);
+  const debugSummary = asRecord(analysis?.debug_summary);
   const charts = asRecord(reportBriefing.charts);
   const scoreboard = asArray(reportBriefing.scoreboard);
   const tickerCards = asArray(reportBriefing.ticker_cards);
@@ -330,6 +453,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
   const dimensions = asArray(charts?.dimensions);
   const allocation = asArray(charts?.allocation);
   const dataProvenance = asRecord(meta?.data_provenance);
+  const scoreGuide = asRecord(meta?.score_guide);
   const finalReport = typeof result.final_report === "string" ? repairText(result.final_report, "") : "";
   const reportMode = toText(result.report_mode, "unknown");
   const reportError = toText(result.report_error, "");
@@ -337,9 +461,20 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
   const avoidList = asStringArray(executive?.avoid_list);
   const allocationPlan = asArray(executive?.allocation_plan);
   const assumptions = asStringArray(meta?.assumptions || result.assumptions);
+  const warningFlags = asStringArray(meta?.warning_flags || debugSummary?.warning_flags);
   const missingInfo = asStringArray(agentControl?.missing_critical_info);
   const intentUsable = Boolean(agentControl?.is_intent_usable);
   const severeMacro = Boolean(macro?.severe_warning);
+  const researchMode = toText(meta?.research_mode || researchContext?.research_mode, "realtime");
+  const asOfDate = toText(meta?.as_of_date || researchContext?.as_of_date, "");
+  const userProfile = asRecord(meta?.user_profile);
+  const evidenceSummary = asRecord(meta?.evidence_summary);
+  const validationSummary = asRecord(meta?.validation_summary);
+  const safetySummary = asRecord(meta?.safety_summary);
+  const memorySummary = asRecord(result.memory_summary);
+  const profileFacts = buildProfileFacts(locale, userProfile);
+  const headerTitle = locale === "zh" ? "机构级投资研究报告" : "Institutional Investment Research Report";
+  const headerSubtitle = locale === "zh" ? "研究终端 / 投资决策备忘录" : "Research terminal / portfolio decision memo";
 
   const effectiveDataStatus = dataProvenance || (dataStatus as unknown as GenericRecord | null);
   const mandateSummary = toText(meta?.mandate_summary, locale === "zh" ? "暂无 mandate 摘要。" : "Mandate summary unavailable.");
@@ -349,11 +484,15 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
       <div className="section-head">
         <div>
           <p className="eyebrow">{copy.report.reportEyebrow}</p>
-          <h2>{toText(meta?.title, copy.report.empty)}</h2>
-          {meta?.subtitle ? <p className="section-note">{toText(meta.subtitle)}</p> : null}
+          <h2>{headerTitle}</h2>
+          <p className="section-note">{headerSubtitle}</p>
         </div>
         <div className="report-toolbar">
           <div className="chip-row">
+            <span className="chip">
+              {copy.report.labels.mode}: {researchMode === "historical" ? copy.terminal.historical : copy.terminal.realtime}
+            </span>
+            {asOfDate ? <span className="chip">{`as_of: ${asOfDate}`}</span> : null}
             {variant === "debug" ? <span className="chip">{copy.report.reportMode}: {reportMode}</span> : null}
             <span className={`chip ${scoreTone(toNumber(executive?.mandate_fit_score))}`}>
               {copy.report.mandateFit} {formatScore(executive?.mandate_fit_score)}
@@ -363,25 +502,22 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
           <div className="button-row compact">
             {variant === "terminal" ? (
               <>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf")}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest)}>
                   {locale === "zh" ? "导出 PDF" : "Export PDF"}
                 </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html")}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest)}>
                   {locale === "zh" ? "下载 HTML" : "Download HTML"}
-                </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "json")}>
-                  {locale === "zh" ? "下载证据包" : "Download evidence"}
                 </button>
               </>
             ) : (
               <>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "markdown")}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "markdown", backtest)}>
                   {locale === "zh" ? "下载 Markdown" : "Download Markdown"}
                 </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html")}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest)}>
                   {locale === "zh" ? "下载 HTML" : "Download HTML"}
                 </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "json")}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "json", backtest)}>
                   {locale === "zh" ? "下载证据包" : "Download evidence"}
                 </button>
               </>
@@ -392,12 +528,12 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
 
       {variant === "terminal" ? (
         <nav className="report-anchor-nav">
-          <a href="#report-overview" className="anchor-chip">{locale === "zh" ? "总览" : "Overview"}</a>
-          <a href="#report-charts" className="anchor-chip">{locale === "zh" ? "图表" : "Charts"}</a>
+          <a href="#report-overview" className="anchor-chip">{copy.report.labels.overview}</a>
+          <a href="#report-charts" className="anchor-chip">{copy.report.labels.charts}</a>
           <a href="#report-scoreboard" className="anchor-chip">{locale === "zh" ? "候选池" : "Scoreboard"}</a>
-          <a href="#report-coverage" className="anchor-chip">{locale === "zh" ? "逐票覆盖" : "Coverage"}</a>
-          <a href="#report-risks" className="anchor-chip">{locale === "zh" ? "风险与执行" : "Risk & Execution"}</a>
-          {finalReport ? <a href="#report-memo" className="anchor-chip">{locale === "zh" ? "完整备忘录" : "Full memo"}</a> : null}
+          <a href="#report-coverage" className="anchor-chip">{copy.report.labels.coverage}</a>
+          <a href="#report-risks" className="anchor-chip">{copy.report.labels.riskExecution}</a>
+          {finalReport ? <a href="#report-memo" className="anchor-chip">{copy.report.labels.fullMemo}</a> : null}
         </nav>
       ) : null}
 
@@ -405,7 +541,12 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
       {reportError ? <div className="danger-banner">{reportError}</div> : null}
       {assumptions.length ? (
         <div className="warning-banner assumption-banner">
-          <strong>{locale === "zh" ? "默认假设：" : "Assumptions:"}</strong> {assumptions.join(locale === "zh" ? "；" : "; ")}
+          <strong>{copy.report.labels.assumptions}:</strong> {assumptions.join(locale === "zh" ? "；" : "; ")}
+        </div>
+      ) : null}
+      {warningFlags.length ? (
+        <div className="warning-banner assumption-banner">
+          <strong>{copy.report.labels.dataWarnings}:</strong> {warningFlags.join(locale === "zh" ? "；" : "; ")}
         </div>
       ) : null}
       {!assumptions.length && !agentControl?.is_intent_clear && intentUsable ? (
@@ -417,15 +558,85 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
       ) : null}
       {!agentControl?.is_intent_clear && missingInfo.length ? (
         <div className="section-note">
-          {locale === "zh" ? "你后续还可以补充这些信息：" : "You may still want to clarify:"} {missingInfo.join(", ")}
+          {copy.report.labels.stillNeedClarify} {missingInfo.join(", ")}
         </div>
       ) : null}
+
+      <div className="summary-grid three-up">
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "系统理解到的目标" : "What the system understood"}</h3>
+          <p>{toText(userProfile?.summary, locale === "zh" ? "暂无用户画像。" : "No mandate summary yet.")}</p>
+          {profileFacts.length ? (
+            <div className="chip-row">
+              {profileFacts.map((item) => (
+                <span key={item} className="chip neutral">{item}</span>
+              ))}
+            </div>
+          ) : null}
+          {hasText(memorySummary?.note) ? <p>{toText(memorySummary?.note)}</p> : null}
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "本次结论依据" : "Why this conclusion"}</h3>
+          <p>{toText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}</p>
+          {asStringArray(evidenceSummary?.items).length ? (
+            <ul className="compact-list">
+              {asStringArray(evidenceSummary?.items).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+          {asStringArray(evidenceSummary?.source_points).length ? (
+            <div className="chip-row">
+              {asStringArray(evidenceSummary?.source_points).map((item) => (
+                <span key={item} className="chip neutral">{item}</span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "先看这些谨慎提示" : "Read these caveats first"}</h3>
+          <p>{toText(validationSummary?.headline, locale === "zh" ? "暂无校验摘要。" : "No validation summary yet.")}</p>
+          {asStringArray(validationSummary?.items).length ? (
+            <ul className="compact-list">
+              {asStringArray(validationSummary?.items).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="summary-grid two-up">
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "安全与数据覆盖" : "Safety & data coverage"}</h3>
+          <p>{toText(safetySummary?.headline, locale === "zh" ? "暂无安全摘要。" : "No safety summary yet.")}</p>
+          {asStringArray(safetySummary?.used_sources).length ? (
+            <div className="chip-row">
+              {asStringArray(safetySummary?.used_sources).map((item) => (
+                <span key={item} className="chip neutral">{item}</span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "需要保守解读的地方" : "Areas with degraded coverage"}</h3>
+          {asStringArray(safetySummary?.degraded_modules).length ? (
+            <ul className="compact-list">
+              {asStringArray(safetySummary?.degraded_modules).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>{locale === "zh" ? "本次研究没有明显的数据降级提示。" : "No major degraded-data caveat was detected in this run."}</p>
+          )}
+        </div>
+      </div>
 
       <div id="report-overview" className="executive-grid anchor-target">
         <article className="executive-card">
           <p className="eyebrow">{locale === "zh" ? "执行结论" : "Executive verdict"}</p>
-          <h3>{toText(executive?.primary_call, copy.report.empty)}</h3>
-          <p>{toText(executive?.action_summary, copy.report.empty)}</p>
+          <h3>{toText(executive?.presentation_call || executive?.primary_call, copy.report.empty)}</h3>
+          <p>{toText(executive?.presentation_action_summary || executive?.action_summary, copy.report.empty)}</p>
           <div className="chip-row">
             {watchlist.map((item) => (
               <span key={item} className="chip positive">{item}</span>
@@ -438,7 +649,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
 
         <div className="macro-grid">
           <div className="mini-card">
-            <h3>{locale === "zh" ? "投资 mandate" : "Investor mandate"}</h3>
+            <h3>{copy.report.labels.investorMandate}</h3>
             <p>{mandateSummary}</p>
             <p>{copy.report.labels.topPick}: {toText(executive?.top_pick)}</p>
             <p>{copy.report.labels.score}: {formatScore(executive?.mandate_fit_score)}</p>
@@ -451,9 +662,9 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
             <p>{copy.report.labels.fit}: {formatScore(executive?.mandate_fit_score)}</p>
           </div>
           <div className="mini-card">
-            <h3>{locale === "zh" ? "数据来源" : "Data provenance"}</h3>
+            <h3>{copy.report.labels.dataProvenance}</h3>
             <p>{copy.report.labels.source}: {toText(effectiveDataStatus?.source)}</p>
-            <p>{locale === "zh" ? "股票池规模" : "Universe size"}: {toText(effectiveDataStatus?.records)}</p>
+            <p>{copy.report.labels.universeSize}: {toText(effectiveDataStatus?.records)}</p>
             <p>{copy.report.labels.lastRefresh}: {formatDateTime(effectiveDataStatus?.last_refresh_at, locale)}</p>
             {variant === "debug" ? <p>Route: {toText(asRecord(result.runtime)?.route_mode)}</p> : null}
           </div>
@@ -483,7 +694,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
               <th>{copy.report.labels.quality}</th>
               <th>{copy.report.labels.momentum}</th>
               <th>{copy.report.labels.risk}</th>
-              <th>{locale === "zh" ? "结论" : "Verdict"}</th>
+              <th>{copy.report.labels.verdict}</th>
             </tr>
           </thead>
           <tbody>
@@ -514,7 +725,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
           <h3>{copy.report.tickerCards}</h3>
         </div>
       </div>
-      <div className="ticker-card-grid">
+      <div className="ticker-card-grid" ref={metricHelpRootRef}>
         {tickerCards.map((item) => {
           const ticker = toText(item.ticker);
           const verdict = toText(item.verdict_label);
@@ -532,28 +743,150 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
 
               <div className="candidate-score-row">
                 {[
-                  { label: copy.report.labels.score, value: item.composite_score },
-                  { label: copy.report.labels.fit, value: item.suitability_score },
-                  { label: copy.report.labels.valuation, value: item.valuation_score },
-                  { label: copy.report.labels.quality, value: item.quality_score },
-                  { label: copy.report.labels.momentum, value: item.momentum_score },
-                  { label: copy.report.labels.risk, value: item.risk_score },
+                  { key: "composite", label: copy.report.labels.score, value: item.composite_score },
+                  { key: "fit", label: copy.report.labels.fit, value: item.suitability_score },
+                  { key: "valuation", label: copy.report.labels.valuation, value: item.valuation_score },
+                  { key: "quality", label: copy.report.labels.quality, value: item.quality_score },
+                  { key: "momentum", label: copy.report.labels.momentum, value: item.momentum_score },
+                  { key: "risk", label: copy.report.labels.risk, value: item.risk_score },
                 ].map((metric) => (
                   <div key={metric.label} className={`score-pill ${scoreTone(toNumber(metric.value))}`}>
-                    <span>{metric.label}</span>
+                    <div className="score-pill-head">
+                      <span>{metric.label}</span>
+                      {toText(scoreGuide?.[metric.key], "") ? (
+                        (() => {
+                          const helpId = `${ticker}-${metric.key}`;
+                          const isOpen = activeMetricHelpId === helpId;
+                          return (
+                            <div className="metric-help">
+                              <button
+                                type="button"
+                                className="metric-help-trigger"
+                                aria-label={locale === "zh" ? "查看指标说明" : "View metric guide"}
+                                onClick={() => setActiveMetricHelpId(isOpen ? null : helpId)}
+                              >
+                                !
+                              </button>
+                              {isOpen ? <div className="metric-help-popover">{toText(scoreGuide?.[metric.key], "")}</div> : null}
+                            </div>
+                          );
+                        })()
+                      ) : null}
+                    </div>
                     <strong>{formatScore(metric.value)}</strong>
                   </div>
                 ))}
               </div>
 
-              <p className="candidate-copy"><strong>{copy.report.labels.thesis}:</strong> {toText(item.thesis)}</p>
-              <p className="candidate-copy"><strong>{copy.report.labels.fitReason}:</strong> {toText(item.fit_reason)}</p>
-              <p className="candidate-copy"><strong>{copy.report.labels.technical}:</strong> {toText(item.technical_summary)} / {toText(item.news_label)} / {toText(item.alignment)}</p>
-              <p className="candidate-copy"><strong>{copy.report.labels.smartMoney}:</strong> {toText(item.smart_money_positioning)}</p>
-              <p className="candidate-copy"><strong>{copy.report.labels.audit}:</strong> {toText(item.audit_summary)}</p>
-              <p className="candidate-copy"><strong>{copy.report.labels.execution}:</strong> {toText(item.execution)}</p>
+              <div className="candidate-section-stack">
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.thesis}</span>
+                  <p className="candidate-copy">{toText(item.thesis)}</p>
+                </section>
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.fitReason}</span>
+                  <p className="candidate-copy">{toText(item.fit_reason)}</p>
+                </section>
+              </div>
 
-              {catalysts.length ? (
+              {asStringArray(item.evidence_points).length ? (
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{locale === "zh" ? "依据摘要" : "Evidence summary"}</span>
+                  <ul className="compact-list">
+                    {asStringArray(item.evidence_points).map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              <div className="candidate-detail-grid">
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.technical}</span>
+                  <p className="candidate-copy">{toText(item.technical_summary)}</p>
+                </section>
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.news}</span>
+                  <p className="candidate-copy">
+                    {toText(item.news_narrative, toText(item.news_label))}
+                    {toText(item.alignment, "") ? ` · ${toText(item.alignment)}` : ""}
+                  </p>
+                </section>
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.smartMoney}</span>
+                  <p className="candidate-copy">{toText(item.smart_money_positioning)}</p>
+                </section>
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{copy.report.labels.audit}</span>
+                  <p className="candidate-copy">{toText(item.audit_summary)}</p>
+                  {asRecordArray(item.audit_links).length ? (
+                    <p className="candidate-copy candidate-link-list">
+                      {asRecordArray(item.audit_links).slice(0, 3).map((entry, index) => {
+                        const url = toText(entry.filing_url, "");
+                        const label = `${toText(entry.form, "SEC")}${toText(entry.filed_at, "") ? ` (${toText(entry.filed_at)})` : ""}`;
+                        if (!url) return <span key={`${label}-${index}`}>{label}{index < 2 ? " · " : ""}</span>;
+                        return (
+                          <span key={`${label}-${index}`}>
+                            <a href={url} target="_blank" rel="noreferrer">{label}</a>
+                            {index < 2 ? " · " : ""}
+                          </span>
+                        );
+                      })}
+                    </p>
+                  ) : null}
+                </section>
+              </div>
+
+              {asStringArray(item.caution_points).length ? (
+                <section className="candidate-section">
+                  <span className="candidate-section-label">{locale === "zh" ? "谨慎提示" : "Caveats"}</span>
+                  <ul className="compact-list">
+                    {asStringArray(item.caution_points).map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              <div className="candidate-meta-row">
+                {toText(item.share_class, "") ? (
+                  <span className="chip neutral">
+                    {copy.report.labels.shareClass}: {toText(item.share_class)}
+                    {toText(item.share_class_note, "") ? ` · ${toText(item.share_class_note)}` : ""}
+                  </span>
+                ) : null}
+                <span className="candidate-source-note">
+                  <strong>{copy.report.labels.source}:</strong>{" "}
+                  {toText(
+                    item.source_summary,
+                    locale === "zh"
+                      ? `技术 ${sourceAlias(locale, item.technical_source)} | 新闻 ${sourceAlias(locale, item.news_source)} | 资金面 ${sourceAlias(locale, item.smart_money_source)}`
+                      : `Tech ${sourceAlias(locale, item.technical_source)} | News ${sourceAlias(locale, item.news_source)} | Smart ${sourceAlias(locale, item.smart_money_source)}`,
+                  )}
+                </span>
+              </div>
+
+              <section className="candidate-section candidate-execution">
+                <span className="candidate-section-label">{copy.report.labels.execution}</span>
+                <p className="candidate-copy">{toText(item.execution)}</p>
+              </section>
+
+              {asRecordArray(item.news_items).length ? (
+                <div className="candidate-catalysts">
+                  {asRecordArray(item.news_items).slice(0, 3).map((entry, index) => {
+                    const title = toText(entry.title, locale === "zh" ? "新闻链接" : "News");
+                    const url = toText(entry.url, "");
+                    if (!url) {
+                      return <span key={`${title}-${index}`} className="catalyst-tag">{title}</span>;
+                    }
+                    return (
+                      <a key={`${title}-${index}`} className="catalyst-tag" href={url} target="_blank" rel="noreferrer">
+                        {title}
+                      </a>
+                    );
+                  })}
+                </div>
+              ) : catalysts.length ? (
                 <div className="candidate-catalysts">
                   {catalysts.map((catalyst) => (
                     <span key={catalyst} className="catalyst-tag">{catalyst}</span>
@@ -594,6 +927,11 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
               <h3>{copy.report.execution}</h3>
             </div>
           </div>
+          <p className="section-note">
+            {locale === "zh"
+              ? `候选 ${toText(meta?.ticker_count, "0")} 只；执行持仓 ${allocationPlan.length} 只。`
+              : `Candidates ${toText(meta?.ticker_count, "0")}; execution positions ${allocationPlan.length}.`}
+          </p>
           {allocationPlan.length ? (
             <div className="allocation-list">
               {allocationPlan.map((item) => (
@@ -605,7 +943,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, variant = "debug
                   <div className="allocation-track">
                     <div className="allocation-bar" style={{ width: `${Math.min(toNumber(item.weight) || 0, 100)}%` }} />
                   </div>
-                  <span>{formatPercent(item.weight)}</span>
+                  <span>{toNumber(item.weight)?.toFixed(1) ?? "N/A"}%</span>
                 </div>
               ))}
             </div>

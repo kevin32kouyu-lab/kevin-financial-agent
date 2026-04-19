@@ -1,9 +1,14 @@
+import { LandingView } from "./views/Landing";
 import { TerminalView } from "./views/Terminal";
 import { WorkbenchView } from "./views/Workbench";
 
 export default function App() {
-  if (window.location.pathname.startsWith("/debug")) {
+  const path = window.location.pathname;
+  if (path.startsWith("/debug")) {
     return <WorkbenchView />;
   }
-  return <TerminalView />;
+  if (path.startsWith("/terminal")) {
+    return <TerminalView />;
+  }
+  return <LandingView />;
 }

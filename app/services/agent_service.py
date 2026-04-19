@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable
 
+from app.agent_runtime.memory import build_preference_snapshot, merge_memory_context
 from app.agent_runtime.intent import _build_follow_up_question, _normalize_query, parse_intent
-
 from app.domain.contracts import AgentRunRequest, DebugAnalysisRequest, ParsedIntent
 from app.services.analysis_service import AnalysisService
 from app.services.report_service import ReportService
@@ -49,6 +49,8 @@ def _build_debug_request(intent: ParsedIntent, payload: AgentRunRequest) -> Debu
         explicit_targets=intent.explicit_targets,
         portfolio_sizing=intent.portfolio_sizing.model_dump(),
         options=payload.options,
+        research_mode=payload.research_context.research_mode,
+        as_of_date=payload.research_context.as_of_date,
     )
 
 
@@ -96,16 +98,31 @@ class AgentService:
             "query": normalized_query,
             "status": "running",
             "runtime": runtime_view,
+            "research_context": payload.research_context.model_dump(),
             "stages": [],
             "llm_raw": {},
         }
         await self._publish_artifact(hooks, "runtime", "config", response["runtime"])
+        await self._publish_artifact(hooks, "runtime", "research_context", response["research_context"])
         await self._publish_snapshot(hooks, response)
 
         intent_started = perf_counter()
         parsed_intent = parse_intent(normalized_query)
+        memory_summary = merge_memory_context(
+            parsed_intent,
+            query=normalized_query,
+            memory_context=payload.memory_context,
+        )
+        response["memory_applied_fields"] = list(memory_summary["applied_fields"])
         response["parsed_intent"] = parsed_intent.model_dump()
         await self._publish_artifact(hooks, "derived", "parsed_intent", response["parsed_intent"])
+        if payload.memory_context is not None:
+            response["memory_context"] = payload.memory_context.model_dump()
+            await self._publish_artifact(hooks, "derived", "memory_context", response["memory_context"])
+        if memory_summary["used"]:
+            response["memory_summary"] = memory_summary
+            await self._publish_artifact(hooks, "derived", "memory_summary", response["memory_summary"])
+            await self._publish_artifact(hooks, "derived", "memory_applied_fields", response["memory_applied_fields"])
         await self._append_stage(
             hooks,
             response,
@@ -113,7 +130,11 @@ class AgentService:
             label="意图解析",
             elapsed_ms=(perf_counter() - intent_started) * 1000,
             status="completed",
-            summary="已使用本地规则完成投资意图解析。",
+            summary=(
+                "已完成用户需求解析，并结合最近一次偏好补齐缺失约束。"
+                if memory_summary["used"]
+                else "已完成用户需求解析，并提取策略约束条件。"
+            ),
         )
 
         if parsed_intent.agent_control.assumptions:
@@ -126,15 +147,22 @@ class AgentService:
                 label="默认假设补全",
                 elapsed_ms=0.0,
                 status="completed",
-                summary="用户需求未完全显式表达，系统已补入默认假设以继续分析。",
+                summary="输入信息不完全时，已用可解释默认假设补齐。",
             )
 
         if not parsed_intent.agent_control.is_intent_clear and not parsed_intent.agent_control.is_intent_usable:
             follow_up_started = perf_counter()
             follow_up_question = _build_follow_up_question(parsed_intent)
             response["follow_up_question"] = follow_up_question
+            response["preference_snapshot"] = build_preference_snapshot(
+                parsed_intent,
+                query=normalized_query,
+                research_mode=payload.research_context.research_mode,
+                applied_fields=response["memory_applied_fields"],
+            )
             response["status"] = "needs_clarification"
             await self._publish_artifact(hooks, "derived", "follow_up_question", follow_up_question)
+            await self._publish_artifact(hooks, "derived", "preference_snapshot", response["preference_snapshot"])
             await self._append_stage(
                 hooks,
                 response,
@@ -142,7 +170,7 @@ class AgentService:
                 label="补充追问",
                 elapsed_ms=(perf_counter() - follow_up_started) * 1000,
                 status="completed",
-                summary="当前信息不足，系统已生成需要补充的问题。",
+                summary="核心约束信息不足，等待用户补充后再继续。",
             )
             return response
 
@@ -174,6 +202,12 @@ class AgentService:
         response["report_mode"] = report_bundle["report_mode"]
         response["report_error"] = report_bundle["report_error"]
         response["llm_raw"] = report_bundle["llm_raw"]
+        response["preference_snapshot"] = build_preference_snapshot(
+            parsed_intent,
+            query=normalized_query,
+            research_mode=payload.research_context.research_mode,
+            applied_fields=response["memory_applied_fields"],
+        )
 
         await self._publish_artifact(hooks, "report", "input", response["report_input"])
         await self._publish_artifact(hooks, "report", "briefing", response["report_briefing"])
@@ -182,6 +216,7 @@ class AgentService:
             await self._publish_artifact(hooks, "report", "error", response["report_error"])
         if response["llm_raw"].get("report_response"):
             await self._publish_artifact(hooks, "llm", "report_response", response["llm_raw"]["report_response"])
+        await self._publish_artifact(hooks, "derived", "preference_snapshot", response["preference_snapshot"])
 
         await self._append_stage(
             hooks,
@@ -191,9 +226,9 @@ class AgentService:
             elapsed_ms=(perf_counter() - report_started) * 1000,
             status="fallback" if response["report_mode"] == "fallback" else "completed",
             summary=(
-                "LLM 报告已成功生成。"
+                "报告已由模型生成。"
                 if response["report_mode"] == "llm"
-                else "LLM 报告不可用，已切换为本地结构化备用报告。"
+                else "模型不可用，已回落到结构化备选报告。"
             ),
         )
 

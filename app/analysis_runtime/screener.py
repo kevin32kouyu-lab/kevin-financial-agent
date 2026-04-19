@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import pandas as pd
@@ -24,6 +25,21 @@ STYLE_BONUS = {
     "growth": {"growth": 0.14, "quality": 0.04},
     "index": {"size": 0.06, "stability": 0.04},
 }
+
+# 常见多股权类别 ticker 的展示映射（用于用户可读说明）
+KNOWN_SHARE_CLASS_LABELS: dict[str, str] = {
+    "GOOGL": "Class A (1 vote/share)",
+    "GOOG": "Class C (no voting rights)",
+    "FOXA": "Class A",
+    "FOX": "Class B",
+    "NWSA": "Class A",
+    "NWS": "Class B",
+}
+
+_ISSUER_SUFFIX_PATTERN = re.compile(
+    r"\b(class\s+[a-z]|cl\.?\s*[a-z]|series\s+[a-z]|ordinary shares|common stock)\b",
+    flags=re.IGNORECASE,
+)
 
 
 def normalize(series: pd.Series) -> pd.Series:
@@ -60,6 +76,80 @@ def _safe_ticker_list(values: list[str]) -> list[str]:
             seen.add(ticker)
             output.append(ticker)
     return output
+
+
+def _normalize_issuer_name(value: str) -> str:
+    """将公司名称归一化，识别同一发行主体。"""
+    cleaned = _ISSUER_SUFFIX_PATTERN.sub("", str(value or ""))
+    cleaned = (
+        cleaned.replace(",", " ")
+        .replace("Inc.", "Inc")
+        .replace("Corporation", "Corp")
+        .replace("Company", "Co")
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().lower()
+    return cleaned
+
+
+def _share_class_label(ticker: str) -> str | None:
+    """返回 ticker 的股权类别标签（若已知）。"""
+    return KNOWN_SHARE_CLASS_LABELS.get(str(ticker or "").upper().strip())
+
+
+def _build_ticker_meta(frame: pd.DataFrame) -> dict[str, dict[str, str | None]]:
+    """基于股票池构建 ticker 的发行主体元信息。"""
+    meta: dict[str, dict[str, str | None]] = {}
+    for _, row in frame.iterrows():
+        ticker = str(row.get("ticker") or "").upper().strip()
+        name = str(row.get("name") or "").strip()
+        if not ticker:
+            continue
+        issuer_name = name or ticker
+        meta[ticker] = {
+            "issuer_key": _normalize_issuer_name(issuer_name) or ticker.lower(),
+            "issuer_name": issuer_name,
+            "share_class": _share_class_label(ticker),
+        }
+    return meta
+
+
+def _dedupe_share_class_tickers(
+    ordered_tickers: list[str],
+    explicit_tickers: list[str],
+    ticker_meta: dict[str, dict[str, str | None]],
+) -> list[str]:
+    """按发行主体去重：默认保留一个；用户显式点名多个时保留多个。"""
+    explicit_set = {str(item).upper().strip() for item in explicit_tickers}
+    selected: list[str] = []
+    issuer_to_index: dict[str, int] = {}
+
+    for ticker in ordered_tickers:
+        info = ticker_meta.get(ticker) or {}
+        issuer_key = str(info.get("issuer_key") or ticker.lower())
+        if issuer_key not in issuer_to_index:
+            issuer_to_index[issuer_key] = len(selected)
+            selected.append(ticker)
+            continue
+
+        previous_index = issuer_to_index[issuer_key]
+        previous_ticker = selected[previous_index]
+        previous_is_explicit = previous_ticker in explicit_set
+        current_is_explicit = ticker in explicit_set
+
+        # 两个都被用户明确点名，则同时保留
+        if previous_is_explicit and current_is_explicit:
+            selected.append(ticker)
+            continue
+
+        # 若当前是用户点名，替换掉非点名版本
+        if current_is_explicit and not previous_is_explicit:
+            selected[previous_index] = ticker
+            continue
+
+        # 其他情况默认去重（保留先出现的）
+        continue
+
+    return selected
 
 
 def _prepare_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
@@ -136,7 +226,13 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
         }
 
     db_df = _prepare_dataframe(universe_df)
+    ticker_meta = _build_ticker_meta(db_df)
     filtered_df = db_df.copy()
+    valid_tickers = (
+        set(db_df["ticker"].dropna().astype(str).str.upper().str.strip().tolist())
+        if "ticker" in db_df.columns
+        else set()
+    )
 
     sectors = [value.lower() for value in _clean_values(payload.investment_strategy.preferred_sectors)]
     industries = [value.lower() for value in _clean_values(payload.investment_strategy.preferred_industries)]
@@ -147,6 +243,9 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
     require_positive_fcf = bool(payload.fundamental_filters.require_positive_fcf)
     analyst_values = _allowed_analyst_values(payload.fundamental_filters.analyst_rating)
     user_tickers = _safe_ticker_list(payload.explicit_targets.tickers)
+    ignored_user_tickers = [ticker for ticker in user_tickers if valid_tickers and ticker not in valid_tickers]
+    if valid_tickers:
+        user_tickers = [ticker for ticker in user_tickers if ticker in valid_tickers]
     risk_level = str(payload.risk_profile.tolerance_level or "medium").lower()
     style = _style_key(payload)
     weights = dict(RISK_WEIGHTS.get(risk_level, RISK_WEIGHTS["medium"]))
@@ -225,10 +324,29 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
             score_df = eligible_df
 
     db_candidates: list[str] = []
+    try:
+        max_results = max(int(payload.options.max_results), 1)
+    except (TypeError, ValueError):
+        max_results = 5
     if not score_df.empty and "ticker" in score_df.columns:
-        db_candidates = score_df["ticker"].head(payload.options.max_results).tolist()
+        db_candidates = score_df["ticker"].head(max_results).tolist()
 
-    final_pool = list(dict.fromkeys(db_candidates + user_tickers))
+    score_lookup: dict[str, float] = {}
+    if not score_df.empty and "ticker" in score_df.columns:
+        for _, score_row in score_df.iterrows():
+            ticker_key = str(score_row.get("ticker") or "").upper().strip()
+            if not ticker_key:
+                continue
+            score_lookup[ticker_key] = safe_float(score_row.get("total_score"), -1.0) or -1.0
+
+    combined_pool = list(dict.fromkeys(db_candidates + user_tickers))
+    combined_pool = sorted(
+        combined_pool,
+        key=lambda ticker: score_lookup.get(str(ticker).upper().strip(), -1.0),
+        reverse=True,
+    )
+    deduped_pool = _dedupe_share_class_tickers(combined_pool, user_tickers, ticker_meta)
+    final_pool = deduped_pool[:max_results]
     comparison_matrix: list[dict[str, Any]] = []
 
     for ticker in final_pool:
@@ -239,10 +357,13 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
             row_match = db_df[db_df["ticker"] == ticker]
 
         if row_match.empty:
+            meta = ticker_meta.get(ticker) or {}
             comparison_matrix.append(
                 {
                     "Ticker": ticker,
                     "Company_Name": "Unknown",
+                    "Issuer_Name": meta.get("issuer_name") or "Unknown",
+                    "Share_Class": meta.get("share_class"),
                     "Sector": "Unknown",
                     "PE_Ratio": "N/A",
                     "ROE": "N/A",
@@ -260,6 +381,7 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
             continue
 
         row = row_match.iloc[0]
+        meta = ticker_meta.get(ticker) or {}
         pe_ratio = pd.to_numeric(pd.Series([row.get("pe_ratio")]), errors="coerce").iloc[0]
         roe = _percent_points_series(pd.DataFrame([row]), "roe", 12.0, lower=-20, upper=45).iloc[0]
         dividend_yield = _percent_points_series(pd.DataFrame([row]), "dividend_yield", 0.0, lower=0, upper=10).iloc[0]
@@ -269,6 +391,8 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
             {
                 "Ticker": ticker,
                 "Company_Name": row.get("name", "Unknown"),
+                "Issuer_Name": meta.get("issuer_name") or row.get("name", "Unknown"),
+                "Share_Class": meta.get("share_class"),
                 "Sector": row.get("sector", "Unknown"),
                 "PE_Ratio": round(float(pe_ratio), 2) if pd.notna(pe_ratio) else "N/A",
                 "ROE": f"{round(float(roe) * 100, 2)}%" if pd.notna(roe) else "N/A",
@@ -284,8 +408,12 @@ def run_screener_analysis(payload: DebugAnalysisRequest, universe_df: pd.DataFra
             }
         )
 
+    analysis_context = "结构化筛选已完成。"
+    if ignored_user_tickers:
+        analysis_context = f"{analysis_context} 已忽略未识别股票代码: {', '.join(ignored_user_tickers)}。"
+
     return {
-        "analysis_context": "结构化筛选已完成。",
+        "analysis_context": analysis_context,
         "comparison_matrix": sorted(
             comparison_matrix,
             key=lambda item: item.get("Total_Quant_Score", 0),

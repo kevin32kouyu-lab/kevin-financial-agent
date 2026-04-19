@@ -28,6 +28,7 @@ INDUSTRY_KEYWORDS: dict[str, list[str]] = {
     "Oil & Gas": ["oil", "gas", "石油", "天然气"],
     "Drug Manufacturers - General": ["pharma", "drug", "制药", "药企"],
     "Information Technology Services": ["it service", "cloud", "信息技术服务", "云服务"],
+    "Auto Manufacturers": ["electric vehicle", "ev stock", "ev stocks", "新能源车", "电动车", "汽车制造"],
 }
 
 COMPANY_TICKER_MAP: dict[str, str] = {
@@ -63,6 +64,7 @@ TICKER_STOPWORDS = {
     "ETF",
     "ADR",
     "AI",
+    "EV",
     "I",
 }
 
@@ -315,13 +317,17 @@ def _extract_named_values(query: str, mapping: dict[str, list[str]]) -> list[str
 
 def _extract_tickers(query: str) -> list[str]:
     tickers = {token for token in re.findall(r"\b[A-Z]{2,5}\b", query) if token not in TICKER_STOPWORDS}
+    lowered = query.lower()
+
+    # 行业词兜底：避免把 "EV stocks" 这类短语误当作股票代码
+    if re.search(r"\bev\s+stocks?\b", lowered):
+        tickers.discard("EV")
     explicit_match = re.search(r"(?:ticker|tickers|股票|股票代码|个股)\s*[:：]?\s*([A-Z,\s/]{1,120})", query, flags=re.IGNORECASE)
     if explicit_match:
         for token in re.findall(r"\b[A-Z]{1,5}\b", explicit_match.group(1)):
             if token not in TICKER_STOPWORDS:
                 tickers.add(token)
 
-    lowered = query.lower()
     for company_name, ticker in COMPANY_TICKER_MAP.items():
         if company_name in lowered:
             tickers.add(ticker)
@@ -560,27 +566,33 @@ def _build_follow_up_question(intent: ParsedIntent) -> str:
     missing = intent.agent_control.missing_critical_info
 
     zh_map = {
-        "capital_amount": "你计划投入多少资金？",
-        "risk_tolerance": "你能接受多大的波动或回撤？",
-        "investment_horizon": "你的投资期限更偏短期、中期还是长期？",
-        "investment_style": "你更偏价值、成长、指数、质量蓝筹还是分红风格？",
-        "preferred_sectors": "你有偏好的行业或板块吗？",
-        "fundamental_filters": "你对 PE、ROE、股息率或自由现金流有明确要求吗？",
+        "capital_amount": "投入金额",
+        "risk_tolerance": "风险偏好",
+        "investment_horizon": "投资期限",
+        "investment_style": "投资风格",
+        "preferred_sectors": "偏好行业",
+        "fundamental_filters": "筛选条件",
     }
     en_map = {
-        "capital_amount": "How much capital do you plan to invest?",
-        "risk_tolerance": "What level of drawdown or volatility can you accept?",
-        "investment_horizon": "Is your horizon short-term, mid-term, or long-term?",
-        "investment_style": "Do you prefer value, growth, index, quality blue chips, or dividend style?",
-        "preferred_sectors": "Do you have preferred sectors or industries?",
-        "fundamental_filters": "Do you have clear PE, ROE, dividend yield, or cash flow requirements?",
+        "capital_amount": "capital",
+        "risk_tolerance": "risk preference",
+        "investment_horizon": "horizon",
+        "investment_style": "investment style",
+        "preferred_sectors": "sector preference",
+        "fundamental_filters": "screening filters",
     }
 
     if language == "zh":
-        questions = [zh_map[item] for item in missing if item in zh_map]
-        base = "我还缺少几项关键信息，暂时不适合直接给你分析结果。"
-        return base + (" ".join(questions) if questions else "请补充你的风险偏好、期限和筛选条件。")
+        labels = [zh_map[item] for item in missing if item in zh_map][:2]
+        if not labels:
+            return "请先补充风险偏好和投资期限，我就能继续生成正式建议。"
+        if len(labels) == 1:
+            return f"请先补充{labels[0]}，我就能继续生成正式建议。"
+        return f"请先补充{labels[0]}和{labels[1]}，我就能继续生成正式建议。"
 
-    questions = [en_map[item] for item in missing if item in en_map]
-    base = "I still need a few key details before giving you a reliable analysis. "
-    return base + (" ".join(questions) if questions else "Please share your risk profile, horizon, and key filters.")
+    labels = [en_map[item] for item in missing if item in en_map][:2]
+    if not labels:
+        return "Please add risk preference and horizon so I can continue."
+    if len(labels) == 1:
+        return f"Please add {labels[0]} so I can continue."
+    return f"Please add {labels[0]} and {labels[1]} so I can continue."

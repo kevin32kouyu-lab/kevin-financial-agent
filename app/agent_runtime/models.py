@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from datetime import date
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +45,27 @@ class AgentLlmOptions(BaseModel):
     base_url: str | None = None
 
 
+class AgentMemoryContext(BaseModel):
+    """轻量记忆：只保留最近一次稳定可复用的偏好。"""
+
+    capital_amount: int | None = None
+    currency: str | None = None
+    risk_tolerance: str | None = None
+    investment_horizon: str | None = None
+    investment_style: str | None = None
+    preferred_sectors: list[str] = Field(default_factory=list)
+    preferred_industries: list[str] = Field(default_factory=list)
+    explicit_tickers: list[str] = Field(default_factory=list)
+
+
+class ResearchContext(BaseModel):
+    research_mode: Literal["realtime", "historical"] = "realtime"
+    as_of_date: date | None = None
+
+
 class AgentRunRequest(BaseModel):
     query: str = Field(min_length=1)
     options: PipelineOptions = Field(default_factory=PipelineOptions)
     llm: AgentLlmOptions = Field(default_factory=AgentLlmOptions)
+    research_context: ResearchContext = Field(default_factory=ResearchContext)
+    memory_context: AgentMemoryContext | None = None

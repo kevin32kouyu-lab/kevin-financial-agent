@@ -9,6 +9,9 @@ interface StagePanelProps {
 }
 
 export function StagePanel({ locale, copy, steps }: StagePanelProps) {
+  const resolveStageLabel = (stepKey: string, fallbackLabel: string) =>
+    copy.debug.stageLabels[stepKey] || repairText(fallbackLabel);
+
   return (
     <section className="panel-surface debug-card">
       <div className="section-head">
@@ -25,7 +28,7 @@ export function StagePanel({ locale, copy, steps }: StagePanelProps) {
               <div className="stage-head">
                 <div>
                   <p className="stage-index">{locale === "zh" ? `阶段 ${step.position}` : `STEP ${step.position}`}</p>
-                  <h3>{repairText(step.label)}</h3>
+                  <h3>{resolveStageLabel(step.step_key, step.label)}</h3>
                 </div>
                 <div className="chip-row">
                   <span className={`chip status-${step.status}`}>{formatRunStatus(step.status, locale)}</span>

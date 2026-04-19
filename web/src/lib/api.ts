@@ -1,13 +1,19 @@
 import type {
+  BacktestCreateRequest,
+  BacktestDetail,
+  BacktestListResponse,
   DataStatus,
   DeleteRunsResponse,
   HistoryFilters,
+  PreferenceUpdateRequest,
   RunArtifactsResponse,
+  RunAuditSummary,
   RunCreateRequest,
   RunDetailResponse,
   RunEvent,
   RunListResponse,
   RuntimeConfig,
+  UserPreferenceSummary,
 } from "./types";
 
 const EVENT_TYPES = [
@@ -18,6 +24,7 @@ const EVENT_TYPES = [
   "step.completed",
   "run.completed",
   "run.failed",
+  "run.cancelled",
   "run.needs_clarification",
 ];
 
@@ -60,7 +67,7 @@ async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T
       const text = await response.text();
       detail = text || detail;
     }
-    throw new Error(detail || "请求失败");
+    throw new Error(detail || "Request failed");
   }
 
   if (response.status === 204) {
@@ -85,12 +92,31 @@ export function listRuns(filters: HistoryFilters, limit = 20) {
   return requestJson<RunListResponse>(`/api/runs?${params.toString()}`);
 }
 
+export function listRunHistory(filters: HistoryFilters, limit = 20) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (filters.search.trim()) {
+    params.set("search", filters.search.trim());
+  }
+  if (filters.mode.trim()) {
+    params.set("mode", filters.mode.trim());
+  }
+  if (filters.status.trim()) {
+    params.set("status", filters.status.trim());
+  }
+  return requestJson<RunListResponse>(`/api/v1/runs/history?${params.toString()}`);
+}
+
 export function getRunDetail(runId: string) {
   return requestJson<RunDetailResponse>(`/api/runs/${runId}`);
 }
 
 export function getRunArtifacts(runId: string) {
   return requestJson<RunArtifactsResponse>(`/api/runs/${runId}/artifacts`);
+}
+
+export function getRunAuditSummary(runId: string) {
+  return requestJson<RunAuditSummary>(`/api/v1/runs/${runId}/audit-summary`);
 }
 
 export function createRun(payload: RunCreateRequest) {
@@ -102,6 +128,12 @@ export function createRun(payload: RunCreateRequest) {
 
 export function retryRun(runId: string) {
   return requestJson<RunDetailResponse>(`/api/runs/${runId}/retry`, {
+    method: "POST",
+  });
+}
+
+export function cancelRun(runId: string) {
+  return requestJson<RunDetailResponse>(`/api/runs/${runId}/cancel`, {
     method: "POST",
   });
 }
@@ -127,6 +159,17 @@ export function getRuntimeConfig() {
   return requestJson<RuntimeConfig>("/api/v1/agent/runtime-config");
 }
 
+export function getProfilePreferences() {
+  return requestJson<UserPreferenceSummary>("/api/v1/profile/preferences");
+}
+
+export function updateProfilePreferences(payload: PreferenceUpdateRequest) {
+  return requestJson<UserPreferenceSummary>("/api/v1/profile/preferences", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getDataStatus() {
   return requestJson<DataStatus>("/api/v1/data/status");
 }
@@ -134,6 +177,24 @@ export function getDataStatus() {
 export function refreshDataStatus() {
   return requestJson<DataStatus>("/api/v1/data/refresh", {
     method: "POST",
+  });
+}
+
+export function listBacktests(sourceRunId: string, limit = 5) {
+  const params = new URLSearchParams();
+  params.set("source_run_id", sourceRunId);
+  params.set("limit", String(limit));
+  return requestJson<BacktestListResponse>(`/api/v1/backtests?${params.toString()}`);
+}
+
+export function getBacktest(backtestId: string) {
+  return requestJson<BacktestDetail>(`/api/v1/backtests/${backtestId}`);
+}
+
+export function createBacktest(payload: BacktestCreateRequest) {
+  return requestJson<BacktestDetail>("/api/v1/backtests", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

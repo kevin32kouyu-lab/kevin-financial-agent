@@ -1,3 +1,4 @@
+/** 研究终端主 Hook：负责运行、历史、回测、轻量记忆和演示场景。 */
 import {
   startTransition,
   useDeferredValue,
@@ -12,12 +13,15 @@ import {
   clearRuns,
   createBacktest,
   createRun,
+  getProfilePreferences,
+  getRunAuditSummary,
   getBacktest,
   getDataStatus,
   getRunArtifacts,
   getRunDetail,
   getRuntimeConfig,
   listBacktests,
+  listRunHistory,
   listRuns,
   openRunEventStream,
   refreshDataStatus,
@@ -25,7 +29,14 @@ import {
 } from "../lib/api";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
+import {
+  buildMemoryFromParsedIntent,
+  getDemoScenarios,
+  readIntentMemory,
+  writeIntentMemory,
+} from "../lib/terminalMemory";
 import type {
+  AgentMemoryContext,
   AgentFormState,
   ArtifactRecord,
   BacktestDetail,
@@ -33,6 +44,7 @@ import type {
   DataStatus,
   HistoryFilters,
   Locale,
+  RunAuditSummary,
   RunDetailResponse,
   RunEvent,
   RunMode,
@@ -46,15 +58,12 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "needs_clarification",
 const LOCALE_STORAGE_KEY = "financial-agent-locale";
 const MODE_STORAGE_KEY = "financial-agent-terminal-mode";
 
-const AGENT_SAMPLES: Record<Locale, string> = {
-  zh: "我有 50000 美元，想找适合长期持有的低风险分红股。请优先比较 JNJ、PG、KO，并给我一份正式的投资研究结论，包括估值、ROE、自由现金流、主要风险和执行建议。",
-  en: "I have 50000 USD and want a long-term low-risk dividend portfolio. Compare JNJ, PG and KO, then give me a formal investment memo covering valuation, ROE, cash flow, key risks and execution advice.",
-};
-
 const DEFAULT_AGENT_FORM: AgentFormState = {
   query: "",
   maxResults: 5,
   fetchLiveData: true,
+  allocationMode: "score_weighted",
+  customWeights: "",
 };
 
 const DEFAULT_STRUCTURED_FORM: StructuredFormState = {
@@ -112,6 +121,70 @@ function toOptionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseCustomWeights(raw: string): Record<string, number> {
+  const parsed: Record<string, number> = {};
+  const chunks = raw
+    .split(/[\n,;，；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  for (const chunk of chunks) {
+    const parts = chunk.split(/[:：=]/).map((item) => item.trim());
+    if (parts.length < 2) continue;
+    const ticker = parts[0]?.toUpperCase();
+    const weight = Number(parts[1]);
+    if (!ticker || !Number.isFinite(weight) || weight < 0) continue;
+    parsed[ticker] = weight;
+  }
+  return parsed;
+}
+
+function toMemoryRequest(memory: ReturnType<typeof readIntentMemory>): AgentMemoryContext | null {
+  if (!memory) return null;
+  return {
+    capital_amount: memory.capital_amount || null,
+    currency: memory.currency || null,
+    risk_tolerance: memory.risk_tolerance || null,
+    investment_horizon: memory.investment_horizon || null,
+    investment_style: memory.investment_style || null,
+    preferred_sectors: memory.preferred_sectors || [],
+    preferred_industries: memory.preferred_industries || [],
+    explicit_tickers: memory.explicit_tickers || [],
+  };
+}
+
+function toStoredMemoryFromPreferences(
+  locale: Locale,
+  payload: {
+    updated_at?: string;
+    values?: Record<string, unknown>;
+  } | null,
+) {
+  const values = payload?.values || {};
+  if (!payload) return null;
+  return {
+    locale,
+    capital_amount: Number(values.capital_amount || 0) || null,
+    currency: String(values.currency || "").trim() || null,
+    risk_tolerance: String(values.risk_tolerance || "").trim() || null,
+    investment_horizon: String(values.investment_horizon || "").trim() || null,
+    investment_style: String(values.investment_style || "").trim() || null,
+    preferred_sectors: Array.isArray(values.preferred_sectors) ? values.preferred_sectors.map(String) : [],
+    preferred_industries: Array.isArray(values.preferred_industries) ? values.preferred_industries.map(String) : [],
+    explicit_tickers: Array.isArray(values.explicit_tickers) ? values.explicit_tickers.map(String) : [],
+    savedAt: String(payload.updated_at || new Date().toISOString()),
+  };
+}
+
+function needsBacktestUpgrade(detail: BacktestDetail | null): boolean {
+  if (!detail) return false;
+  const meta = (detail.meta || {}) as Record<string, unknown>;
+  const schemaVersion = Number(meta.schema_version ?? 0);
+  if (!Number.isFinite(schemaVersion) || schemaVersion < 2) return true;
+  if ((detail.summary.requested_count || 0) <= 0) return true;
+  if ((detail.summary.coverage_count || 0) <= 0) return true;
+  return detail.positions.some((item) => !Array.isArray(item.timeseries) || item.timeseries.length === 0);
+}
+
 function buildStructuredPayload(form: StructuredFormState) {
   return {
     risk_profile: { tolerance_level: form.riskLevel },
@@ -142,10 +215,14 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [terminalMode, setTerminalMode] = useState<TerminalMode>(initialTerminalMode);
   const copy = getLocalePack(locale);
   const t = (zhText: string, enText: string) => (locale === "zh" ? zhText : enText);
+  const [memoryPreview, setMemoryPreview] = useState(() => readIntentMemory(initialLocale()));
+  const demoScenarios = getDemoScenarios(locale);
 
   const [mode, setMode] = useState<RunMode>(defaultMode);
   const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+  const [profilePreferences, setProfilePreferences] = useState<Record<string, unknown> | null>(null);
+  const [auditSummary, setAuditSummary] = useState<RunAuditSummary | null>(null);
 
   const [agentForm, setAgentFormState] = useState<AgentFormState>(DEFAULT_AGENT_FORM);
   const [structuredForm, setStructuredFormState] = useState<StructuredFormState>(DEFAULT_STRUCTURED_FORM);
@@ -164,6 +241,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [backtestDetail, setBacktestDetail] = useState<BacktestDetail | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestCreating, setBacktestCreating] = useState(false);
+  const [isBacktestAutoUpgrading, setIsBacktestAutoUpgrading] = useState(false);
 
   const [statusText, setStatusText] = useState(copy.status.ready);
   const [errorText, setErrorText] = useState("");
@@ -188,10 +266,20 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
 
   const loadTerminalMeta = useEffectEvent(async () => {
     try {
-      const [runtimeResponse, dataResponse] = await Promise.all([getRuntimeConfig(), getDataStatus()]);
+      const [runtimeResponse, dataResponse, preferenceResponse] = await Promise.all([
+        getRuntimeConfig(),
+        getDataStatus(),
+        getProfilePreferences().catch(() => null),
+      ]);
+      const nextMemory = toStoredMemoryFromPreferences(locale, preferenceResponse as { updated_at?: string; values?: Record<string, unknown> } | null);
       startTransition(() => {
         setRuntime(runtimeResponse);
         setDataStatus(dataResponse);
+        setProfilePreferences(preferenceResponse as Record<string, unknown> | null);
+        if (nextMemory) {
+          setMemoryPreview(nextMemory);
+          writeIntentMemory(nextMemory);
+        }
       });
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取终端环境失败。", "Failed to load terminal runtime."));
@@ -201,7 +289,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const loadHistory = useEffectEvent(async (nextFilters: HistoryFilters) => {
     setHistoryLoading(true);
     try {
-      const response = await listRuns(nextFilters, 20);
+      const response = await listRunHistory(nextFilters, 20).catch(() => listRuns(nextFilters, 20));
       startTransition(() => setHistory(response.items));
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取历史报告失败。", "Failed to load report history."));
@@ -293,10 +381,15 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const loadRunBundle = useEffectEvent(async (runId: string) => {
     setRunLoading(true);
     try {
-      const [detailResponse, artifactResponse] = await Promise.all([getRunDetail(runId), getRunArtifacts(runId)]);
+      const [detailResponse, artifactResponse, auditResponse] = await Promise.all([
+        getRunDetail(runId),
+        getRunArtifacts(runId),
+        getRunAuditSummary(runId).catch(() => null),
+      ]);
       startTransition(() => {
         setRunDetail(detailResponse);
         setArtifacts(artifactResponse.artifacts);
+        setAuditSummary(auditResponse);
         setSelectedArtifactId((current) =>
           artifactResponse.artifacts.some((artifact) => artifact.id === current)
             ? current
@@ -305,6 +398,46 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         setMode(detailResponse.run.mode);
       });
 
+      const resultRecord = (detailResponse.result || {}) as Record<string, unknown>;
+      const storedPreferences =
+        resultRecord.stored_preferences && typeof resultRecord.stored_preferences === "object"
+          ? (resultRecord.stored_preferences as Record<string, unknown>)
+          : null;
+      const parsedIntent =
+        resultRecord.parsed_intent && typeof resultRecord.parsed_intent === "object"
+          ? (resultRecord.parsed_intent as Record<string, unknown>)
+          : null;
+      const systemContext =
+        parsedIntent?.system_context && typeof parsedIntent.system_context === "object"
+          ? (parsedIntent.system_context as Record<string, unknown>)
+          : null;
+      const intentLocale = String(systemContext?.language || locale) === "en" ? "en" : "zh";
+      const nextMemory = buildMemoryFromParsedIntent(parsedIntent, intentLocale);
+      const nextMemoryFromServer = toStoredMemoryFromPreferences(intentLocale, storedPreferences as { updated_at?: string; values?: Record<string, unknown> } | null);
+      if (detailResponse.run.mode === "agent" && (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")) {
+        if (storedPreferences) {
+          startTransition(() => setProfilePreferences(storedPreferences));
+        }
+      }
+      if ((nextMemoryFromServer || nextMemory) && detailResponse.run.mode === "agent" && (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")) {
+        const finalMemory = nextMemoryFromServer || nextMemory;
+        if (finalMemory) {
+          writeIntentMemory(finalMemory);
+          startTransition(() => {
+            if (finalMemory.locale === locale) {
+              setMemoryPreview(finalMemory);
+            }
+          });
+        }
+      } else if (nextMemory && detailResponse.run.mode === "agent" && detailResponse.run.status === "completed") {
+        writeIntentMemory(nextMemory);
+        startTransition(() => {
+          if (nextMemory.locale === locale) {
+            setMemoryPreview(nextMemory);
+          }
+        });
+      }
+
       if (detailResponse.run.status === "completed") {
         const existing = await loadBacktest(runId);
         const result = detailResponse.result || {};
@@ -312,6 +445,26 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
           result && typeof result === "object" ? ((result as Record<string, unknown>).research_context as Record<string, unknown> | undefined) : undefined;
         const researchMode = String(researchContext?.research_mode || "realtime");
         const runAsOfDate = String(researchContext?.as_of_date || "");
+        if (existing && needsBacktestUpgrade(existing)) {
+          setIsBacktestAutoUpgrading(true);
+          try {
+            const meta = (existing.meta || {}) as Record<string, unknown>;
+            const backtestKind = String(meta.backtest_kind || (researchMode === "historical" ? "replay" : "reference")) as BacktestMode;
+            const currentEntry = existing.summary.entry_date || referenceStartDate;
+            const currentEnd = existing.summary.end_date || historicalBacktestEndDate || todayIso();
+            if (backtestKind === "reference") {
+              const safeEnd = currentEnd > currentEntry ? currentEnd : plusDaysIso(currentEntry, 1);
+              await runBacktest(runId, "reference", currentEntry, safeEnd);
+            } else {
+              const anchor = runAsOfDate || asOfDate;
+              const safeEnd = anchor && currentEnd <= anchor ? plusDaysIso(anchor, 1) : currentEnd;
+              await runBacktest(runId, "replay", null, safeEnd);
+            }
+            await loadBacktest(runId);
+          } finally {
+            setIsBacktestAutoUpgrading(false);
+          }
+        }
 
         if (!existing && researchMode === "historical") {
           let replayEnd = historicalBacktestEndDate || todayIso();
@@ -393,6 +546,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   }, [locale]);
 
   useEffect(() => {
+    setMemoryPreview(readIntentMemory(locale));
+  }, [locale]);
+
+  useEffect(() => {
     if (typeof window !== "undefined") window.localStorage.setItem(MODE_STORAGE_KEY, terminalMode);
   }, [terminalMode]);
 
@@ -427,8 +584,9 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     };
   }, []);
 
-  const createAgentRun = async () => {
-    if (!agentForm.query.trim()) {
+  const createAgentRun = async (queryOverride?: string) => {
+    const effectiveQuery = (queryOverride ?? agentForm.query).trim();
+    if (!effectiveQuery) {
       setErrorText(locale === "zh" ? "请先输入投资问题。" : "Please enter an investment request first.");
       return;
     }
@@ -452,6 +610,23 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       );
       return;
     }
+    const customWeights = agentForm.allocationMode === "custom_weight" ? parseCustomWeights(agentForm.customWeights) : {};
+    if (agentForm.allocationMode === "custom_weight") {
+      const values = Object.values(customWeights);
+      const total = values.reduce((sum, item) => sum + item, 0);
+      if (!values.length) {
+        setErrorText(locale === "zh" ? "请先填写自定义仓位，例如 MSFT:40, NVDA:60" : "Please set custom weights first, e.g. MSFT:40, NVDA:60.");
+        return;
+      }
+      if (Math.abs(total - 100) > 0.1) {
+        setErrorText(
+          locale === "zh"
+            ? "自定义仓位总和需要等于 100%。"
+            : "Custom weights must sum to 100%.",
+        );
+        return;
+      }
+    }
 
     setCreatingRun(true);
     setErrorText("");
@@ -460,15 +635,18 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       const detail = await createRun({
         mode: "agent",
         agent: {
-          query: agentForm.query.trim(),
+          query: effectiveQuery,
           options: {
             fetch_live_data: terminalMode === "historical" ? true : agentForm.fetchLiveData,
-            max_results: agentForm.maxResults,
+            max_results: Math.min(5, Math.max(1, Number(agentForm.maxResults) || 5)),
+            allocation_mode: agentForm.allocationMode,
+            custom_weights: agentForm.allocationMode === "custom_weight" ? customWeights : undefined,
           },
           research_context: {
             research_mode: terminalMode,
             as_of_date: terminalMode === "historical" ? asOfDate || null : null,
           },
+          memory_context: toMemoryRequest(memoryPreview),
           llm: {},
         },
       });
@@ -476,12 +654,16 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setRunDetail(detail);
       setArtifacts([]);
       setEvents([]);
+      setAuditSummary(null);
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode("agent");
       await loadHistory({ ...filters, search: deferredSearch });
       void loadRunBundle(detail.run.id);
       connectRunEvents(detail.run.id);
+      if (queryOverride) {
+        setAgentFormState((current) => ({ ...current, query: effectiveQuery }));
+      }
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("创建报告失败。", "Failed to create report."));
     } finally {
@@ -502,6 +684,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setRunDetail(detail);
       setArtifacts([]);
       setEvents([]);
+      setAuditSummary(null);
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode("structured");
@@ -526,6 +709,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setRunDetail(detail);
       setArtifacts([]);
       setEvents([]);
+      setAuditSummary(null);
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode(detail.run.mode);
@@ -585,6 +769,23 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
+  const applyDemoScenario = (scenarioId: string) => {
+    const scenario = demoScenarios.find((item) => item.id === scenarioId);
+    if (!scenario) return;
+    setTerminalMode(scenario.terminalMode);
+    setAgentFormState({
+      ...DEFAULT_AGENT_FORM,
+      query: scenario.query,
+    });
+    if (scenario.referenceStartDate) {
+      setReferenceStartDate(scenario.referenceStartDate);
+    }
+    if (scenario.terminalMode === "historical") {
+      setAsOfDate(scenario.asOfDate || daysAgoIso(180));
+      setHistoricalBacktestEndDate(scenario.historicalEndDate || todayIso());
+    }
+  };
+
   return {
     locale,
     setLocale,
@@ -601,6 +802,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     setMode,
     runtime,
     dataStatus,
+    profilePreferences,
+    auditSummary,
     agentForm,
     structuredForm,
     history,
@@ -612,10 +815,13 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     backtestDetail,
     backtestLoading,
     backtestCreating,
+    isBacktestAutoUpgrading,
     selectedArtifactId,
     selectedArtifactKind,
     statusText,
     errorText,
+    memoryPreview,
+    demoScenarios,
     creatingRun,
     cancelingRun,
     retryingRun,
@@ -639,7 +845,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     refreshHistory: () => loadHistory({ ...filters, search: deferredSearch }),
     loadBacktest,
     runBacktest,
-    fillAgentSample: () => setAgentFormState({ ...DEFAULT_AGENT_FORM, query: AGENT_SAMPLES[locale] }),
+    applyDemoScenario,
+    fillAgentSample: () => applyDemoScenario(demoScenarios[0]?.id || "steady-income"),
     fillStructuredSample: () =>
       setStructuredFormState({
         ...DEFAULT_STRUCTURED_FORM,

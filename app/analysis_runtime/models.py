@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from datetime import date
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,8 @@ class ExplicitTargets(BaseModel):
 class PipelineOptions(BaseModel):
     fetch_live_data: bool = True
     max_results: int = Field(default=5, ge=1, le=20)
+    allocation_mode: Literal["score_weighted", "equal_weight", "custom_weight"] = "score_weighted"
+    custom_weights: dict[str, float] = Field(default_factory=dict)
 
 
 class DebugAnalysisRequest(BaseModel):
@@ -41,3 +44,5 @@ class DebugAnalysisRequest(BaseModel):
     explicit_targets: ExplicitTargets = Field(default_factory=ExplicitTargets)
     portfolio_sizing: dict[str, Any] = Field(default_factory=dict)
     options: PipelineOptions = Field(default_factory=PipelineOptions)
+    research_mode: str = "realtime"
+    as_of_date: date | None = None

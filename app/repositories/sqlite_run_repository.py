@@ -5,7 +5,19 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.domain.contracts import ArtifactRecord, RunDetail, RunEventRecord, RunStepRecord, RunSummary, utc_now_iso
+from app.domain.contracts import (
+    ArtifactRecord,
+    BacktestDetail,
+    BacktestMetrics,
+    BacktestPoint,
+    BacktestPosition,
+    BacktestSummary,
+    RunDetail,
+    RunEventRecord,
+    RunStepRecord,
+    RunSummary,
+    utc_now_iso,
+)
 
 
 class SqliteRunRepository:
@@ -84,9 +96,46 @@ class SqliteRunRepository:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS backtests (
+                    id TEXT PRIMARY KEY,
+                    source_run_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    entry_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    benchmark_ticker TEXT NOT NULL DEFAULT 'SPY',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL,
+                    positions_json TEXT NOT NULL,
+                    meta_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS backtest_points (
+                    backtest_id TEXT NOT NULL,
+                    point_date TEXT NOT NULL,
+                    portfolio_value REAL NOT NULL,
+                    benchmark_value REAL NOT NULL,
+                    portfolio_return_pct REAL NOT NULL,
+                    benchmark_return_pct REAL NOT NULL,
+                    PRIMARY KEY (backtest_id, point_date)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    profile_id TEXT PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    source_run_id TEXT,
+                    source_query TEXT,
+                    research_mode TEXT,
+                    locale TEXT NOT NULL DEFAULT 'zh',
+                    memory_applied_fields_json TEXT NOT NULL DEFAULT '[]',
+                    values_json TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_status_created_at ON runs(status, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_run_events_run_id_id ON run_events(run_id, id);
                 CREATE INDEX IF NOT EXISTS idx_run_steps_run_id_position ON run_steps(run_id, position);
+                CREATE INDEX IF NOT EXISTS idx_backtests_source_run_updated_at ON backtests(source_run_id, updated_at DESC);
                 """
             )
 
@@ -100,6 +149,10 @@ class SqliteRunRepository:
             self._ensure_column(conn, "run_steps", "input_json", "TEXT")
             self._ensure_column(conn, "run_steps", "output_json", "TEXT")
             self._ensure_column(conn, "run_steps", "error_json", "TEXT")
+            self._ensure_column(conn, "user_preferences", "source_query", "TEXT")
+            self._ensure_column(conn, "user_preferences", "research_mode", "TEXT")
+            self._ensure_column(conn, "user_preferences", "locale", "TEXT NOT NULL DEFAULT 'zh'")
+            self._ensure_column(conn, "user_preferences", "memory_applied_fields_json", "TEXT NOT NULL DEFAULT '[]'")
 
     def create_run(
         self,
@@ -445,6 +498,214 @@ class SqliteRunRepository:
             steps=self.list_steps(run_id),
             artifacts=self.list_artifacts(run_id),
             result=self.get_artifact_content(run_id, kind="snapshot", name="current"),
+        )
+
+    def replace_backtest(
+        self,
+        *,
+        backtest_id: str,
+        source_run_id: str,
+        title: str,
+        status: str,
+        entry_date: str,
+        end_date: str,
+        metrics: dict[str, Any],
+        positions: list[dict[str, Any]],
+        points: list[dict[str, Any]],
+        meta: dict[str, Any] | None = None,
+        benchmark_ticker: str = "SPY",
+    ) -> None:
+        timestamp = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO backtests (
+                    id, source_run_id, title, status, entry_date, end_date, benchmark_ticker,
+                    created_at, updated_at, metrics_json, positions_json, meta_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    source_run_id = excluded.source_run_id,
+                    title = excluded.title,
+                    status = excluded.status,
+                    entry_date = excluded.entry_date,
+                    end_date = excluded.end_date,
+                    benchmark_ticker = excluded.benchmark_ticker,
+                    updated_at = excluded.updated_at,
+                    metrics_json = excluded.metrics_json,
+                    positions_json = excluded.positions_json,
+                    meta_json = excluded.meta_json
+                """,
+                (
+                    backtest_id,
+                    source_run_id,
+                    title,
+                    status,
+                    entry_date,
+                    end_date,
+                    benchmark_ticker,
+                    timestamp,
+                    timestamp,
+                    self._dump_json(metrics),
+                    self._dump_json(positions),
+                    self._dump_json(meta or {}),
+                ),
+            )
+            conn.execute("DELETE FROM backtest_points WHERE backtest_id = ?", (backtest_id,))
+            conn.executemany(
+                """
+                INSERT INTO backtest_points (
+                    backtest_id, point_date, portfolio_value, benchmark_value,
+                    portfolio_return_pct, benchmark_return_pct
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        backtest_id,
+                        point["point_date"],
+                        point["portfolio_value"],
+                        point["benchmark_value"],
+                        point["portfolio_return_pct"],
+                        point["benchmark_return_pct"],
+                    )
+                    for point in points
+                ],
+            )
+
+    def _build_backtest_summary(self, row: sqlite3.Row) -> BacktestSummary:
+        metrics = BacktestMetrics.model_validate(self._load_json(row["metrics_json"]) or {})
+        meta_payload = self._load_json(row["meta_json"]) or {}
+        return BacktestSummary(
+            id=row["id"],
+            source_run_id=row["source_run_id"],
+            title=row["title"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            entry_date=row["entry_date"],
+            end_date=row["end_date"],
+            benchmark_ticker=row["benchmark_ticker"] or "SPY",
+            metrics=metrics,
+            requested_count=int(meta_payload.get("requested_count") or 0),
+            coverage_count=int(meta_payload.get("coverage_count") or 0),
+            dropped_tickers=meta_payload.get("dropped_tickers") or [],
+        )
+
+    def list_backtests(self, *, source_run_id: str | None = None, limit: int = 20) -> list[BacktestSummary]:
+        query = "SELECT * FROM backtests"
+        params: list[Any] = []
+        if source_run_id:
+            query += " WHERE source_run_id = ?"
+            params.append(source_run_id)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._build_backtest_summary(row) for row in rows]
+
+    def get_user_preferences(self, profile_id: str = "default") -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM user_preferences WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "profile_id": row["profile_id"],
+            "updated_at": row["updated_at"],
+            "source_run_id": row["source_run_id"],
+            "source_query": row["source_query"],
+            "research_mode": row["research_mode"],
+            "locale": row["locale"] or "zh",
+            "memory_applied_fields": self._load_json(row["memory_applied_fields_json"]) or [],
+            "values": self._load_json(row["values_json"]) or {},
+        }
+
+    def upsert_user_preferences(
+        self,
+        *,
+        profile_id: str = "default",
+        values: dict[str, Any],
+        source_run_id: str | None = None,
+        source_query: str | None = None,
+        research_mode: str | None = None,
+        locale: str = "zh",
+        memory_applied_fields: list[str] | None = None,
+    ) -> dict[str, Any]:
+        timestamp = utc_now_iso()
+        payload = {
+            "profile_id": profile_id,
+            "updated_at": timestamp,
+            "source_run_id": source_run_id,
+            "source_query": source_query,
+            "research_mode": research_mode,
+            "locale": locale,
+            "memory_applied_fields": list(memory_applied_fields or []),
+            "values": values,
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_preferences (
+                    profile_id, updated_at, source_run_id, source_query, research_mode,
+                    locale, memory_applied_fields_json, values_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    source_run_id = excluded.source_run_id,
+                    source_query = excluded.source_query,
+                    research_mode = excluded.research_mode,
+                    locale = excluded.locale,
+                    memory_applied_fields_json = excluded.memory_applied_fields_json,
+                    values_json = excluded.values_json
+                """,
+                (
+                    profile_id,
+                    timestamp,
+                    source_run_id,
+                    source_query,
+                    research_mode,
+                    locale,
+                    self._dump_json(payload["memory_applied_fields"]),
+                    self._dump_json(values),
+                ),
+            )
+        return payload
+
+    def get_backtest(self, backtest_id: str) -> BacktestDetail | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM backtests WHERE id = ?", (backtest_id,)).fetchone()
+            if not row:
+                return None
+            point_rows = conn.execute(
+                """
+                SELECT * FROM backtest_points
+                WHERE backtest_id = ?
+                ORDER BY point_date ASC
+                """,
+                (backtest_id,),
+            ).fetchall()
+
+        summary = self._build_backtest_summary(row)
+        positions_payload = self._load_json(row["positions_json"]) or []
+        meta_payload = self._load_json(row["meta_json"]) or {}
+        return BacktestDetail(
+            summary=summary,
+            positions=[BacktestPosition.model_validate(item) for item in positions_payload],
+            points=[
+                BacktestPoint(
+                    point_date=item["point_date"],
+                    portfolio_value=float(item["portfolio_value"]),
+                    benchmark_value=float(item["benchmark_value"]),
+                    portfolio_return_pct=float(item["portfolio_return_pct"]),
+                    benchmark_return_pct=float(item["benchmark_return_pct"]),
+                )
+                for item in point_rows
+            ],
+            meta=meta_payload,
         )
 
     def delete_runs(
