@@ -1,11 +1,9 @@
-/** 用户研究终端：提供三页化的正式研究前台。 */
-import { useEffect, useMemo, useState } from "react";
+/** 用户研究终端：提供四页化的正式研究前台。 */
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
-import { ProfileMemoryCard } from "../components/ProfileMemoryCard";
 import { ReportPanel } from "../components/ReportPanel";
-import { TerminalTrustPanels } from "../components/TerminalTrustPanels";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
@@ -15,21 +13,26 @@ import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 import { useResearchConsole } from "../hooks";
 
 type GenericRecord = Record<string, unknown>;
-type TerminalPage = "overview" | "backtest" | "archive";
-
-const ONBOARDING_STORAGE_KEY = "financial-agent-terminal-onboarding-v1";
+type TerminalPage = "ask" | "conclusion" | "backtest" | "archive";
 
 /** 根据路由判断当前终端页。 */
 function getTerminalPage(pathname: string): TerminalPage {
+  if (pathname.startsWith("/terminal/conclusion")) return "conclusion";
   if (pathname.startsWith("/terminal/backtest")) return "backtest";
   if (pathname.startsWith("/terminal/archive")) return "archive";
-  return "overview";
+  return "ask";
 }
 
 /** 生成终端子页地址，并保留当前 run。 */
 function buildTerminalHref(page: TerminalPage, runId?: string | null): string {
   const base =
-    page === "backtest" ? "/terminal/backtest" : page === "archive" ? "/terminal/archive" : "/terminal";
+    page === "conclusion"
+      ? "/terminal/conclusion"
+      : page === "backtest"
+        ? "/terminal/backtest"
+        : page === "archive"
+          ? "/terminal/archive"
+          : "/terminal";
   if (!runId) return base;
   const params = new URLSearchParams();
   params.set("run", runId);
@@ -243,8 +246,12 @@ function TerminalRouteTabs({
 }) {
   const items = [
     {
-      key: "overview" as const,
-      label: locale === "zh" ? "结论页" : "Conclusion",
+      key: "ask" as const,
+      label: locale === "zh" ? "开始研究" : "Start Research",
+    },
+    {
+      key: "conclusion" as const,
+      label: locale === "zh" ? "研究结论" : "Research Conclusion",
     },
     {
       key: "backtest" as const,
@@ -272,7 +279,7 @@ function TerminalRouteTabs({
 }
 
 /** 渲染结论页的首屏摘要。 */
-function OverviewSummary({
+function ConclusionSummary({
   locale,
   decisionSummary,
   activeRunId,
@@ -298,7 +305,7 @@ function OverviewSummary({
       <article className="panel-surface terminal-summary-panel">
         <div className="section-head terminal-page-head">
           <div>
-            <p className="eyebrow">{locale === "zh" ? "本次结论" : "Current conclusion"}</p>
+            <p className="eyebrow">{locale === "zh" ? "研究结论" : "Research conclusion"}</p>
             <h1 className="terminal-summary-title">
               {decisionSummary.topPick !== "N/A"
                 ? locale === "zh"
@@ -392,6 +399,35 @@ function OverviewSummary({
           </div>
         </article>
       </aside>
+    </section>
+  );
+}
+
+/** 渲染结论页没有绑定报告时的空状态。 */
+function ConclusionEmptyState({ locale }: { locale: "zh" | "en" }) {
+  return (
+    <section className="terminal-route-stack">
+      <article className="panel-surface terminal-route-header terminal-empty-panel">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">{locale === "zh" ? "研究结论" : "Research conclusion"}</p>
+            <h1>{locale === "zh" ? "这里会展示正式研究结果" : "Formal research results appear here"}</h1>
+            <p className="lead-copy">
+              {locale === "zh"
+                ? "先在“开始研究”页提出问题，或去历史页打开一条已有记录，系统会把结论和完整报告放在这里。"
+                : "Start from the ask page or open a saved run from the archive. The conclusion and the full report will appear here."}
+            </p>
+          </div>
+        </div>
+        <div className="terminal-summary-actions">
+          <Button variant="secondary" size="sm" asChild>
+            <a href={buildTerminalHref("ask")}>{locale === "zh" ? "去开始研究" : "Go to start research"}</a>
+          </Button>
+          <Button variant="secondary" size="sm" asChild>
+            <a href={buildTerminalHref("archive")}>{locale === "zh" ? "打开历史页" : "Open archive"}</a>
+          </Button>
+        </div>
+      </article>
     </section>
   );
 }
@@ -546,7 +582,7 @@ function ArchivePage({
                 </div>
                 <div className="button-row compact terminal-archive-actions">
                   <Button variant="secondary" size="sm" asChild>
-                    <a href={buildTerminalHref("overview", item.id)}>
+                    <a href={buildTerminalHref("conclusion", item.id)}>
                       {locale === "zh" ? "打开报告" : "Open report"}
                     </a>
                   </Button>
@@ -705,7 +741,7 @@ function BacktestPage({
 
 /** 终端主组件。 */
 export function TerminalView() {
-  const terminalPage = typeof window === "undefined" ? "overview" : getTerminalPage(window.location.pathname);
+  const terminalPage = typeof window === "undefined" ? "ask" : getTerminalPage(window.location.pathname);
   const {
     locale,
     setLocale,
@@ -720,12 +756,6 @@ export function TerminalView() {
     setHistoricalBacktestEndDate,
     dataStatus,
     profilePreferences,
-    profile,
-    profileDraft,
-    profileUpdatedAt,
-    profileLoading,
-    profileSaving,
-    profileClearing,
     auditSummary,
     agentForm,
     history,
@@ -734,41 +764,28 @@ export function TerminalView() {
     backtestDetail,
     backtestLoading,
     backtestCreating,
-    isBacktestAutoUpgrading,
     statusText,
     errorText,
-    memoryPreview,
     demoScenarios,
     creatingRun,
     cancelingRun,
-    refreshingData,
     historyLoading,
     runLoading,
     setAgentForm,
-    setProfileDraft,
     createAgentRun,
     cancelActiveRun,
     openRun,
-    refreshData,
     runBacktest,
     applyDemoScenario,
-    fillAgentSample,
-    saveProfileDraft,
-    resetProfileDraft,
-    clearStoredProfile,
   } = useResearchConsole("agent");
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
   const [motionLevel, setMotionLevel] = useState<"high" | "low">(() => (readMotionEnabled() ? "high" : "low"));
-  const [uiFeedbackState, setUiFeedbackState] = useState<
+  const [, setUiFeedbackState] = useState<
     "idle" | "queued" | "running" | "completed" | "failed" | "cancelled" | "needs_clarification"
   >("idle");
-  const [onboardingStep, setOnboardingStep] = useState(0);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [onboardingVisible, setOnboardingVisible] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "done";
-  });
   const [initialRunResolved, setInitialRunResolved] = useState(false);
+  const previousRunStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
     document.title = copy.terminal.title;
@@ -807,12 +824,8 @@ export function TerminalView() {
     setInitialRunResolved(true);
     if (preferredRunId) {
       void openRun(preferredRunId);
-      return;
     }
-    if (!activeRunId && history.length) {
-      void openRun(history[0].id);
-    }
-  }, [historyLoading, initialRunResolved, history, activeRunId, openRun]);
+  }, [historyLoading, initialRunResolved, openRun]);
 
   useEffect(() => {
     if (!initialRunResolved || typeof window === "undefined") return;
@@ -831,6 +844,22 @@ export function TerminalView() {
     }
   }, [runDetail?.run.status, activeRunId]);
 
+  useEffect(() => {
+    const currentStatus = runDetail?.run.status ?? null;
+    const previousStatus = previousRunStatusRef.current;
+    if (
+      typeof window !== "undefined" &&
+      terminalPage === "ask" &&
+      activeRunId &&
+      currentStatus === "completed" &&
+      (previousStatus === "queued" || previousStatus === "running")
+    ) {
+      setAgentForm({ query: "" });
+      window.location.assign(buildTerminalHref("conclusion", activeRunId));
+    }
+    previousRunStatusRef.current = currentStatus;
+  }, [terminalPage, activeRunId, runDetail?.run.status, setAgentForm]);
+
   const progress = computeProgress(runDetail?.run.status, runDetail?.steps.length || 0, runDetail?.run.mode);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
   const friendlyError = pickFriendlyError(errorText, locale);
@@ -838,14 +867,16 @@ export function TerminalView() {
   const result = runDetail?.result || null;
   const parsedIntent = asRecord(asRecord(result)?.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
-  const storedPreferences = asRecord(asRecord(result)?.stored_preferences);
   const followUpQuestion = toText(asRecord(result)?.follow_up_question, "");
   const missingFields = asStringArray(agentControl?.missing_critical_info).map((item) => readableField(locale, item));
-  const appliedMemoryFields = asStringArray(asRecord(result)?.memory_applied_fields);
-  const updatedMemoryFields = asStringArray(storedPreferences?.memory_applied_fields);
   const decisionSummary = buildDecisionSummary(result, copy, locale);
   const queryText = extractBoundQuery(result, agentForm.query, locale);
   const contextChips = buildContextChips(locale, terminalMode, asOfDate, referenceStartDate, runDetail?.run.status);
+  const runUpdatedAt = runDetail
+    ? formatDateTime(runDetail.run.updated_at, locale)
+    : locale === "zh"
+      ? "尚未开始"
+      : "Not started";
 
   const statusCopy = useMemo(() => {
     if (progress.textKey === "queued") return copy.terminal.queued;
@@ -897,14 +928,6 @@ export function TerminalView() {
     },
   ];
 
-  /** 关闭新手引导。 */
-  function closeOnboarding(remember: boolean) {
-    if (remember && typeof window !== "undefined") {
-      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "done");
-    }
-    setOnboardingVisible(false);
-  }
-
   /** 切换动效开关。 */
   function toggleMotion() {
     setMotionEnabled((value) => {
@@ -928,56 +951,6 @@ export function TerminalView() {
   return (
     <div className="terminal-route-shell">
       <MotionBackdrop enabled={motionEnabled} level={motionLevel} className="terminal-motion" />
-
-      {onboardingVisible ? (
-        <div className="onboarding-overlay">
-          <div className="onboarding-modal">
-            <p className="eyebrow">{copy.terminal.onboarding.eyebrow}</p>
-            <h2>{copy.terminal.onboarding.title}</h2>
-            <div className="onboarding-steps">
-              {onboardingSteps.map((item, index) => (
-                <button
-                  type="button"
-                  key={item.title}
-                  className={index === onboardingStep ? "onboarding-step active" : "onboarding-step"}
-                  onClick={() => setOnboardingStep(index)}
-                >
-                  <span>{index + 1}</span>
-                  <strong>{item.title}</strong>
-                </button>
-              ))}
-            </div>
-            <p className="lead-copy">{onboardingSteps[onboardingStep]?.body}</p>
-            <div className="button-row">
-              <button type="button" className="secondary-button" onClick={() => closeOnboarding(true)}>
-                {copy.terminal.onboarding.skip}
-              </button>
-              {onboardingStep > 0 ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setOnboardingStep((value) => Math.max(0, value - 1))}
-                >
-                  {copy.terminal.onboarding.prev}
-                </button>
-              ) : null}
-              {onboardingStep < onboardingSteps.length - 1 ? (
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={() => setOnboardingStep((value) => Math.min(onboardingSteps.length - 1, value + 1))}
-                >
-                  {copy.terminal.onboarding.next}
-                </button>
-              ) : (
-                <button type="button" className="primary-button" onClick={() => closeOnboarding(true)}>
-                  {copy.terminal.onboarding.done}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <header className="front-topbar terminal-topbar">
         <div className="front-brand">
@@ -1003,81 +976,23 @@ export function TerminalView() {
 
       <TerminalRouteTabs locale={locale} activePage={terminalPage} activeRunId={activeRunId} />
 
-      {terminalPage === "overview" ? (
+      {terminalPage === "ask" ? (
         <>
-          <OverviewSummary
-            locale={locale}
-            decisionSummary={decisionSummary}
-            activeRunId={activeRunId}
-            queryText={queryText}
-            contextChips={contextChips}
-            progress={progress}
-            uiStage={uiStage}
-            statusCopy={statusCopy}
-            runUpdatedAt={runDetail ? formatDateTime(runDetail.run.updated_at, locale) : "N/A"}
-          />
-
-          <TerminalTrustPanels locale={locale} result={result} memoryPreview={memoryPreview} />
-
-          <ProfileMemoryCard
-            locale={locale}
-            profile={profile}
-            draft={profileDraft}
-            updatedAt={profileUpdatedAt}
-            loading={profileLoading}
-            saving={profileSaving}
-            clearing={profileClearing}
-            appliedFields={appliedMemoryFields}
-            updatedFields={updatedMemoryFields}
-            onChange={setProfileDraft}
-            onSave={saveProfileDraft}
-            onReset={resetProfileDraft}
-            onClear={clearStoredProfile}
-          />
-
-          {runDetail?.run.status === "needs_clarification" ? (
-            <ClarificationContinueCard
-              locale={locale}
-              followUpQuestion={followUpQuestion}
-              missingFields={missingFields}
-              clarificationAnswer={clarificationAnswer}
-              setClarificationAnswer={setClarificationAnswer}
-              onContinue={continueClarifiedResearch}
-              creatingRun={creatingRun}
-              profilePreferences={profilePreferences}
-            />
-          ) : null}
-
-          <section className="terminal-overview-grid">
-            <article className="panel-surface terminal-input-panel">
+          <section className="terminal-page-grid terminal-ask-grid">
+            <article className="panel-surface terminal-ask-panel">
               <div className="section-head">
                 <div>
-                  <p className="eyebrow">{copy.control.launchpad}</p>
-                  <h2>{copy.control.launchpadTitle}</h2>
-                  <p className="section-note">{copy.control.launchpadNote}</p>
+                  <p className="eyebrow">{locale === "zh" ? "开始研究" : "Start research"}</p>
+                  <h1 className="terminal-ask-title">
+                    {locale === "zh" ? "直接写下你的投资问题" : "Ask your investment question directly"}
+                  </h1>
+                  <p className="section-note terminal-ask-note">
+                    {locale === "zh"
+                      ? "这一页只负责提问、查看进度和补充必要信息。系统理解、长期记忆和覆盖说明不再占用你的首屏。"
+                      : "This page focuses on asking, tracking progress, and supplying follow-up details only. System-side context stays out of the way."}
+                  </p>
                 </div>
-                {!onboardingVisible ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="compact-action"
-                    onClick={() => {
-                      setOnboardingStep(0);
-                      setOnboardingVisible(true);
-                    }}
-                  >
-                    {copy.terminal.onboarding.reopen}
-                  </Button>
-                ) : null}
               </div>
-
-              <Tabs value={terminalMode} onValueChange={(value) => setTerminalMode(value as "realtime" | "historical")}>
-                <TabsList className="terminal-mode-tabs">
-                  <TabsTrigger value="realtime">{copy.terminal.realtime}</TabsTrigger>
-                  <TabsTrigger value="historical">{copy.terminal.historical}</TabsTrigger>
-                </TabsList>
-              </Tabs>
 
               <label className="field">
                 <span>{copy.control.fields.query}</span>
@@ -1088,123 +1003,21 @@ export function TerminalView() {
                 />
               </label>
 
-              {memoryPreview ? (
-                <div className="terminal-memory-note">
-                  <strong>{locale === "zh" ? "轻量记忆已启用" : "Light memory is active"}</strong>
-                  <p>
-                    {locale === "zh"
-                      ? `如果这次没有写清楚风险、期限或风格，系统会优先沿用你最近一次的设置：${[
-                          memoryPreview.risk_tolerance ? `风险 ${memoryPreview.risk_tolerance}` : "",
-                          memoryPreview.investment_horizon ? `期限 ${memoryPreview.investment_horizon}` : "",
-                          memoryPreview.investment_style ? `风格 ${memoryPreview.investment_style}` : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" / ")}。`
-                      : `If this request omits risk, horizon or style, the system will reuse your latest settings first: ${[
-                          memoryPreview.risk_tolerance ? `risk ${memoryPreview.risk_tolerance}` : "",
-                          memoryPreview.investment_horizon ? `horizon ${memoryPreview.investment_horizon}` : "",
-                          memoryPreview.investment_style ? `style ${memoryPreview.investment_style}` : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" / ")}.`}
-                  </p>
+              <div className="terminal-example-block">
+                <div className="terminal-example-caption">{locale === "zh" ? "示例问题" : "Example prompts"}</div>
+                <div className="terminal-demo-strip">
+                  {demoScenarios.map((scenario) => (
+                    <button
+                      key={scenario.id}
+                      type="button"
+                      className="terminal-demo-chip"
+                      onClick={() => applyDemoScenario(scenario.id)}
+                    >
+                      {scenario.label}
+                    </button>
+                  ))}
                 </div>
-              ) : null}
-
-              <div className="terminal-demo-strip">
-                {demoScenarios.map((scenario) => (
-                  <button
-                    key={scenario.id}
-                    type="button"
-                    className="terminal-demo-chip"
-                    onClick={() => applyDemoScenario(scenario.id)}
-                  >
-                    {scenario.label}
-                  </button>
-                ))}
               </div>
-
-              <div className="field-grid terminal-field-grid">
-                <label className="field compact-field">
-                  <span>{copy.control.fields.maxResults}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={agentForm.maxResults}
-                    onChange={(event) => setAgentForm({ maxResults: Number(event.target.value) || 5 })}
-                  />
-                </label>
-
-                <label className="field compact-field">
-                  <span>{locale === "zh" ? "仓位模式" : "Allocation mode"}</span>
-                  <select
-                    value={agentForm.allocationMode}
-                    onChange={(event) =>
-                      setAgentForm({ allocationMode: event.target.value as typeof agentForm.allocationMode })
-                    }
-                  >
-                    <option value="score_weighted">{locale === "zh" ? "按评分配比（默认）" : "Score weighted (default)"}</option>
-                    <option value="equal_weight">{locale === "zh" ? "等权配置" : "Equal weight"}</option>
-                    <option value="custom_weight">{locale === "zh" ? "自定义仓位" : "Custom weights"}</option>
-                  </select>
-                </label>
-
-                {terminalMode === "realtime" ? (
-                  <label className="toggle-field">
-                    <span>{copy.control.fields.liveData}</span>
-                    <input
-                      type="checkbox"
-                      checked={agentForm.fetchLiveData}
-                      onChange={(event) => setAgentForm({ fetchLiveData: event.target.checked })}
-                    />
-                  </label>
-                ) : (
-                  <label className="field compact-field">
-                    <span>{copy.terminal.asOfDate}</span>
-                    <input type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} />
-                  </label>
-                )}
-              </div>
-
-              {terminalMode === "realtime" ? (
-                <div className="field-grid terminal-field-grid">
-                  <label className="field compact-field">
-                    <span>{copy.terminal.referenceStartDate}</span>
-                    <input
-                      type="date"
-                      value={referenceStartDate}
-                      onChange={(event) => setReferenceStartDate(event.target.value)}
-                    />
-                  </label>
-                  <div className="terminal-inline-note">{copy.terminal.realtimeBacktestNote}</div>
-                </div>
-              ) : (
-                <div className="field-grid terminal-field-grid">
-                  <label className="field compact-field">
-                    <span>{copy.terminal.historicalEndDate}</span>
-                    <input
-                      type="date"
-                      value={historicalBacktestEndDate}
-                      onChange={(event) => setHistoricalBacktestEndDate(event.target.value)}
-                    />
-                  </label>
-                  <div className="terminal-inline-note">{copy.terminal.historicalModeNote}</div>
-                </div>
-              )}
-
-              {agentForm.allocationMode === "custom_weight" ? (
-                <label className="field">
-                  <span>{locale === "zh" ? "自定义仓位（总和=100）" : "Custom weights (sum=100)"}</span>
-                  <textarea
-                    value={agentForm.customWeights}
-                    placeholder={
-                      locale === "zh" ? "例如：MSFT:40, NVDA:35, AAPL:25" : "Example: MSFT:40, NVDA:35, AAPL:25"
-                    }
-                    onChange={(event) => setAgentForm({ customWeights: event.target.value })}
-                  />
-                </label>
-              ) : null}
 
               <div className="button-row terminal-action-row">
                 <Button
@@ -1221,92 +1034,255 @@ export function TerminalView() {
                         ? copy.terminal.generateRealtime
                         : copy.terminal.generateHistorical}
                 </Button>
-                <Button type="button" variant="secondary" className="terminal-secondary-cta" onClick={fillAgentSample}>
-                  {copy.actions.sample}
-                </Button>
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="secondary"
                   disabled={!hasRunningTask || cancelingRun}
                   onClick={() => void cancelActiveRun()}
                 >
                   {cancelingRun ? copy.actions.cancelling : copy.actions.cancel}
                 </Button>
               </div>
-            </article>
 
-            <article className="panel-surface terminal-data-panel">
-              <div className="section-head tight">
-                <div>
-                  <p className="eyebrow">{locale === "zh" ? "数据覆盖" : "Market coverage"}</p>
-                  <h2>{dataStatus?.records ?? "N/A"}</h2>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="compact-action"
-                  disabled={refreshingData}
-                  onClick={() => void refreshData()}
-                >
-                  {refreshingData ? copy.actions.running : locale === "zh" ? "刷新市场数据" : "Refresh market data"}
-                </Button>
-              </div>
-              <div className="terminal-data-grid">
-                <div className="mini-card">
-                  <span className="mini-label">{locale === "zh" ? "股票池来源" : "Universe source"}</span>
-                  <strong>{dataStatus?.source || "N/A"}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="mini-label">{locale === "zh" ? "覆盖范围" : "Universe"}</span>
-                  <strong>{dataStatus?.universe_scope || "N/A"}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="mini-label">{locale === "zh" ? "宏观环境" : "Macro"}</span>
-                  <strong>{dataStatus?.macro_status?.regime || "N/A"}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="mini-label">{locale === "zh" ? "最近刷新" : "Last refresh"}</span>
-                  <strong>{formatDateTime(dataStatus?.last_refresh_at, locale)}</strong>
-                </div>
-              </div>
               {uiNotice ? (
                 <div className={`inline-notice ${uiNotice.tone}`}>
                   <strong>{uiNotice.title}</strong>
                   <p>{uiNotice.body}</p>
                 </div>
               ) : null}
-              {isBacktestAutoUpgrading ? (
-                <div className="inline-notice neutral">
-                  <strong>{locale === "zh" ? "正在升级旧回测数据" : "Upgrading legacy backtest data"}</strong>
-                  <p>
-                    {locale === "zh"
-                      ? "系统检测到旧版本结果，正在自动补齐单股时间序列。"
-                      : "An older backtest format was detected and per-stock time series are being rebuilt."}
-                  </p>
-                </div>
-              ) : null}
+
+              <div className="terminal-details-stack">
+                <details className="terminal-inline-details">
+                  <summary>
+                    <span>{copy.terminal.onboarding.title}</span>
+                    <span className="terminal-details-summary-copy">
+                      {locale === "zh" ? "非阻断式引导，随时展开查看。" : "Non-blocking guidance you can open anytime."}
+                    </span>
+                  </summary>
+                  <div className="terminal-guide-list">
+                    {onboardingSteps.map((item, index) => (
+                      <article key={item.title} className="mini-card terminal-guide-item">
+                        <span className="mini-label">{locale === "zh" ? `步骤 ${index + 1}` : `Step ${index + 1}`}</span>
+                        <strong>{item.title}</strong>
+                        <p>{item.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+
+                <details className="terminal-inline-details">
+                  <summary>
+                    <span>{locale === "zh" ? "高级设置" : "Advanced settings"}</span>
+                    <span className="terminal-details-summary-copy">
+                      {terminalMode === "historical"
+                        ? locale === "zh"
+                          ? "当前为历史研究模式"
+                          : "Currently using historical mode"
+                        : locale === "zh"
+                          ? "当前为实时研究模式"
+                          : "Currently using realtime mode"}
+                    </span>
+                  </summary>
+                  <div className="terminal-details-body">
+                    <Tabs value={terminalMode} onValueChange={(value) => setTerminalMode(value as "realtime" | "historical")}>
+                      <TabsList className="terminal-mode-tabs">
+                        <TabsTrigger value="realtime">{copy.terminal.realtime}</TabsTrigger>
+                        <TabsTrigger value="historical">{copy.terminal.historical}</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+
+                    <div className="field-grid terminal-field-grid">
+                      <label className="field compact-field">
+                        <span>{copy.control.fields.maxResults}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5}
+                          value={agentForm.maxResults}
+                          onChange={(event) => setAgentForm({ maxResults: Number(event.target.value) || 5 })}
+                        />
+                      </label>
+
+                      <label className="field compact-field">
+                        <span>{locale === "zh" ? "仓位模式" : "Allocation mode"}</span>
+                        <select
+                          value={agentForm.allocationMode}
+                          onChange={(event) =>
+                            setAgentForm({ allocationMode: event.target.value as typeof agentForm.allocationMode })
+                          }
+                        >
+                          <option value="score_weighted">{locale === "zh" ? "按评分配比（默认）" : "Score weighted (default)"}</option>
+                          <option value="equal_weight">{locale === "zh" ? "等权配置" : "Equal weight"}</option>
+                          <option value="custom_weight">{locale === "zh" ? "自定义仓位" : "Custom weights"}</option>
+                        </select>
+                      </label>
+
+                      {terminalMode === "realtime" ? (
+                        <label className="toggle-field">
+                          <span>{copy.control.fields.liveData}</span>
+                          <input
+                            type="checkbox"
+                            checked={agentForm.fetchLiveData}
+                            onChange={(event) => setAgentForm({ fetchLiveData: event.target.checked })}
+                          />
+                        </label>
+                      ) : (
+                        <label className="field compact-field">
+                          <span>{copy.terminal.asOfDate}</span>
+                          <input type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} />
+                        </label>
+                      )}
+                    </div>
+
+                    {terminalMode === "realtime" ? (
+                      <div className="field-grid terminal-field-grid">
+                        <label className="field compact-field">
+                          <span>{copy.terminal.referenceStartDate}</span>
+                          <input
+                            type="date"
+                            value={referenceStartDate}
+                            onChange={(event) => setReferenceStartDate(event.target.value)}
+                          />
+                        </label>
+                        <div className="terminal-inline-note">{copy.terminal.realtimeBacktestNote}</div>
+                      </div>
+                    ) : (
+                      <div className="field-grid terminal-field-grid">
+                        <label className="field compact-field">
+                          <span>{copy.terminal.historicalEndDate}</span>
+                          <input
+                            type="date"
+                            value={historicalBacktestEndDate}
+                            onChange={(event) => setHistoricalBacktestEndDate(event.target.value)}
+                          />
+                        </label>
+                        <div className="terminal-inline-note">{copy.terminal.historicalModeNote}</div>
+                      </div>
+                    )}
+
+                    {agentForm.allocationMode === "custom_weight" ? (
+                      <label className="field">
+                        <span>{locale === "zh" ? "自定义仓位（总和=100）" : "Custom weights (sum=100)"}</span>
+                        <textarea
+                          value={agentForm.customWeights}
+                          placeholder={
+                            locale === "zh" ? "例如：MSFT:40, NVDA:35, AAPL:25" : "Example: MSFT:40, NVDA:35, AAPL:25"
+                          }
+                          onChange={(event) => setAgentForm({ customWeights: event.target.value })}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </details>
+              </div>
             </article>
 
-            {errorText ? (
-              <div className="danger-banner terminal-wide-banner">
-                <strong>{copy.terminal.errorHeadline}</strong>
-                <p>{friendlyError || errorText}</p>
-              </div>
-            ) : null}
+            <aside className="terminal-side-stack">
+              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`}>
+                <div className="section-head tight">
+                  <div>
+                    <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
+                    <h2>{uiStage}</h2>
+                  </div>
+                  <strong className="terminal-progress-percent">{progress.percent}%</strong>
+                </div>
+                <div className="terminal-progress-stage-row">
+                  <span>{locale === "zh" ? "当前阶段" : "Current stage"}</span>
+                  <strong>{uiStage}</strong>
+                </div>
+                <Progress value={progress.percent} className="terminal-progress-track-strong" />
+                <p className="section-note terminal-progress-copy">{statusCopy}</p>
+                <div className="terminal-progress-meta">
+                  <span>{locale === "zh" ? "最新更新时间" : "Latest update"}</span>
+                  <strong>{runUpdatedAt}</strong>
+                </div>
+              </article>
 
-            <div className="terminal-report-block">
-              <ReportPanel
-                locale={locale}
-                copy={copy}
-                result={result}
-                dataStatus={dataStatus}
-                backtest={backtestDetail}
-                variant="terminal"
-              />
-            </div>
+              <article className="panel-surface terminal-query-card">
+                <div className="section-head tight">
+                  <div>
+                    <p className="eyebrow">{locale === "zh" ? "当前任务" : "Current task"}</p>
+                    <h2>{locale === "zh" ? "这次研究绑定的问题" : "The request currently in scope"}</h2>
+                  </div>
+                </div>
+                <div className="terminal-query-body">{queryText}</div>
+                <div className="chip-row terminal-chip-wrap">
+                  {contextChips.map((item) => (
+                    <Badge key={item} variant="outline" className="trust-chip">
+                      {item}
+                    </Badge>
+                  ))}
+                </div>
+              </article>
+            </aside>
           </section>
+
+          {runDetail?.run.status === "needs_clarification" ? (
+            <ClarificationContinueCard
+              locale={locale}
+              followUpQuestion={followUpQuestion}
+              missingFields={missingFields}
+              clarificationAnswer={clarificationAnswer}
+              setClarificationAnswer={setClarificationAnswer}
+              onContinue={continueClarifiedResearch}
+              creatingRun={creatingRun}
+              profilePreferences={profilePreferences}
+            />
+          ) : null}
+
+          {errorText ? (
+            <div className="danger-banner terminal-wide-banner">
+              <strong>{copy.terminal.errorHeadline}</strong>
+              <p>{friendlyError || errorText}</p>
+            </div>
+          ) : null}
         </>
+      ) : null}
+
+      {terminalPage === "conclusion" ? (
+        activeRunId ? (
+          runLoading && !runDetail ? (
+            <section className="terminal-route-stack">
+              <article className="panel-surface terminal-route-header terminal-empty-panel">
+                <div className="empty-state">{locale === "zh" ? "正在读取研究结论..." : "Loading research conclusion..."}</div>
+              </article>
+            </section>
+          ) : (
+            <>
+              <ConclusionSummary
+                locale={locale}
+                decisionSummary={decisionSummary}
+                activeRunId={activeRunId}
+                queryText={queryText}
+                contextChips={contextChips}
+                progress={progress}
+                uiStage={uiStage}
+                statusCopy={statusCopy}
+                runUpdatedAt={runUpdatedAt}
+              />
+
+              {errorText ? (
+                <div className="danger-banner terminal-wide-banner">
+                  <strong>{copy.terminal.errorHeadline}</strong>
+                  <p>{friendlyError || errorText}</p>
+                </div>
+              ) : null}
+
+              <div className="terminal-report-block">
+                <ReportPanel
+                  locale={locale}
+                  copy={copy}
+                  result={result}
+                  dataStatus={dataStatus}
+                  backtest={backtestDetail}
+                  variant="terminal"
+                />
+              </div>
+            </>
+          )
+        ) : (
+          <ConclusionEmptyState locale={locale} />
+        )
       ) : null}
 
       {terminalPage === "backtest" ? (

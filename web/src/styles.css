@@ -956,8 +956,8 @@ select:focus {
 .mode-button,
 .secondary-button,
 .ghost-danger-button {
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text);
+  background: rgba(10, 22, 38, 0.82);
+  color: var(--text-strong);
   padding: 11px 16px;
 }
 
@@ -983,12 +983,12 @@ select:focus {
 }
 
 .secondary-button {
-  border-color: rgba(15, 23, 42, 0.12);
+  border-color: rgba(156, 204, 255, 0.18);
 }
 
 .ghost-danger-button {
-  border-color: rgba(181, 75, 59, 0.18);
-  color: var(--danger);
+  border-color: rgba(255, 143, 132, 0.24);
+  color: #ffd2cb;
 }
 
 .mode-button:hover,
@@ -1004,8 +1004,11 @@ select:focus {
 .primary-button:disabled,
 .secondary-button:disabled,
 .ghost-danger-button:disabled {
-  opacity: 0.62;
-  cursor: wait;
+  opacity: 1;
+  cursor: not-allowed;
+  color: rgba(207, 220, 236, 0.72);
+  border-color: rgba(156, 204, 255, 0.1);
+  background: rgba(129, 146, 168, 0.22);
 }
 
 .field,
@@ -2413,13 +2416,23 @@ body::before {
   padding: 14px 18px;
   margin-bottom: 28px;
   border-radius: 22px;
-  border: 1px solid rgba(153, 201, 255, 0.12);
-  background: rgba(7, 16, 28, 0.58);
+  border: 1px solid rgba(153, 201, 255, 0.1);
+  background: rgba(7, 16, 28, 0.72);
   backdrop-filter: blur(18px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .landing-top-button {
   min-width: 118px;
+  border-color: rgba(176, 213, 255, 0.18);
+  background: rgba(10, 23, 39, 0.84);
+  color: rgba(245, 249, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.landing-top-button:hover {
+  border-color: rgba(176, 213, 255, 0.28);
+  background: rgba(14, 30, 50, 0.9);
 }
 
 .landing-main {
@@ -2454,8 +2467,10 @@ body::before {
   width: fit-content;
   padding-inline: 14px;
   padding-block: 6px;
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(181, 216, 255, 0.22);
+  background: rgba(10, 24, 42, 0.88);
+  color: rgba(244, 249, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .landing-hero-panel h1 {
@@ -2516,9 +2531,16 @@ body::before {
 .terminal-secondary-cta {
   min-height: 54px;
   padding-inline: 20px;
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(176, 213, 255, 0.18);
+  background: rgba(10, 24, 40, 0.88);
   color: var(--text-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.landing-secondary-cta:hover,
+.terminal-secondary-cta:hover {
+  border-color: rgba(176, 213, 255, 0.28);
+  background: rgba(14, 30, 50, 0.94);
 }
 
 .landing-hero-metrics {
@@ -2530,8 +2552,9 @@ body::before {
 .landing-signal-metric {
   padding: 14px 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(157, 204, 255, 0.12);
+  background: rgba(8, 20, 35, 0.76);
+  border: 1px solid rgba(157, 204, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .landing-signal-metric span {
@@ -2540,7 +2563,7 @@ body::before {
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: rgba(205, 220, 243, 0.88);
 }
 
 .landing-signal-metric strong {
@@ -2654,8 +2677,8 @@ body::before {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(166, 208, 255, 0.16);
-  background: rgba(5, 13, 24, 0.6);
+  border: 1px solid rgba(166, 208, 255, 0.18);
+  background: rgba(4, 12, 24, 0.74);
   color: var(--text-strong);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   animation: ticketRise 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -2680,9 +2703,13 @@ body::before {
 .landing-step-rail {
   padding: 28px 30px;
   border-radius: 28px;
-  background: rgba(8, 18, 32, 0.54);
-  border: 1px solid rgba(154, 199, 250, 0.12);
+  background: rgba(7, 17, 30, 0.68);
+  border: 1px solid rgba(154, 199, 250, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.landing-story-band .eyebrow {
+  color: rgba(199, 217, 242, 0.84);
 }
 
 .landing-story-copy h2 {
@@ -2692,7 +2719,7 @@ body::before {
 
 .landing-story-copy p:last-child {
   margin: 0;
-  color: var(--text-soft);
+  color: rgba(224, 234, 247, 0.92);
 }
 
 .landing-step-list {
@@ -2723,9 +2750,10 @@ body::before {
   width: 42px;
   height: 42px;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(143, 226, 216, 0.18), rgba(145, 187, 255, 0.2));
+  background: linear-gradient(135deg, rgba(143, 226, 216, 0.22), rgba(145, 187, 255, 0.24));
   color: var(--text-strong);
   font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .landing-step-item strong {
@@ -2746,8 +2774,8 @@ body::before {
   gap: 14px;
   padding: 22px 24px;
   border-radius: 26px;
-  border: 1px solid rgba(154, 199, 250, 0.12);
-  background: rgba(8, 18, 32, 0.52);
+  border: 1px solid rgba(154, 199, 250, 0.14);
+  background: rgba(7, 17, 30, 0.66);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
@@ -2769,12 +2797,12 @@ body::before {
 
 .landing-proof-item p {
   margin: 0;
-  color: var(--text-soft);
+  color: rgba(224, 234, 247, 0.92);
 }
 
 .landing-footer-note {
   margin-top: 4px;
-  color: var(--text-faint);
+  color: rgba(198, 216, 241, 0.82);
 }
 
 .terminal-front-shell {
@@ -3396,11 +3424,29 @@ body::before {
   border-radius: 18px;
   border: 1px solid rgba(154, 199, 250, 0.1);
   background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+}
+
+.onboarding-step strong {
+  color: var(--text-strong);
+}
+
+.onboarding-step:not(.active) strong {
+  color: rgba(226, 237, 250, 0.92);
 }
 
 .onboarding-step.active {
   background: rgba(143, 226, 216, 0.08);
   border-color: rgba(143, 226, 216, 0.24);
+}
+
+.onboarding-modal .eyebrow,
+.onboarding-modal .lead-copy {
+  color: var(--text-soft);
+}
+
+.onboarding-modal h2 {
+  color: var(--text-strong);
 }
 
 @keyframes sceneDrift {
@@ -3524,7 +3570,7 @@ body::before {
   }
 }
 
-/* 三页化终端：结论页 / 回测页 / 历史页 */
+/* 四页化终端：开始研究 / 研究结论 / 回测页 / 历史页 */
 .terminal-route-shell {
   position: relative;
   z-index: 1;
@@ -3581,7 +3627,9 @@ body::before {
 .terminal-route-header,
 .terminal-archive-page,
 .terminal-input-panel,
-.terminal-data-panel {
+.terminal-data-panel,
+.terminal-ask-panel,
+.terminal-empty-panel {
   background: var(--surface-glass);
   border-color: rgba(151, 197, 255, 0.16);
 }
@@ -3610,6 +3658,103 @@ body::before {
 
 .terminal-summary-note {
   margin-bottom: 18px;
+}
+
+.terminal-ask-grid {
+  align-items: start;
+}
+
+.terminal-ask-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.terminal-ask-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+.terminal-ask-note {
+  max-width: 820px;
+}
+
+.terminal-example-block {
+  display: grid;
+  gap: 10px;
+}
+
+.terminal-example-caption {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.terminal-details-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.terminal-inline-details {
+  padding: 0 18px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(151, 197, 255, 0.14);
+  background: rgba(7, 18, 33, 0.52);
+}
+
+.terminal-inline-details summary {
+  display: grid;
+  gap: 4px;
+  padding: 18px 0 0;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.terminal-inline-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.terminal-details-summary-copy {
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.terminal-details-body {
+  display: grid;
+  gap: 18px;
+  padding-top: 18px;
+}
+
+.terminal-guide-list {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+
+.terminal-guide-item {
+  display: grid;
+  gap: 8px;
+  background: rgba(4, 14, 28, 0.52);
+}
+
+.terminal-guide-item p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.terminal-empty-panel {
+  min-height: 240px;
+}
+
+.terminal-empty-panel .empty-state {
+  min-height: 140px;
 }
 
 .terminal-summary-grid {
@@ -3732,6 +3877,26 @@ body::before {
   gap: 16px;
 }
 
+.profile-memory-card .section-note,
+.profile-memory-card .field > span,
+.profile-memory-card .profile-memory-meta span {
+  color: rgba(223, 234, 247, 0.88);
+}
+
+.profile-memory-card input,
+.profile-memory-card textarea,
+.profile-memory-card select {
+  background: rgba(10, 24, 45, 0.9);
+  border-color: rgba(156, 204, 255, 0.18);
+  color: var(--text-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.profile-memory-card input::placeholder,
+.profile-memory-card textarea::placeholder {
+  color: rgba(188, 204, 227, 0.68);
+}
+
 .profile-memory-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3756,6 +3921,33 @@ body::before {
 
 .profile-memory-actions {
   justify-content: flex-start;
+}
+
+.profile-memory-actions .primary-button,
+.profile-memory-actions .secondary-button,
+.profile-memory-actions .ghost-danger-button {
+  background: rgba(10, 22, 38, 0.88);
+  color: var(--text-strong);
+  border-color: rgba(156, 204, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.profile-memory-actions .primary-button {
+  background: linear-gradient(135deg, rgba(27, 56, 93, 0.96), rgba(13, 31, 54, 0.96));
+}
+
+.profile-memory-actions .secondary-button:hover,
+.profile-memory-actions .ghost-danger-button:hover {
+  background: rgba(14, 31, 53, 0.94);
+  border-color: rgba(176, 213, 255, 0.28);
+}
+
+.profile-memory-actions .primary-button:disabled,
+.profile-memory-actions .secondary-button:disabled,
+.profile-memory-actions .ghost-danger-button:disabled {
+  background: rgba(72, 88, 109, 0.42);
+  color: rgba(223, 233, 245, 0.7);
+  border-color: rgba(156, 204, 255, 0.1);
 }
 
 .terminal-trust-card {
@@ -3832,7 +4024,8 @@ body::before {
 }
 
 .terminal-input-panel,
-.terminal-data-panel {
+.terminal-data-panel,
+.terminal-ask-panel {
   display: grid;
   gap: 18px;
 }
@@ -3934,7 +4127,8 @@ body::before {
 
   .terminal-trust-grid,
   .terminal-summary-grid,
-  .terminal-data-grid {
+  .terminal-data-grid,
+  .terminal-guide-list {
     grid-template-columns: 1fr;
   }
 

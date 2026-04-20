@@ -31,6 +31,7 @@ import {
 } from "../lib/api";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
+import { readLocale, syncDocumentLocale, writeLocale } from "../lib/locale";
 import {
   buildMemoryFromParsedIntent,
   clearIntentMemory,
@@ -60,7 +61,6 @@ import type {
 } from "../lib/types";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "needs_clarification", "cancelled"]);
-const LOCALE_STORAGE_KEY = "financial-agent-locale";
 const MODE_STORAGE_KEY = "financial-agent-terminal-mode";
 
 const DEFAULT_AGENT_FORM: AgentFormState = {
@@ -116,12 +116,6 @@ function plusDaysIso(value: string, days: number) {
   if (Number.isNaN(parsed.getTime())) return todayIso();
   parsed.setDate(parsed.getDate() + days);
   return parsed.toISOString().slice(0, 10);
-}
-
-function initialLocale(): Locale {
-  if (typeof window === "undefined") return "zh";
-  const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-  return stored === "en" ? "en" : "zh";
 }
 
 function initialTerminalMode(): TerminalMode {
@@ -247,11 +241,11 @@ function buildStructuredPayload(form: StructuredFormState) {
 }
 
 export function useResearchConsole(defaultMode: RunMode = "agent") {
-  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [locale, setLocale] = useState<Locale>(readLocale);
   const [terminalMode, setTerminalMode] = useState<TerminalMode>(initialTerminalMode);
   const copy = getLocalePack(locale);
   const t = (zhText: string, enText: string) => (locale === "zh" ? zhText : enText);
-  const [memoryPreview, setMemoryPreview] = useState(() => readIntentMemory(initialLocale()));
+  const [memoryPreview, setMemoryPreview] = useState(() => readIntentMemory(readLocale()));
   const demoScenarios = getDemoScenarios(locale);
 
   const [mode, setMode] = useState<RunMode>(defaultMode);
@@ -604,7 +598,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   });
 
   useEffect(() => {
-    if (typeof window !== "undefined") window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    writeLocale(locale);
+    syncDocumentLocale(locale);
   }, [locale]);
 
   useEffect(() => {

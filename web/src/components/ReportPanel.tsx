@@ -562,75 +562,111 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
         </div>
       ) : null}
 
-      <div className="summary-grid three-up">
-        <div className="mini-card">
-          <h3>{locale === "zh" ? "系统理解到的目标" : "What the system understood"}</h3>
-          <p>{toText(userProfile?.summary, locale === "zh" ? "暂无用户画像。" : "No mandate summary yet.")}</p>
-          {profileFacts.length ? (
-            <div className="chip-row">
-              {profileFacts.map((item) => (
-                <span key={item} className="chip neutral">{item}</span>
-              ))}
+      {variant === "terminal" ? (
+        <div className="summary-grid two-up">
+          <div className="mini-card">
+            <h3>{locale === "zh" ? "本次结论依据" : "Why this conclusion"}</h3>
+            <p>{toText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}</p>
+            {asStringArray(evidenceSummary?.items).length ? (
+              <ul className="compact-list">
+                {asStringArray(evidenceSummary?.items).slice(0, 3).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            {asStringArray(evidenceSummary?.source_points).length ? (
+              <div className="chip-row">
+                {asStringArray(evidenceSummary?.source_points).slice(0, 3).map((item) => (
+                  <span key={item} className="chip neutral">{item}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="mini-card">
+            <h3>{locale === "zh" ? "先看这些谨慎提示" : "Read these caveats first"}</h3>
+            <p>{toText(validationSummary?.headline, locale === "zh" ? "暂无校验摘要。" : "No validation summary yet.")}</p>
+            {asStringArray(validationSummary?.items).length ? (
+              <ul className="compact-list">
+                {asStringArray(validationSummary?.items).slice(0, 3).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="summary-grid three-up">
+            <div className="mini-card">
+              <h3>{locale === "zh" ? "系统理解到的目标" : "What the system understood"}</h3>
+              <p>{toText(userProfile?.summary, locale === "zh" ? "暂无用户画像。" : "No mandate summary yet.")}</p>
+              {profileFacts.length ? (
+                <div className="chip-row">
+                  {profileFacts.map((item) => (
+                    <span key={item} className="chip neutral">{item}</span>
+                  ))}
+                </div>
+              ) : null}
+              {hasText(memorySummary?.note) ? <p>{toText(memorySummary?.note)}</p> : null}
             </div>
-          ) : null}
-          {hasText(memorySummary?.note) ? <p>{toText(memorySummary?.note)}</p> : null}
-        </div>
-        <div className="mini-card">
-          <h3>{locale === "zh" ? "本次结论依据" : "Why this conclusion"}</h3>
-          <p>{toText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}</p>
-          {asStringArray(evidenceSummary?.items).length ? (
-            <ul className="compact-list">
-              {asStringArray(evidenceSummary?.items).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          ) : null}
-          {asStringArray(evidenceSummary?.source_points).length ? (
-            <div className="chip-row">
-              {asStringArray(evidenceSummary?.source_points).map((item) => (
-                <span key={item} className="chip neutral">{item}</span>
-              ))}
+            <div className="mini-card">
+              <h3>{locale === "zh" ? "本次结论依据" : "Why this conclusion"}</h3>
+              <p>{toText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}</p>
+              {asStringArray(evidenceSummary?.items).length ? (
+                <ul className="compact-list">
+                  {asStringArray(evidenceSummary?.items).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {asStringArray(evidenceSummary?.source_points).length ? (
+                <div className="chip-row">
+                  {asStringArray(evidenceSummary?.source_points).map((item) => (
+                    <span key={item} className="chip neutral">{item}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        <div className="mini-card">
-          <h3>{locale === "zh" ? "先看这些谨慎提示" : "Read these caveats first"}</h3>
-          <p>{toText(validationSummary?.headline, locale === "zh" ? "暂无校验摘要。" : "No validation summary yet.")}</p>
-          {asStringArray(validationSummary?.items).length ? (
-            <ul className="compact-list">
-              {asStringArray(validationSummary?.items).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </div>
+            <div className="mini-card">
+              <h3>{locale === "zh" ? "先看这些谨慎提示" : "Read these caveats first"}</h3>
+              <p>{toText(validationSummary?.headline, locale === "zh" ? "暂无校验摘要。" : "No validation summary yet.")}</p>
+              {asStringArray(validationSummary?.items).length ? (
+                <ul className="compact-list">
+                  {asStringArray(validationSummary?.items).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
 
-      <div className="summary-grid two-up">
-        <div className="mini-card">
-          <h3>{locale === "zh" ? "安全与数据覆盖" : "Safety & data coverage"}</h3>
-          <p>{toText(safetySummary?.headline, locale === "zh" ? "暂无安全摘要。" : "No safety summary yet.")}</p>
-          {asStringArray(safetySummary?.used_sources).length ? (
-            <div className="chip-row">
-              {asStringArray(safetySummary?.used_sources).map((item) => (
-                <span key={item} className="chip neutral">{item}</span>
-              ))}
+          <div className="summary-grid two-up">
+            <div className="mini-card">
+              <h3>{locale === "zh" ? "安全与数据覆盖" : "Safety & data coverage"}</h3>
+              <p>{toText(safetySummary?.headline, locale === "zh" ? "暂无安全摘要。" : "No safety summary yet.")}</p>
+              {asStringArray(safetySummary?.used_sources).length ? (
+                <div className="chip-row">
+                  {asStringArray(safetySummary?.used_sources).map((item) => (
+                    <span key={item} className="chip neutral">{item}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        <div className="mini-card">
-          <h3>{locale === "zh" ? "需要保守解读的地方" : "Areas with degraded coverage"}</h3>
-          {asStringArray(safetySummary?.degraded_modules).length ? (
-            <ul className="compact-list">
-              {asStringArray(safetySummary?.degraded_modules).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>{locale === "zh" ? "本次研究没有明显的数据降级提示。" : "No major degraded-data caveat was detected in this run."}</p>
-          )}
-        </div>
-      </div>
+            <div className="mini-card">
+              <h3>{locale === "zh" ? "需要保守解读的地方" : "Areas with degraded coverage"}</h3>
+              {asStringArray(safetySummary?.degraded_modules).length ? (
+                <ul className="compact-list">
+                  {asStringArray(safetySummary?.degraded_modules).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>{locale === "zh" ? "本次研究没有明显的数据降级提示。" : "No major degraded-data caveat was detected in this run."}</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <div id="report-overview" className="executive-grid anchor-target">
         <article className="executive-card">

@@ -5,9 +5,8 @@ import { ArrowRight, Globe, LineChart, ShieldCheck, Sparkles } from "lucide-reac
 import { MotionBackdrop } from "../components/MotionBackdrop";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { readLocale, syncDocumentLocale, writeLocale } from "../lib/locale";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
-
-const LOCALE_STORAGE_KEY = "financial-agent-locale";
 
 const LANDING_COPY = {
   zh: {
@@ -18,7 +17,7 @@ const LANDING_COPY = {
       "把自然语言需求、股票筛选、多源数据、审计校验、回测结果和正式报告，整理成一套更适合展示、也更适合真实投研沟通的前台体验。",
     ctaPrimary: "进入研究终端",
     ctaSecondary: "查看终端示例",
-    heroLabel: "Institutional-grade research surface",
+    heroLabel: "机构级研究前台",
     heroMetrics: [
       { label: "研究语言", value: "中英双语" },
       { label: "研究路径", value: "研究 + 回测 + 导出" },
@@ -48,7 +47,7 @@ const LANDING_COPY = {
       },
     ],
     footer: "当前版本已按桌面演示场景优化，并保留基础移动端适配。",
-    sceneTickets: ["Mandate parsed", "Coverage synced", "Risk locked", "Replay ready"],
+    sceneTickets: ["需求已解析", "覆盖已同步", "风险已锁定", "回放已就绪"],
   },
   en: {
     brand: "ROSE Capital Research",
@@ -92,13 +91,6 @@ const LANDING_COPY = {
   },
 } as const;
 
-/** 读取当前界面语言。 */
-function readLocale(): "zh" | "en" {
-  if (typeof window === "undefined") return "zh";
-  const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-  return saved === "en" ? "en" : "zh";
-}
-
 /** 首页主组件。 */
 export function LandingView() {
   const [locale, setLocale] = useState<"zh" | "en">(readLocale);
@@ -108,10 +100,12 @@ export function LandingView() {
   const proofIcons = [LineChart, ShieldCheck, Sparkles] as const;
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    writeLocale(locale);
+    syncDocumentLocale(locale);
+    if (typeof document !== "undefined") {
+      document.title = copy.title;
     }
-  }, [locale]);
+  }, [locale, copy.title]);
 
   useEffect(() => {
     writeMotionEnabled(motionEnabled);
