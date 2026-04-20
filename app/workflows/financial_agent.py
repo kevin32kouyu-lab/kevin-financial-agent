@@ -31,9 +31,12 @@ class FinancialAgentWorkflow(Workflow):
         response = await self.agent_service.run(payload, hooks=hooks)
         preference_snapshot = response.get("preference_snapshot")
         if isinstance(preference_snapshot, dict):
+            run = context.repository.get_run(context.run_id)
+            client_id = str((run.metadata if run else {}).get("client_id") or "default")
             stored_preferences = self.profile_service.save_snapshot(
                 run_id=context.run_id,
                 snapshot=preference_snapshot,
+                profile_id=client_id,
             )
             response["stored_preferences"] = stored_preferences.model_dump()
             context.store_artifact("derived", "stored_preferences", response["stored_preferences"])

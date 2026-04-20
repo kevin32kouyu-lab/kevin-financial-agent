@@ -18,11 +18,25 @@ class ProfileService:
     def __init__(self, repository: SqliteRunRepository):
         self.repository = repository
 
+    @staticmethod
+    def _empty_summary(profile_id: str = "default") -> UserPreferenceSummary:
+        """返回空偏好，避免首次访问直接报错。"""
+        return UserPreferenceSummary(
+            profile_id=profile_id,
+            updated_at=None,
+            source_run_id=None,
+            source_query=None,
+            research_mode=None,
+            locale="zh",
+            memory_applied_fields=[],
+            values={},
+        )
+
     def get_preferences(self, profile_id: str = "default") -> UserPreferenceSummary | None:
         """读取当前偏好。"""
         payload = self.repository.get_user_preferences(profile_id)
         if payload is None:
-            return None
+            return self._empty_summary(profile_id)
         return UserPreferenceSummary.model_validate(payload)
 
     def update_preferences(self, payload: PreferenceUpdateRequest, profile_id: str = "default") -> UserPreferenceSummary:
@@ -61,5 +75,18 @@ class ProfileService:
             research_mode=str(snapshot.get("research_mode") or "").strip() or None,
             locale=str(snapshot.get("locale") or "zh"),
             memory_applied_fields=list(snapshot.get("memory_applied_fields") or []),
+        )
+        return UserPreferenceSummary.model_validate(stored)
+
+    def clear_preferences(self, profile_id: str = "default") -> UserPreferenceSummary:
+        """清空当前档案的长期偏好。"""
+        stored = self.repository.upsert_user_preferences(
+            profile_id=profile_id,
+            values={},
+            source_run_id=None,
+            source_query=None,
+            research_mode=None,
+            locale="zh",
+            memory_applied_fields=[],
         )
         return UserPreferenceSummary.model_validate(stored)

@@ -3727,6 +3727,36 @@ body::before {
   gap: 18px;
 }
 
+.profile-memory-card {
+  gap: 16px;
+}
+
+.profile-memory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-memory-full {
+  grid-column: 1 / -1;
+}
+
+.profile-memory-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.profile-memory-meta strong {
+  color: var(--text);
+}
+
+.profile-memory-actions {
+  justify-content: flex-start;
+}
+
 .terminal-trust-card {
   display: grid;
   gap: 14px;
@@ -3925,6 +3955,10 @@ body::before {
 
   .terminal-route-tab {
     flex: 0 0 auto;
+  }
+
+  .profile-memory-grid {
+    grid-template-columns: 1fr;
   }
 
   .terminal-archive-row {

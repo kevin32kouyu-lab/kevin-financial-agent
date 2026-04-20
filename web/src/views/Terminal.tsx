@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
+import { ProfileMemoryCard } from "../components/ProfileMemoryCard";
 import { ReportPanel } from "../components/ReportPanel";
 import { TerminalTrustPanels } from "../components/TerminalTrustPanels";
 import { Badge } from "../components/ui/badge";
@@ -719,6 +720,12 @@ export function TerminalView() {
     setHistoricalBacktestEndDate,
     dataStatus,
     profilePreferences,
+    profile,
+    profileDraft,
+    profileUpdatedAt,
+    profileLoading,
+    profileSaving,
+    profileClearing,
     auditSummary,
     agentForm,
     history,
@@ -738,6 +745,7 @@ export function TerminalView() {
     historyLoading,
     runLoading,
     setAgentForm,
+    setProfileDraft,
     createAgentRun,
     cancelActiveRun,
     openRun,
@@ -745,6 +753,9 @@ export function TerminalView() {
     runBacktest,
     applyDemoScenario,
     fillAgentSample,
+    saveProfileDraft,
+    resetProfileDraft,
+    clearStoredProfile,
   } = useResearchConsole("agent");
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
   const [motionLevel, setMotionLevel] = useState<"high" | "low">(() => (readMotionEnabled() ? "high" : "low"));
@@ -827,8 +838,11 @@ export function TerminalView() {
   const result = runDetail?.result || null;
   const parsedIntent = asRecord(asRecord(result)?.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
+  const storedPreferences = asRecord(asRecord(result)?.stored_preferences);
   const followUpQuestion = toText(asRecord(result)?.follow_up_question, "");
   const missingFields = asStringArray(agentControl?.missing_critical_info).map((item) => readableField(locale, item));
+  const appliedMemoryFields = asStringArray(asRecord(result)?.memory_applied_fields);
+  const updatedMemoryFields = asStringArray(storedPreferences?.memory_applied_fields);
   const decisionSummary = buildDecisionSummary(result, copy, locale);
   const queryText = extractBoundQuery(result, agentForm.query, locale);
   const contextChips = buildContextChips(locale, terminalMode, asOfDate, referenceStartDate, runDetail?.run.status);
@@ -1004,6 +1018,22 @@ export function TerminalView() {
           />
 
           <TerminalTrustPanels locale={locale} result={result} memoryPreview={memoryPreview} />
+
+          <ProfileMemoryCard
+            locale={locale}
+            profile={profile}
+            draft={profileDraft}
+            updatedAt={profileUpdatedAt}
+            loading={profileLoading}
+            saving={profileSaving}
+            clearing={profileClearing}
+            appliedFields={appliedMemoryFields}
+            updatedFields={updatedMemoryFields}
+            onChange={setProfileDraft}
+            onSave={saveProfileDraft}
+            onReset={resetProfileDraft}
+            onClear={clearStoredProfile}
+          />
 
           {runDetail?.run.status === "needs_clarification" ? (
             <ClarificationContinueCard

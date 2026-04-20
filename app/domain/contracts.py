@@ -98,7 +98,7 @@ class UserPreferenceValues(BaseModel):
 
 class UserPreferenceSummary(BaseModel):
     profile_id: str = "default"
-    updated_at: str
+    updated_at: str | None = None
     source_run_id: str | None = None
     source_query: str | None = None
     research_mode: str | None = None

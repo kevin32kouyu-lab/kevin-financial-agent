@@ -171,7 +171,13 @@ class RunService:
         tickers = ", ".join((payload.structured.explicit_targets.tickers if payload.structured else [])[:3])
         return f"结构化筛选：{tickers}".strip("：") or "结构化筛选任务"
 
-    async def create_run(self, payload: RunCreateRequest, *, parent_run_id: str | None = None) -> dict[str, Any]:
+    async def create_run(
+        self,
+        payload: RunCreateRequest,
+        *,
+        parent_run_id: str | None = None,
+        client_id: str = "default",
+    ) -> dict[str, Any]:
         if payload.mode == "agent" and payload.agent is None:
             raise HTTPException(status_code=400, detail="agent 模式需要提供 agent 请求体。")
         if payload.mode == "structured" and payload.structured is None:
@@ -184,7 +190,7 @@ class RunService:
             workflow_key=payload.mode,
             title=self._make_title(payload),
             parent_run_id=parent_run_id,
-            metadata={"source": "api", "mode": payload.mode},
+            metadata={"source": "api", "mode": payload.mode, "client_id": client_id},
         )
         self.repository.replace_artifact(run_id, kind="input", name="request", content=payload.model_dump())
         self.repository.add_event(run_id, event_type="run.created", payload={"run_id": run_id, "mode": payload.mode})
@@ -251,7 +257,9 @@ class RunService:
         if payload_data is None:
             raise HTTPException(status_code=404, detail="未找到该 run 的原始输入，无法重试。")
         payload = RunCreateRequest.model_validate(payload_data)
-        return await self.create_run(payload, parent_run_id=run_id)
+        original_run = self.get_run_or_404(run_id)
+        client_id = str((original_run.metadata or {}).get("client_id") or "default")
+        return await self.create_run(payload, parent_run_id=run_id, client_id=client_id)
 
     async def cancel_run_or_404(self, run_id: str) -> dict[str, Any]:
         run = self.get_run_or_404(run_id)
@@ -262,14 +270,15 @@ class RunService:
             raise HTTPException(status_code=409, detail="任务状态已变化，请刷新后重试。")
         return self.get_run_detail_or_404(run_id)
 
-    def get_user_preferences(self) -> dict[str, Any]:
-        preferences = self.profile_service.get_preferences()
-        if preferences is None:
-            raise HTTPException(status_code=404, detail="当前还没有可复用的用户偏好。")
+    def get_user_preferences(self, *, client_id: str = "default") -> dict[str, Any]:
+        preferences = self.profile_service.get_preferences(profile_id=client_id)
         return preferences.model_dump()
 
-    def update_user_preferences(self, payload: PreferenceUpdateRequest) -> dict[str, Any]:
-        return self.profile_service.update_preferences(payload).model_dump()
+    def update_user_preferences(self, payload: PreferenceUpdateRequest, *, client_id: str = "default") -> dict[str, Any]:
+        return self.profile_service.update_preferences(payload, profile_id=client_id).model_dump()
+
+    def clear_user_preferences(self, *, client_id: str = "default") -> dict[str, Any]:
+        return self.profile_service.clear_preferences(profile_id=client_id).model_dump()
 
     def list_run_history(self, *, limit: int = 20, mode: str | None = None, status: str | None = None, search: str | None = None) -> dict[str, Any]:
         return self.list_run_summaries(limit=limit, mode=mode, status=status, search=search)

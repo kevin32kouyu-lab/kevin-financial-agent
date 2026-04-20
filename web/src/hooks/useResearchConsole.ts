@@ -10,6 +10,7 @@ import {
 
 import {
   cancelRun,
+  clearProfilePreferences,
   clearRuns,
   createBacktest,
   createRun,
@@ -26,11 +27,13 @@ import {
   openRunEventStream,
   refreshDataStatus,
   retryRun,
+  updateProfilePreferences,
 } from "../lib/api";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
 import {
   buildMemoryFromParsedIntent,
+  clearIntentMemory,
   getDemoScenarios,
   readIntentMemory,
   writeIntentMemory,
@@ -52,6 +55,8 @@ import type {
   RuntimeConfig,
   StructuredFormState,
   TerminalMode,
+  UserPreferenceSummary,
+  UserProfile,
 } from "../lib/types";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "needs_clarification", "cancelled"]);
@@ -86,6 +91,16 @@ const DEFAULT_FILTERS: HistoryFilters = {
   status: "",
 };
 
+const EMPTY_PROFILE: UserProfile = {
+  capital_amount: null,
+  currency: null,
+  risk_tolerance: null,
+  investment_horizon: null,
+  investment_style: null,
+  preferred_sectors: [],
+  preferred_industries: [],
+};
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -113,6 +128,14 @@ function initialTerminalMode(): TerminalMode {
   if (typeof window === "undefined") return "realtime";
   const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
   return stored === "historical" ? "historical" : "realtime";
+}
+
+function cloneProfile(profile: UserProfile): UserProfile {
+  return {
+    ...profile,
+    preferred_sectors: [...profile.preferred_sectors],
+    preferred_industries: [...profile.preferred_industries],
+  };
 }
 
 function toOptionalNumber(value: string): number | null {
@@ -155,7 +178,7 @@ function toMemoryRequest(memory: ReturnType<typeof readIntentMemory>): AgentMemo
 function toStoredMemoryFromPreferences(
   locale: Locale,
   payload: {
-    updated_at?: string;
+    updated_at?: string | null;
     values?: Record<string, unknown>;
   } | null,
 ) {
@@ -172,6 +195,19 @@ function toStoredMemoryFromPreferences(
     preferred_industries: Array.isArray(values.preferred_industries) ? values.preferred_industries.map(String) : [],
     explicit_tickers: Array.isArray(values.explicit_tickers) ? values.explicit_tickers.map(String) : [],
     savedAt: String(payload.updated_at || new Date().toISOString()),
+  };
+}
+
+function toUserProfile(payload: UserPreferenceSummary | null): UserProfile {
+  const values = payload?.values || {};
+  return {
+    capital_amount: Number(values.capital_amount || 0) || null,
+    currency: String(values.currency || "").trim() || null,
+    risk_tolerance: String(values.risk_tolerance || "").trim() || null,
+    investment_horizon: String(values.investment_horizon || "").trim() || null,
+    investment_style: String(values.investment_style || "").trim() || null,
+    preferred_sectors: Array.isArray(values.preferred_sectors) ? values.preferred_sectors.map(String) : [],
+    preferred_industries: Array.isArray(values.preferred_industries) ? values.preferred_industries.map(String) : [],
   };
 }
 
@@ -221,8 +257,14 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [mode, setMode] = useState<RunMode>(defaultMode);
   const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
-  const [profilePreferences, setProfilePreferences] = useState<Record<string, unknown> | null>(null);
+  const [profilePreferences, setProfilePreferences] = useState<UserPreferenceSummary | null>(null);
   const [auditSummary, setAuditSummary] = useState<RunAuditSummary | null>(null);
+  const [profile, setProfile] = useState<UserProfile>(cloneProfile(EMPTY_PROFILE));
+  const [profileDraft, setProfileDraftState] = useState<UserProfile>(cloneProfile(EMPTY_PROFILE));
+  const [profileUpdatedAt, setProfileUpdatedAt] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileClearing, setProfileClearing] = useState(false);
 
   const [agentForm, setAgentFormState] = useState<AgentFormState>(DEFAULT_AGENT_FORM);
   const [structuredForm, setStructuredFormState] = useState<StructuredFormState>(DEFAULT_STRUCTURED_FORM);
@@ -264,25 +306,45 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   });
 
+  const applyProfileResponse = useEffectEvent((response: UserPreferenceSummary) => {
+    const nextProfile = cloneProfile(toUserProfile(response));
+    const nextMemory = toStoredMemoryFromPreferences(
+      String(response.locale || locale) === "en" ? "en" : "zh",
+      response,
+    );
+
+    startTransition(() => {
+      setProfilePreferences(response);
+      setProfile(nextProfile);
+      setProfileDraftState(cloneProfile(nextProfile));
+      setProfileUpdatedAt(response.updated_at ?? null);
+      if (nextMemory && nextMemory.locale === locale) {
+        setMemoryPreview(nextMemory);
+      }
+    });
+
+    if (nextMemory) {
+      writeIntentMemory(nextMemory);
+    }
+  });
+
   const loadTerminalMeta = useEffectEvent(async () => {
+    setProfileLoading(true);
     try {
       const [runtimeResponse, dataResponse, preferenceResponse] = await Promise.all([
         getRuntimeConfig(),
         getDataStatus(),
-        getProfilePreferences().catch(() => null),
+        getProfilePreferences(),
       ]);
-      const nextMemory = toStoredMemoryFromPreferences(locale, preferenceResponse as { updated_at?: string; values?: Record<string, unknown> } | null);
       startTransition(() => {
         setRuntime(runtimeResponse);
         setDataStatus(dataResponse);
-        setProfilePreferences(preferenceResponse as Record<string, unknown> | null);
-        if (nextMemory) {
-          setMemoryPreview(nextMemory);
-          writeIntentMemory(nextMemory);
-        }
       });
+      applyProfileResponse(preferenceResponse);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取终端环境失败。", "Failed to load terminal runtime."));
+    } finally {
+      setProfileLoading(false);
     }
   });
 
@@ -401,7 +463,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       const resultRecord = (detailResponse.result || {}) as Record<string, unknown>;
       const storedPreferences =
         resultRecord.stored_preferences && typeof resultRecord.stored_preferences === "object"
-          ? (resultRecord.stored_preferences as Record<string, unknown>)
+          ? (resultRecord.stored_preferences as UserPreferenceSummary)
           : null;
       const parsedIntent =
         resultRecord.parsed_intent && typeof resultRecord.parsed_intent === "object"
@@ -413,10 +475,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
           : null;
       const intentLocale = String(systemContext?.language || locale) === "en" ? "en" : "zh";
       const nextMemory = buildMemoryFromParsedIntent(parsedIntent, intentLocale);
-      const nextMemoryFromServer = toStoredMemoryFromPreferences(intentLocale, storedPreferences as { updated_at?: string; values?: Record<string, unknown> } | null);
+      const nextMemoryFromServer = toStoredMemoryFromPreferences(intentLocale, storedPreferences);
       if (detailResponse.run.mode === "agent" && (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")) {
         if (storedPreferences) {
-          startTransition(() => setProfilePreferences(storedPreferences));
+          applyProfileResponse(storedPreferences);
         }
       }
       if ((nextMemoryFromServer || nextMemory) && detailResponse.run.mode === "agent" && (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")) {
@@ -754,6 +816,51 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
+  const saveProfileDraft = async () => {
+    setProfileSaving(true);
+    setErrorText("");
+    try {
+      const response = await updateProfilePreferences({
+        capital_amount: profileDraft.capital_amount,
+        currency: profileDraft.currency,
+        risk_tolerance: profileDraft.risk_tolerance,
+        investment_horizon: profileDraft.investment_horizon,
+        investment_style: profileDraft.investment_style,
+        preferred_sectors: profileDraft.preferred_sectors,
+        preferred_industries: profileDraft.preferred_industries,
+        locale,
+      });
+      applyProfileResponse(response);
+      setStatusText(locale === "zh" ? "长期偏好已保存。" : "Saved long-term preferences.");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : t("保存长期偏好失败。", "Failed to save long-term preferences."));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const resetProfileDraft = () => {
+    startTransition(() => setProfileDraftState(cloneProfile(profile)));
+  };
+
+  const clearStoredProfile = async () => {
+    setProfileClearing(true);
+    setErrorText("");
+    try {
+      const response = await clearProfilePreferences();
+      applyProfileResponse(response);
+      clearIntentMemory(locale);
+      startTransition(() => {
+        setMemoryPreview(null);
+      });
+      setStatusText(locale === "zh" ? "长期偏好已清空。" : "Long-term preferences cleared.");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : t("清空长期偏好失败。", "Failed to clear long-term preferences."));
+    } finally {
+      setProfileClearing(false);
+    }
+  };
+
   const clearHistoryItems = async () => {
     if (!window.confirm(copy.history.clearConfirm)) return;
     setHistoryMutating(true);
@@ -803,6 +910,12 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     runtime,
     dataStatus,
     profilePreferences,
+    profile,
+    profileDraft,
+    profileUpdatedAt,
+    profileLoading,
+    profileSaving,
+    profileClearing,
     auditSummary,
     agentForm,
     structuredForm,
@@ -830,11 +943,21 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     historyMutating,
     runLoading,
     setAgentForm: (patch: Partial<AgentFormState>) => setAgentFormState((current) => ({ ...current, ...patch })),
+    setProfileDraft: (patch: Partial<UserProfile>) =>
+      setProfileDraftState((current) => ({
+        ...current,
+        ...patch,
+        preferred_sectors: patch.preferred_sectors ? [...patch.preferred_sectors] : current.preferred_sectors,
+        preferred_industries: patch.preferred_industries ? [...patch.preferred_industries] : current.preferred_industries,
+      })),
     setStructuredForm: (patch: Partial<StructuredFormState>) =>
       setStructuredFormState((current) => ({ ...current, ...patch })),
     setFilters: (patch: Partial<HistoryFilters>) => setFiltersState((current) => ({ ...current, ...patch })),
     setSelectedArtifactId,
     setSelectedArtifactKind,
+    saveProfileDraft,
+    resetProfileDraft,
+    clearStoredProfile,
     createAgentRun,
     createStructuredRun,
     retryActiveRun,

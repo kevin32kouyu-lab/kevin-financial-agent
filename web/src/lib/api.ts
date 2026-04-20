@@ -15,6 +15,7 @@ import type {
   RuntimeConfig,
   UserPreferenceSummary,
 } from "./types";
+import { getClientId } from "./clientIdentity";
 
 const EVENT_TYPES = [
   "run.created",
@@ -29,9 +30,11 @@ const EVENT_TYPES = [
 ];
 
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const clientId = getClientId();
   const response = await fetch(input, {
     headers: {
       "Content-Type": "application/json",
+      ...(clientId ? { "X-Client-Id": clientId } : {}),
       ...(init?.headers || {}),
     },
     ...init,
@@ -167,6 +170,12 @@ export function updateProfilePreferences(payload: PreferenceUpdateRequest) {
   return requestJson<UserPreferenceSummary>("/api/v1/profile/preferences", {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export function clearProfilePreferences() {
+  return requestJson<UserPreferenceSummary>("/api/v1/profile/preferences", {
+    method: "DELETE",
   });
 }
 

@@ -5,9 +5,10 @@
 - `main.py`：项目根入口，负责启动 FastAPI 应用。
 - `app/main.py`：注册页面路由、API 路由、健康检查和全局异常处理，并放行 `/terminal` 的子路由页面。
 - `app/core/runtime.py`：把仓储、服务和工作流装配成可运行的应用运行时。
+- `app/core/auth.py`：处理公开接口的 API Key 校验，并读取浏览器侧传来的 `X-Client-Id`。
 - `app/api/runs.py`：处理 run 的创建、查询、重试、撤回和事件流。
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
-- `app/api/profile.py`：提供最近偏好的读取与手动更新接口。
+- `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
 - `app/api/history.py`：提供历史研究列表与单条研究审计摘要接口。
 - `app/services/run_service.py`：管理 run 生命周期（含取消），并把任务交给对应 workflow。
 - `app/workflows/financial_agent.py`：执行自然语言研究流程。
@@ -19,15 +20,17 @@
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：把结构化分析结果转成正式报告文本，并把报告模式同步回摘要层。
 - `app/services/backtest_service.py`：根据历史建议计算组合收益、基准对比和逐票贡献。
-- `app/services/profile_service.py`：把最近一次偏好写入本地数据库，并提供读取与更新能力。
+- `app/services/profile_service.py`：把长期偏好写入本地数据库，并提供读取、更新和清空能力。
 - `app/services/run_audit_service.py`：把完整 run 结果压缩成历史页可读的简版审计摘要。
 - `app/tools/fetchers/yfinance_proxy_router.py`：统一控制 yfinance 的直连/代理/自动重试路由。
 - `app/repositories/sqlite_run_repository.py`：保存 run、stage、artifact、event、backtest 和最近偏好。
 - `web/src/views/Terminal.tsx`：面向用户的研究终端页面（三页结构：结论页、回测页、历史页）。
 - `web/src/views/Landing.tsx`：首页入口页面（品牌主视觉、动态研究场景、三步引导、语言切换、进入终端）。
 - `web/src/views/Workbench.tsx`：面向开发者的调试与诊断页面（四标签：概览/阶段/产物/原始 JSON）。
-- `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排。
-- `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准演示问题。
+- `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排，并同步长期记忆卡片状态。
+- `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准演示问题，并支持按语言清空本地轻量记忆。
+- `web/src/lib/clientIdentity.ts`：为每个浏览器生成并持久化 `client_id`，作为长期记忆的隔离单位。
+- `web/src/components/ProfileMemoryCard.tsx`：展示并编辑当前浏览器保存的长期偏好。
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
 - `web/src/components/TerminalTrustPanels.tsx`：把“系统理解 / 依据 / 谨慎提示 / 记忆与覆盖”做成结论页第一屏可信度概览。
 - `web/src/components/ReportPanel.tsx`：展示正式研究报告、用户画像、依据摘要、校验摘要和导出操作。
@@ -45,25 +48,29 @@
 6. 前端调用 `POST /api/runs` 创建 run。
 7. `RunService` 根据模式调度 `financial_agent` 或 `structured_analysis` workflow。
 8. `AgentService` 完成意图解析后，调用 `AnalysisService` 拉取并组装多源数据。
-9. 如果当前问题没写清风险、期限或风格，`memory.py` 会把最近一次已知偏好补进来，但不会覆盖本次明确输入。
-10. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，让“最近偏好”不再只存在浏览器里。
-11. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
-12. `ReportService` 生成正式报告（模型可用则走模型，不可用则回退结构化报告），并把回退信息写回摘要层。
-13. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-14. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-15. `BacktestService` 从历史 run 恢复组合，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-16. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-17. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-18. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
+9. 前端普通请求会自动带上 `X-Client-Id`，后端据此区分不同浏览器的长期记忆。
+10. 如果当前问题没写清风险、期限或风格，`memory.py` 会把当前浏览器最近一次已知偏好补进来，但不会覆盖本次明确输入。
+11. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，并按当前 `client_id` 写回数据库。
+12. `useResearchConsole` 会在 run 完成或需要补充信息时刷新长期记忆卡片，让前台立刻看到“本次沿用了什么、又新记住了什么”。
+13. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
+14. `ReportService` 生成正式报告（模型可用则走模型，不可用则回退结构化报告），并把回退信息写回摘要层。
+15. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+16. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
+17. `BacktestService` 从历史 run 恢复组合，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+18. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+19. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+20. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
 
 ## 关键设计决定与原因
 
 - 保留 `/terminal` 与 `/debug` 双界面：用户体验和开发排障各自清晰，不互相干扰。
 - 动效采用“高强度默认 + 手动开关 + 系统低动态自动降级”：保证演示质感，同时兼顾性能与可访问性。
-- 轻量记忆采用“前端本地保存 + 后端持久化快照 + 只补缺不覆盖”：先做出连续上下文体验，同时避免旧偏好误伤新问题。
+- 长期记忆采用“浏览器本地 `client_id` + 后端按浏览器隔离保存 + 只补缺不覆盖”：先做出连续上下文体验，同时避免在没有登录系统时把不同人的偏好混在一起。
+- 长期记忆继续复用现有 `user_preferences` 存储，而不是新开一套账户系统：这样改动最小，也最稳。
 - 历史页单独消费审计摘要接口，而不是直接使用整份 run 结果：这样更稳定，也更适合前台展示。
 - 当研究停在 `needs_clarification` 时，继续研究采用“沿用原问题 + 追加一句补充信息”的方式：减少用户重新填写整份输入的负担。
 - 公开展示优先采用 Docker 单服务部署：因为前后端已经由同一个 FastAPI 服务托管，最适合直接在 Railway 这类平台上公开发布。
+- Railway 的持久化卷挂到 `/app/data/runtime`：这样既能保留运行历史，也不会覆盖镜像里的 `data/seed` 种子文件。
 - 容器启动改为读取环境变量里的 `PORT`，并增加 `/healthz`：这样更适合 Railway、Render 这类平台做自动探活和公网发布。
 - 可信度信息优先放到结论页前台，而不是只埋在正式报告里：让用户第一眼先判断“系统理解我了吗、结论靠什么支撑、哪些地方要保守”。
 - 澄清机制采用“一句短追问”而不是长段解释：减少用户把补充信息步骤误解成系统报错。

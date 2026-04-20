@@ -261,9 +261,19 @@ export interface PreferenceValues {
   explicit_tickers?: string[];
 }
 
+export interface UserProfile {
+  capital_amount: number | null;
+  currency: string | null;
+  risk_tolerance: string | null;
+  investment_horizon: string | null;
+  investment_style: string | null;
+  preferred_sectors: string[];
+  preferred_industries: string[];
+}
+
 export interface UserPreferenceSummary {
   profile_id: string;
-  updated_at: string;
+  updated_at: string | null;
   source_run_id?: string | null;
   source_query?: string | null;
   research_mode?: string | null;

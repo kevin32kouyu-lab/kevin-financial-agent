@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.auth import get_api_key
+from app.core.auth import get_api_key, get_client_id
 from app.core.runtime import get_runtime
 from app.domain.contracts import RunCreateRequest
 
@@ -39,7 +39,8 @@ async def list_runs(
 @router.post("")
 async def create_run(request: Request, payload: RunCreateRequest) -> dict:
     runtime = get_runtime(request.app)
-    return await runtime.run_service.create_run(payload)
+    client_id = get_client_id(request)
+    return await runtime.run_service.create_run(payload, client_id=client_id)
 
 
 @router.delete("")

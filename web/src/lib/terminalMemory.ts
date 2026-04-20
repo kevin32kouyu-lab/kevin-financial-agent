@@ -72,6 +72,20 @@ export function writeIntentMemory(memory: StoredIntentMemory) {
   }
 }
 
+/** 清空当前语言对应的轻量记忆。 */
+export function clearIntentMemory(locale: Locale) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(MEMORY_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, StoredIntentMemory>;
+    delete parsed[locale];
+    window.localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // 忽略本地存储失败，避免打断主流程。
+  }
+}
+
 /** 从解析后的意图中提取可复用的轻量记忆。 */
 export function buildMemoryFromParsedIntent(parsedIntent: unknown, locale: Locale): StoredIntentMemory | null {
   const intent = asRecord(parsedIntent);
