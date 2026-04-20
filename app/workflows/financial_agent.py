@@ -26,7 +26,11 @@ class FinancialAgentWorkflow(Workflow):
             artifact_callback=on_artifact,
             snapshot_callback=on_snapshot,
         )
-        response = await self.agent_service.run(payload, hooks=hooks)
+        run = context.repository.get_run(context.run_id)
+        client_id = None
+        if run is not None:
+            client_id = str((run.metadata or {}).get("client_id") or "").strip() or None
+        response = await self.agent_service.run(payload, hooks=hooks, client_id=client_id)
         context.store_artifact("output", "final_response", response)
         return WorkflowResult(
             status=response.get("status", "completed"),

@@ -68,12 +68,14 @@ TICKER_STOPWORDS = {
 
 LOW_RISK_HINTS = [
     "low risk",
+    "low-risk",
     "conservative",
     "defensive",
     "safe",
     "controlled risk",
     "low volatility",
     "risk-controlled",
+    "低风险",
     "风险可控",
     "控制风险",
     "稳健",
@@ -513,12 +515,11 @@ def _apply_assumptions(intent: ParsedIntent, query: str) -> list[str]:
     return assumptions
 
 
-def parse_intent(query: str) -> ParsedIntent:
-    normalized_query = _normalize_query(query)
+def _build_explicit_intent(normalized_query: str) -> ParsedIntent:
     language = _detect_language(normalized_query)
     capital_amount = _extract_capital_amount(normalized_query)
 
-    intent = ParsedIntent(
+    return ParsedIntent(
         system_context=SystemContext(language=language),
         portfolio_sizing=PortfolioSizing(
             capital_amount=capital_amount,
@@ -538,6 +539,14 @@ def parse_intent(query: str) -> ParsedIntent:
         explicit_targets=ExplicitTargets(tickers=_extract_tickers(normalized_query)),
     )
 
+
+def extract_explicit_intent(query: str) -> ParsedIntent:
+    return _build_explicit_intent(_normalize_query(query))
+
+
+def parse_intent(query: str) -> ParsedIntent:
+    normalized_query = _normalize_query(query)
+    intent = _build_explicit_intent(normalized_query)
     speculative = _is_speculative(normalized_query)
     assumptions = _apply_assumptions(intent, normalized_query)
     is_clear = _is_intent_clear(intent, speculative)

@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import agent_router, debug_router, runs_router, tools_router
+from app.api import agent_router, debug_router, profile_router, runs_router, tools_router
 from app.core.config import AppSettings
 from app.core.runtime import build_runtime
 
@@ -34,7 +34,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routers(app: FastAPI) -> None:
-    for router in (agent_router, runs_router, debug_router, tools_router):
+    for router in (agent_router, runs_router, profile_router, debug_router, tools_router):
         app.include_router(router)
 
 

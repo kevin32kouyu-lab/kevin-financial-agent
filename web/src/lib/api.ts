@@ -1,7 +1,11 @@
 import type {
+  BacktestCreateRequest,
+  BacktestDetail,
+  BacktestListResponse,
   DataStatus,
   DeleteRunsResponse,
   HistoryFilters,
+  ProfileResponse,
   RunArtifactsResponse,
   RunCreateRequest,
   RunDetailResponse,
@@ -9,6 +13,7 @@ import type {
   RunListResponse,
   RuntimeConfig,
 } from "./types";
+import { getClientId } from "./clientIdentity";
 
 const EVENT_TYPES = [
   "run.created",
@@ -22,9 +27,11 @@ const EVENT_TYPES = [
 ];
 
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const clientId = getClientId();
   const response = await fetch(input, {
     headers: {
       "Content-Type": "application/json",
+      ...(clientId ? { "X-Client-Id": clientId } : {}),
       ...(init?.headers || {}),
     },
     ...init,
@@ -106,6 +113,12 @@ export function retryRun(runId: string) {
   });
 }
 
+export function cancelRun(runId: string) {
+  return requestJson<RunDetailResponse>(`/api/runs/${runId}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function clearRuns(filters: HistoryFilters) {
   const params = new URLSearchParams();
   if (filters.search.trim()) {
@@ -134,6 +147,24 @@ export function getDataStatus() {
 export function refreshDataStatus() {
   return requestJson<DataStatus>("/api/v1/data/refresh", {
     method: "POST",
+  });
+}
+
+export function listBacktests(sourceRunId: string, limit = 5) {
+  const params = new URLSearchParams();
+  params.set("source_run_id", sourceRunId);
+  params.set("limit", String(limit));
+  return requestJson<BacktestListResponse>(`/api/v1/backtests?${params.toString()}`);
+}
+
+export function getBacktest(backtestId: string) {
+  return requestJson<BacktestDetail>(`/api/v1/backtests/${backtestId}`);
+}
+
+export function createBacktest(payload: BacktestCreateRequest) {
+  return requestJson<BacktestDetail>("/api/v1/backtests", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -169,4 +200,21 @@ export function openRunEventStream(
     onError();
   };
   return source;
+}
+
+export function getProfile() {
+  return requestJson<ProfileResponse>("/api/v1/profile");
+}
+
+export function updateProfile(profile: ProfileResponse["profile"]) {
+  return requestJson<ProfileResponse>("/api/v1/profile", {
+    method: "PUT",
+    body: JSON.stringify(profile),
+  });
+}
+
+export function clearProfile() {
+  return requestJson<ProfileResponse>("/api/v1/profile", {
+    method: "DELETE",
+  });
 }

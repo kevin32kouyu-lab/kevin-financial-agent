@@ -376,6 +376,36 @@ select:focus {
   gap: 12px;
 }
 
+.profile-memory-card {
+  gap: 16px;
+}
+
+.profile-memory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-memory-full {
+  grid-column: 1 / -1;
+}
+
+.profile-memory-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.profile-memory-meta strong {
+  color: var(--text);
+}
+
+.profile-memory-actions {
+  justify-content: flex-start;
+}
+
 .anchor-target {
   scroll-margin-top: 92px;
 }
@@ -1526,6 +1556,10 @@ select:focus {
   }
 
   .allocation-line {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-memory-grid {
     grid-template-columns: 1fr;
   }
 }

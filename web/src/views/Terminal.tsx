@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { ArtifactPanel } from "../components/ArtifactPanel";
+import { ProfileMemoryCard } from "../components/ProfileMemoryCard";
 import { ReportPanel } from "../components/ReportPanel";
 import { StagePanel } from "../components/StagePanel";
 import { formatDateTime, formatJson, formatRunStatus, formatRunTitle, repairText } from "../lib/format";
@@ -38,9 +39,19 @@ export function TerminalView() {
     refreshingData,
     historyLoading,
     runLoading,
+    profile,
+    profileDraft,
+    profileUpdatedAt,
+    profileLoading,
+    profileSaving,
+    profileClearing,
     setAgentForm,
+    setProfileDraft,
     setSelectedArtifactId,
     setSelectedArtifactKind,
+    saveProfileDraft,
+    resetProfileDraft,
+    clearStoredProfile,
     createAgentRun,
     refreshData,
     openRun,
@@ -65,6 +76,7 @@ export function TerminalView() {
   const investmentStrategy = asRecord(parsedIntent?.investment_strategy);
   const explicitTargets = asRecord(parsedIntent?.explicit_targets);
   const reportBriefing = asRecord(result?.report_briefing);
+  const runMemory = asRecord(result?.memory);
   const executive = asRecord(reportBriefing?.executive);
   const macro = asRecord(reportBriefing?.macro);
   const meta = asRecord(reportBriefing?.meta);
@@ -77,6 +89,8 @@ export function TerminalView() {
   const watchlist = asStringArray(executive?.watchlist);
   const avoidList = asStringArray(executive?.avoid_list);
   const missingInfo = asStringArray(agentControl?.missing_critical_info);
+  const appliedMemoryFields = asStringArray(runMemory?.applied_fields);
+  const updatedMemoryFields = asStringArray(runMemory?.updated_fields);
 
   const topPick = toText(executive?.top_pick, locale === "zh" ? "等待研究结果" : "Awaiting research result");
   const primaryCall = toText(
@@ -401,6 +415,26 @@ export function TerminalView() {
               </div>
             ) : null}
           </section>
+
+          <ProfileMemoryCard
+            locale={locale}
+            profile={profile}
+            draft={profileDraft}
+            updatedAt={profileUpdatedAt}
+            loading={profileLoading}
+            saving={profileSaving}
+            clearing={profileClearing}
+            appliedFields={appliedMemoryFields}
+            updatedFields={updatedMemoryFields}
+            onChange={setProfileDraft}
+            onSave={() => {
+              void saveProfileDraft();
+            }}
+            onReset={resetProfileDraft}
+            onClear={() => {
+              void clearStoredProfile();
+            }}
+          />
 
           <section className="panel-surface front-side-card">
             <div className="section-head tight">

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent_runtime.models import AgentRunRequest, ParsedIntent
 from app.analysis_runtime.models import (
@@ -17,13 +17,71 @@ from app.analysis_runtime.models import (
 
 
 RunMode = Literal["agent", "structured"]
-RunStatus = Literal["queued", "running", "completed", "failed", "needs_clarification"]
+RunStatus = Literal["queued", "running", "completed", "failed", "needs_clarification", "cancelled"]
 
 
 class RunCreateRequest(BaseModel):
     mode: RunMode = "agent"
     agent: AgentRunRequest | None = None
     structured: DebugAnalysisRequest | None = None
+
+
+class UserProfile(BaseModel):
+    capital_amount: int | None = Field(default=None, ge=0)
+    currency: str | None = None
+    risk_tolerance: str | None = None
+    investment_horizon: str | None = None
+    investment_style: str | None = None
+    preferred_sectors: list[str] = Field(default_factory=list)
+    preferred_industries: list[str] = Field(default_factory=list)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        return text or None
+
+    @field_validator("risk_tolerance", "investment_horizon", "investment_style", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("preferred_sectors", "preferred_industries", mode="before")
+    @classmethod
+    def _normalize_string_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            value = [value]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = str(item).strip()
+            if not text:
+                continue
+            key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(text)
+        return normalized
+
+
+class RunMemory(BaseModel):
+    profile: UserProfile = Field(default_factory=UserProfile)
+    applied_fields: list[str] = Field(default_factory=list)
+    updated_fields: list[str] = Field(default_factory=list)
+
+
+class ProfileResponse(BaseModel):
+    client_id: str
+    profile: UserProfile = Field(default_factory=UserProfile)
+    updated_at: str | None = None
 
 
 class RunSummary(BaseModel):
@@ -86,7 +144,7 @@ class RunListResponse(BaseModel):
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 __all__ = [
@@ -97,7 +155,9 @@ __all__ = [
     "InvestmentStrategy",
     "ParsedIntent",
     "PipelineOptions",
+    "ProfileResponse",
     "RiskProfile",
+    "RunMemory",
     "RunCreateRequest",
     "RunDetail",
     "RunEventRecord",
@@ -106,6 +166,7 @@ __all__ = [
     "RunStatus",
     "RunStepRecord",
     "RunSummary",
+    "UserProfile",
     "ArtifactRecord",
     "utc_now_iso",
 ]

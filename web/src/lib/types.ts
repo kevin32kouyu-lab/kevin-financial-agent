@@ -1,6 +1,88 @@
 export type RunMode = "agent" | "structured";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "needs_clarification";
+export type RunStatus = "queued" | "running" | "completed" | "failed" | "needs_clarification" | "cancelled";
 export type Locale = "zh" | "en";
+export type TerminalMode = "realtime" | "historical";
+export type BacktestMode = "replay" | "reference";
+
+export interface BacktestCreateRequest {
+  mode?: BacktestMode;
+  source_run_id: string;
+  entry_date?: string | null;
+  end_date?: string | null;
+}
+
+export interface BacktestMetrics {
+  initial_capital: number;
+  final_value: number;
+  benchmark_final_value: number;
+  total_return_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  annualized_return_pct?: number | null;
+  max_drawdown_pct?: number | null;
+  trading_days: number;
+}
+
+export interface BacktestSummary {
+  id: string;
+  source_run_id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  entry_date: string;
+  end_date: string;
+  benchmark_ticker: string;
+  metrics: BacktestMetrics;
+  requested_count: number;
+  coverage_count: number;
+  dropped_tickers: Array<{
+    ticker: string;
+    reason: string;
+  }>;
+}
+
+export interface BacktestPoint {
+  point_date: string;
+  portfolio_value: number;
+  benchmark_value: number;
+  portfolio_return_pct: number;
+  benchmark_return_pct: number;
+}
+
+export interface BacktestPositionPoint {
+  point_date: string;
+  close_price: number;
+  daily_return_pct: number;
+  cumulative_return_pct: number;
+  contribution_pct: number;
+}
+
+export interface BacktestPosition {
+  timeseries: BacktestPositionPoint[];
+  ticker: string;
+  weight: number;
+  verdict: string;
+  entry_date: string;
+  entry_price: number;
+  latest_price: number;
+  shares: number;
+  invested_amount: number;
+  current_value: number;
+  return_pct: number;
+  contribution_pct: number;
+}
+
+export interface BacktestDetail {
+  summary: BacktestSummary;
+  positions: BacktestPosition[];
+  points: BacktestPoint[];
+  meta: Record<string, unknown>;
+}
+
+export interface BacktestListResponse {
+  items: BacktestSummary[];
+}
 
 export interface RuntimeConfig {
   provider: string;
@@ -49,6 +131,28 @@ export interface DataStatus {
   };
 }
 
+export interface UserProfile {
+  capital_amount: number | null;
+  currency: string | null;
+  risk_tolerance: string | null;
+  investment_horizon: string | null;
+  investment_style: string | null;
+  preferred_sectors: string[];
+  preferred_industries: string[];
+}
+
+export interface RunMemory {
+  profile: UserProfile;
+  applied_fields: string[];
+  updated_fields: string[];
+}
+
+export interface ProfileResponse {
+  client_id: string;
+  profile: UserProfile;
+  updated_at: string | null;
+}
+
 export interface RunCreateRequest {
   mode: RunMode;
   agent?: AgentRunRequest;
@@ -60,6 +164,10 @@ export interface AgentRunRequest {
   options: {
     fetch_live_data: boolean;
     max_results: number;
+  };
+  research_context?: {
+    research_mode: TerminalMode;
+    as_of_date?: string | null;
   };
   llm?: {
     model?: string | null;

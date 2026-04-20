@@ -6,14 +6,14 @@ import json
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.auth import get_api_key
+from app.core.auth import get_api_key, get_optional_client_id
 from app.core.runtime import get_runtime
 from app.domain.contracts import RunCreateRequest
 
 
 router = APIRouter(prefix="/api/runs", tags=["runs"], dependencies=[Depends(get_api_key)])
 
-TERMINAL_STATUSES = {"completed", "failed", "needs_clarification"}
+TERMINAL_STATUSES = {"completed", "failed", "needs_clarification", "cancelled"}
 
 
 def _format_sse(event_id: int, event_type: str, payload: dict) -> str:
@@ -39,7 +39,7 @@ async def list_runs(
 @router.post("")
 async def create_run(request: Request, payload: RunCreateRequest) -> dict:
     runtime = get_runtime(request.app)
-    return await runtime.run_service.create_run(payload)
+    return await runtime.run_service.create_run(payload, client_id=get_optional_client_id(request))
 
 
 @router.delete("")
@@ -68,7 +68,13 @@ async def get_run_artifacts(request: Request, run_id: str) -> dict:
 @router.post("/{run_id}/retry")
 async def retry_run(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
-    return await runtime.run_service.retry_run_or_404(run_id)
+    return await runtime.run_service.retry_run_or_404(run_id, client_id=get_optional_client_id(request))
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(request: Request, run_id: str) -> dict:
+    runtime = get_runtime(request.app)
+    return await runtime.run_service.cancel_run_or_404(run_id)
 
 
 @router.get("/{run_id}/events")

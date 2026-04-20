@@ -36,10 +36,36 @@ class WorkflowRunner:
             return
         self._tasks[run_id] = asyncio.create_task(self._run(run_id))
 
+    async def cancel(self, run_id: str) -> bool:
+        run = self.repository.get_run(run_id)
+        if run is None:
+            return False
+        if run.status in {"completed", "failed", "needs_clarification", "cancelled"}:
+            return False
+
+        self.repository.mark_run_finished(run_id, status="cancelled", error_message="Cancelled by user.")
+        self.repository.add_event(
+            run_id,
+            event_type="run.cancelled",
+            payload={"status": "cancelled", "message": "Cancelled by user."},
+        )
+        snapshot = self.repository.get_artifact_content(run_id, kind="snapshot", name="current")
+        if isinstance(snapshot, dict):
+            snapshot["status"] = "cancelled"
+            snapshot["cancel_reason"] = "Cancelled by user."
+            self.repository.replace_artifact(run_id, kind="snapshot", name="current", content=snapshot)
+
+        task = self._tasks.get(run_id)
+        if task and not task.done():
+            task.cancel()
+        return True
+
     async def _run(self, run_id: str) -> None:
         try:
             run = self.repository.get_run(run_id)
             if run is None:
+                return
+            if run.status == "cancelled":
                 return
 
             workflow_key = run.workflow_key or run.mode
@@ -62,6 +88,9 @@ class WorkflowRunner:
             context = WorkflowContext(run_id=run_id, mode=run.mode, repository=self.repository)
             typed_payload = self._materialize_payload(run.mode, request_payload)
             result = await workflow.execute(typed_payload, context)
+            latest_run = self.repository.get_run(run_id)
+            if latest_run is None or latest_run.status == "cancelled":
+                return
 
             self.repository.mark_run_finished(
                 run_id,
@@ -77,6 +106,16 @@ class WorkflowRunner:
                     "report_mode": result.report_mode,
                 },
             )
+        except asyncio.CancelledError:
+            latest_run = self.repository.get_run(run_id)
+            if latest_run and latest_run.status != "cancelled":
+                self.repository.mark_run_finished(run_id, status="cancelled", error_message="Cancelled by user.")
+                self.repository.add_event(
+                    run_id,
+                    event_type="run.cancelled",
+                    payload={"status": "cancelled", "message": "Cancelled by user."},
+                )
+            raise
         except Exception as exc:
             self.repository.mark_run_finished(run_id, status="failed", error_message=str(exc))
             self.repository.replace_artifact(run_id, kind="output", name="error", content={"message": str(exc)})
@@ -104,20 +143,29 @@ class RunService:
         tickers = ", ".join((payload.structured.explicit_targets.tickers if payload.structured else [])[:3])
         return f"结构化筛选：{tickers}".strip("：") or "结构化筛选任务"
 
-    async def create_run(self, payload: RunCreateRequest, *, parent_run_id: str | None = None) -> dict[str, Any]:
+    async def create_run(
+        self,
+        payload: RunCreateRequest,
+        *,
+        parent_run_id: str | None = None,
+        client_id: str | None = None,
+    ) -> dict[str, Any]:
         if payload.mode == "agent" and payload.agent is None:
             raise HTTPException(status_code=400, detail="agent 模式需要提供 agent 请求体。")
         if payload.mode == "structured" and payload.structured is None:
             raise HTTPException(status_code=400, detail="structured 模式需要提供 structured 请求体。")
 
         run_id = uuid4().hex
+        metadata = {"source": "api", "mode": payload.mode}
+        if client_id:
+            metadata["client_id"] = client_id
         self.repository.create_run(
             run_id=run_id,
             mode=payload.mode,
             workflow_key=payload.mode,
             title=self._make_title(payload),
             parent_run_id=parent_run_id,
-            metadata={"source": "api", "mode": payload.mode},
+            metadata=metadata,
         )
         self.repository.replace_artifact(run_id, kind="input", name="request", content=payload.model_dump())
         self.repository.add_event(run_id, event_type="run.created", payload={"run_id": run_id, "mode": payload.mode})
@@ -179,9 +227,20 @@ class RunService:
             "artifacts": [artifact.model_dump() for artifact in detail.artifacts],
         }
 
-    async def retry_run_or_404(self, run_id: str) -> dict[str, Any]:
+    async def retry_run_or_404(self, run_id: str, *, client_id: str | None = None) -> dict[str, Any]:
         payload_data = self.repository.get_artifact_content(run_id, kind="input", name="request")
         if payload_data is None:
             raise HTTPException(status_code=404, detail="未找到该 run 的原始输入，无法重试。")
         payload = RunCreateRequest.model_validate(payload_data)
-        return await self.create_run(payload, parent_run_id=run_id)
+        source_run = self.get_run_or_404(run_id)
+        resolved_client_id = client_id or str((source_run.metadata or {}).get("client_id") or "").strip() or None
+        return await self.create_run(payload, parent_run_id=run_id, client_id=resolved_client_id)
+
+    async def cancel_run_or_404(self, run_id: str) -> dict[str, Any]:
+        run = self.get_run_or_404(run_id)
+        if run.status in {"completed", "failed", "needs_clarification", "cancelled"}:
+            raise HTTPException(status_code=400, detail="当前任务已结束，无法撤回。")
+        cancelled = await self.runner.cancel(run_id)
+        if not cancelled:
+            raise HTTPException(status_code=409, detail="任务状态已变化，请刷新后重试。")
+        return self.get_run_detail_or_404(run_id)

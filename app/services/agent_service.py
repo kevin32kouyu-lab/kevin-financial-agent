@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable
 
-from app.agent_runtime.intent import _build_follow_up_question, _normalize_query, parse_intent
+from app.agent_runtime.intent import _build_follow_up_question, _normalize_query, extract_explicit_intent
+from app.agent_runtime.memory import build_user_profile_from_intent, parse_intent_with_memory
 
-from app.domain.contracts import AgentRunRequest, DebugAnalysisRequest, ParsedIntent
+from app.domain.contracts import AgentRunRequest, DebugAnalysisRequest, ParsedIntent, UserProfile
 from app.services.analysis_service import AnalysisService
+from app.services.profile_service import ProfileService
 from app.services.report_service import ReportService
 
 
@@ -53,9 +55,15 @@ def _build_debug_request(intent: ParsedIntent, payload: AgentRunRequest) -> Debu
 
 
 class AgentService:
-    def __init__(self, analysis_service: AnalysisService, report_service: ReportService):
+    def __init__(
+        self,
+        analysis_service: AnalysisService,
+        report_service: ReportService,
+        profile_service: ProfileService | None = None,
+    ):
         self.analysis_service = analysis_service
         self.report_service = report_service
+        self.profile_service = profile_service
 
     async def _publish_snapshot(self, hooks: AgentRunHooks | None, response: dict[str, Any]) -> None:
         if hooks is None:
@@ -87,7 +95,26 @@ class AgentService:
     def get_runtime_config(self, *, model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
         return self.report_service.get_runtime_config(model=model, base_url=base_url)
 
-    async def run(self, payload: AgentRunRequest, hooks: AgentRunHooks | None = None) -> dict[str, Any]:
+    def _resolve_memory(self, normalized_query: str, client_id: str | None) -> tuple[ParsedIntent, dict[str, Any]]:
+        empty_profile = UserProfile()
+        if not client_id or self.profile_service is None:
+            intent, memory = parse_intent_with_memory(normalized_query, empty_profile)
+            return intent, memory.model_dump()
+
+        explicit_intent = extract_explicit_intent(normalized_query)
+        explicit_profile = build_user_profile_from_intent(explicit_intent)
+        profile_response, updated_fields = self.profile_service.merge_explicit_profile(client_id, explicit_profile)
+        intent, memory = parse_intent_with_memory(normalized_query, profile_response.profile)
+        memory.updated_fields = updated_fields
+        return intent, memory.model_dump()
+
+    async def run(
+        self,
+        payload: AgentRunRequest,
+        hooks: AgentRunHooks | None = None,
+        *,
+        client_id: str | None = None,
+    ) -> dict[str, Any]:
         normalized_query = _normalize_query(payload.query)
         runtime_view = self.get_runtime_config(model=payload.llm.model, base_url=payload.llm.base_url)
 
@@ -103,9 +130,11 @@ class AgentService:
         await self._publish_snapshot(hooks, response)
 
         intent_started = perf_counter()
-        parsed_intent = parse_intent(normalized_query)
+        parsed_intent, memory = self._resolve_memory(normalized_query, client_id)
         response["parsed_intent"] = parsed_intent.model_dump()
+        response["memory"] = memory
         await self._publish_artifact(hooks, "derived", "parsed_intent", response["parsed_intent"])
+        await self._publish_artifact(hooks, "derived", "memory", response["memory"])
         await self._append_stage(
             hooks,
             response,

@@ -9,11 +9,13 @@ import {
 
 import {
   cancelRun,
+  clearProfile,
   clearRuns,
   createBacktest,
   createRun,
   getBacktest,
   getDataStatus,
+  getProfile,
   getRunArtifacts,
   getRunDetail,
   getRuntimeConfig,
@@ -22,6 +24,7 @@ import {
   openRunEventStream,
   refreshDataStatus,
   retryRun,
+  updateProfile,
 } from "../lib/api";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
@@ -33,6 +36,7 @@ import type {
   DataStatus,
   HistoryFilters,
   Locale,
+  ProfileResponse,
   RunDetailResponse,
   RunEvent,
   RunMode,
@@ -40,6 +44,7 @@ import type {
   RuntimeConfig,
   StructuredFormState,
   TerminalMode,
+  UserProfile,
 } from "../lib/types";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "needs_clarification", "cancelled"]);
@@ -75,6 +80,16 @@ const DEFAULT_FILTERS: HistoryFilters = {
   search: "",
   mode: "",
   status: "",
+};
+
+const EMPTY_PROFILE: UserProfile = {
+  capital_amount: null,
+  currency: null,
+  risk_tolerance: null,
+  investment_horizon: null,
+  investment_style: null,
+  preferred_sectors: [],
+  preferred_industries: [],
 };
 
 function todayIso() {
@@ -137,6 +152,14 @@ function buildStructuredPayload(form: StructuredFormState) {
   };
 }
 
+function cloneProfile(profile: UserProfile): UserProfile {
+  return {
+    ...profile,
+    preferred_sectors: [...profile.preferred_sectors],
+    preferred_industries: [...profile.preferred_industries],
+  };
+}
+
 export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [terminalMode, setTerminalMode] = useState<TerminalMode>(initialTerminalMode);
@@ -174,6 +197,12 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyMutating, setHistoryMutating] = useState(false);
   const [runLoading, setRunLoading] = useState(false);
+  const [profile, setProfile] = useState<UserProfile>(cloneProfile(EMPTY_PROFILE));
+  const [profileDraft, setProfileDraftState] = useState<UserProfile>(cloneProfile(EMPTY_PROFILE));
+  const [profileUpdatedAt, setProfileUpdatedAt] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileClearing, setProfileClearing] = useState(false);
 
   const deferredSearch = useDeferredValue(filters.search);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -186,13 +215,41 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   });
 
+  const applyProfileResponse = useEffectEvent((response: ProfileResponse) => {
+    const nextProfile = cloneProfile(response.profile);
+    startTransition(() => {
+      setProfile(nextProfile);
+      setProfileDraftState(cloneProfile(nextProfile));
+      setProfileUpdatedAt(response.updated_at);
+    });
+  });
+
+  const loadProfileState = useEffectEvent(async () => {
+    setProfileLoading(true);
+    try {
+      const response = await getProfile();
+      applyProfileResponse(response);
+      return response;
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : t("读取长期偏好失败。", "Failed to load saved preferences."));
+      return null;
+    } finally {
+      setProfileLoading(false);
+    }
+  });
+
   const loadTerminalMeta = useEffectEvent(async () => {
     try {
-      const [runtimeResponse, dataResponse] = await Promise.all([getRuntimeConfig(), getDataStatus()]);
+      const [runtimeResponse, dataResponse, profileResponse] = await Promise.all([
+        getRuntimeConfig(),
+        getDataStatus(),
+        getProfile(),
+      ]);
       startTransition(() => {
         setRuntime(runtimeResponse);
         setDataStatus(dataResponse);
       });
+      applyProfileResponse(profileResponse);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取终端环境失败。", "Failed to load terminal runtime."));
     }
@@ -222,6 +279,11 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       startTransition(() => setBacktestDetail(detail));
       return detail;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("Not Found") || message.includes("404")) {
+        startTransition(() => setBacktestDetail(null));
+        return undefined;
+      }
       setErrorText(error instanceof Error ? error.message : t("读取回测结果失败。", "Failed to load backtest result."));
       return null;
     } finally {
@@ -313,6 +375,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         const researchMode = String(researchContext?.research_mode || "realtime");
         const runAsOfDate = String(researchContext?.as_of_date || "");
 
+        if (existing === undefined) {
+          return detailResponse;
+        }
+
         if (!existing && researchMode === "historical") {
           let replayEnd = historicalBacktestEndDate || todayIso();
           if (runAsOfDate && replayEnd <= runAsOfDate) {
@@ -323,6 +389,12 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         }
       } else {
         startTransition(() => setBacktestDetail(null));
+      }
+      if (
+        detailResponse.run.mode === "agent" &&
+        (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")
+      ) {
+        await loadProfileState();
       }
       return detailResponse;
     } catch (error) {
@@ -585,6 +657,43 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
+  const saveProfileDraft = async () => {
+    setProfileSaving(true);
+    setErrorText("");
+    try {
+      const response = await updateProfile(profileDraft);
+      applyProfileResponse(response);
+      setStatusText(locale === "zh" ? "长期偏好已保存。" : "Saved preferences updated.");
+      return response;
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : t("保存长期偏好失败。", "Failed to save preferences."));
+      return null;
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const resetProfileDraft = () => {
+    startTransition(() => setProfileDraftState(cloneProfile(profile)));
+    setStatusText(locale === "zh" ? "已恢复为当前保存的偏好。" : "Draft reset to the saved profile.");
+  };
+
+  const clearStoredProfile = async () => {
+    setProfileClearing(true);
+    setErrorText("");
+    try {
+      const response = await clearProfile();
+      applyProfileResponse(response);
+      setStatusText(locale === "zh" ? "长期偏好已清空。" : "Saved preferences cleared.");
+      return response;
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : t("清空长期偏好失败。", "Failed to clear preferences."));
+      return null;
+    } finally {
+      setProfileClearing(false);
+    }
+  };
+
   return {
     locale,
     setLocale,
@@ -623,10 +732,23 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     historyLoading,
     historyMutating,
     runLoading,
+    profile,
+    profileDraft,
+    profileUpdatedAt,
+    profileLoading,
+    profileSaving,
+    profileClearing,
     setAgentForm: (patch: Partial<AgentFormState>) => setAgentFormState((current) => ({ ...current, ...patch })),
     setStructuredForm: (patch: Partial<StructuredFormState>) =>
       setStructuredFormState((current) => ({ ...current, ...patch })),
     setFilters: (patch: Partial<HistoryFilters>) => setFiltersState((current) => ({ ...current, ...patch })),
+    setProfileDraft: (patch: Partial<UserProfile>) =>
+      setProfileDraftState((current) => ({
+        ...current,
+        ...patch,
+        preferred_sectors: patch.preferred_sectors ?? current.preferred_sectors,
+        preferred_industries: patch.preferred_industries ?? current.preferred_industries,
+      })),
     setSelectedArtifactId,
     setSelectedArtifactKind,
     createAgentRun,
@@ -635,6 +757,9 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     cancelActiveRun,
     refreshData,
     clearHistory: clearHistoryItems,
+    saveProfileDraft,
+    resetProfileDraft,
+    clearStoredProfile,
     openRun,
     refreshHistory: () => loadHistory({ ...filters, search: deferredSearch }),
     loadBacktest,

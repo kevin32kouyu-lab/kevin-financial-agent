@@ -53,6 +53,9 @@ read.md
 *.tmp
 *.temp
 .cache/
+tmp_*.py
+tmp_ppt_export/
+_demo_live/
 
 # 系统文件
 .DS_Store
