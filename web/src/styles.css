@@ -1999,6 +1999,7 @@ select:focus {
   .allocation-line {
     grid-template-columns: 1fr;
   }
+
 }
 
 /* 首页视觉与动效样式 */
