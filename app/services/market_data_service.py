@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -59,6 +60,7 @@ DESCRIPTIVE_COLUMNS = {
 }
 
 WIKI_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+PACKAGED_SEED_PATH = Path(__file__).resolve().parents[1] / "assets" / "sp500_supabase_ready.csv"
 
 
 class MarketDataService:
@@ -159,7 +161,7 @@ class MarketDataService:
 
     def get_status(self) -> dict[str, Any]:
         status = self.repository.get_status()
-        status["seed_path"] = str(self.settings.csv_universe_path)
+        status["seed_path"] = str(self._resolve_seed_path())
         status["database_path"] = str(self.settings.market_db_path)
         status["fallback_enabled"] = True
         status["macro_status"] = self.repository.get_macro_snapshot_status()
@@ -182,9 +184,7 @@ class MarketDataService:
         return status
 
     def _load_seed_frame(self) -> pd.DataFrame:
-        seed_path = self.settings.csv_universe_path
-        if not seed_path.exists():
-            raise FileNotFoundError(f"股票池种子文件不存在: {seed_path}")
+        seed_path = self._resolve_seed_path()
 
         frame = pd.read_csv(seed_path)
         for column in REQUIRED_COLUMNS:
@@ -195,6 +195,16 @@ class MarketDataService:
         cleaned["ticker"] = cleaned["ticker"].astype(str).map(self._normalize_ticker)
         cleaned = cleaned[cleaned["ticker"] != ""]
         return cleaned.drop_duplicates(subset=["ticker"]).reset_index(drop=True)
+
+    def _resolve_seed_path(self) -> Path:
+        configured_path = self.settings.csv_universe_path
+        if configured_path.exists():
+            return configured_path
+        if PACKAGED_SEED_PATH.exists():
+            return PACKAGED_SEED_PATH
+        raise FileNotFoundError(
+            f"股票池种子文件不存在: {configured_path}；备用文件也不存在: {PACKAGED_SEED_PATH}"
+        )
 
     def _load_alpaca_universe_frame(self) -> pd.DataFrame:
         if not has_alpaca_credentials(self.settings):
