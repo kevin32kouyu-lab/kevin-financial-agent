@@ -367,6 +367,14 @@ docker compose up --build
 | `FINANCIAL_AGENT_MARKET_DB_PATH` | market 数据库路径 |
 | `FINANCIAL_AGENT_UNIVERSE_CSV` | CSV 种子路径 |
 
+## Railway 部署提醒
+
+- Docker 构建时需要把 `data/seed/sp500_supabase_ready.csv` 一起打进镜像，否则服务启动时会缺少股票池种子文件。
+- 如果你在 Railway 上挂持久化卷，请挂到 `/app/data/runtime`，不要直接挂到 `/app/data`，否则会把镜像内自带的 `data/seed` 一起覆盖掉。
+- 推荐变量写法：
+  - `FINANCIAL_AGENT_DB_PATH=/app/data/runtime/financial_agent_runs.sqlite3`
+  - `FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/runtime/financial_agent_market.sqlite3`
+
 ## 代理场景配置示例
 
 如果你开了系统代理，建议用 `auto`（默认），并让系统代理自动接管：
