@@ -81,6 +81,7 @@
 
 - 火山引擎 Ark Python SDK
 - 默认走 Coding Plan 路线：`/api/coding/v3`
+- DeepSeek 备用源：火山请求失败时自动回退到 OpenAI 兼容接口
 
 ## 数据源
 
@@ -363,6 +364,9 @@ docker compose up --build
 | `ARK_API_KEY` / `VOLCENGINE_ARK_API_KEY` | 火山 Ark API Key |
 | `ARK_MODEL` / `VOLCENGINE_ARK_MODEL` | 模型名 |
 | `ARK_BASE_URL` / `VOLCENGINE_ARK_BASE_URL` | 模型路由地址 |
+| `DEEPSEEK_API_KEY` | DeepSeek 备用模型 API Key |
+| `DEEPSEEK_MODEL` | DeepSeek 备用模型名，默认 `deepseek-chat` |
+| `DEEPSEEK_BASE_URL` | DeepSeek OpenAI 兼容接口地址，默认 `https://api.deepseek.com` |
 | `ALPHA_VANTAGE_API_KEY` | Alpha Vantage 备用源 |
 | `FINNHUB_API_KEY` | Finnhub 备用源 |
 | `FRED_API_KEY` | FRED 备用源 |

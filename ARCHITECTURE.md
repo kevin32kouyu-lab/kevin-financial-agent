@@ -6,6 +6,7 @@
 - `app/main.py`：注册页面路由、API 路由、健康检查和全局异常处理，并放行 `/terminal` 的子路由页面。
 - `app/core/runtime.py`：把仓储、服务和工作流装配成可运行的应用运行时。
 - `app/core/auth.py`：处理公开接口的 API Key 校验，并读取浏览器侧传来的 `X-Client-Id`。
+- `app/integrations/llm_client.py`：封装火山主源、DeepSeek 备用源和自动回退请求。
 - `app/api/runs.py`：处理 run 的创建、查询、重试、撤回和事件流。
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
 - `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
@@ -76,6 +77,7 @@
 - 公开展示优先采用 Docker 单服务部署：因为前后端已经由同一个 FastAPI 服务托管，最适合直接在 Railway 这类平台上公开发布。
 - Railway 的持久化卷挂到 `/app/data/runtime`：这样既能保留运行历史，也不会覆盖镜像里的 `data/seed` 种子文件。
 - 知识库采用本地 SQLite + FTS5，而不是外部向量数据库：保持 Railway 单服务部署简单，同时让报告证据可持久化、可回查。
+- LLM 路由采用“火山主源 + DeepSeek 备用源”：火山接口失败时自动回退，避免报告生成直接中断。
 - 容器启动改为读取环境变量里的 `PORT`，并增加 `/healthz`：这样更适合 Railway、Render 这类平台做自动探活和公网发布。
 - 可信度信息优先放到结论页前台，而不是只埋在正式报告里：让用户第一眼先判断“结论靠什么支撑、哪些地方要保守”。
 - 澄清机制采用“一句短追问”而不是长段解释：减少用户把补充信息步骤误解成系统报错。

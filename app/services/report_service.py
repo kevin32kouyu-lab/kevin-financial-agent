@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from app.integrations.llm_client import VolcengineChatClient, VolcengineChatConfig
+from app.integrations.llm_client import DeepSeekChatClient, DeepSeekChatConfig, FallbackChatClient, VolcengineChatClient, VolcengineChatConfig
 
 from app.domain.contracts import ParsedIntent
 from app.services.investment_memo import (
@@ -93,7 +93,15 @@ class ReportService:
         bundle["report_briefing"]["meta"] = meta
 
     def get_runtime_config(self, *, model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
-        return VolcengineChatConfig.from_overrides(model=model, base_url=base_url).public_view()
+        runtime_view = VolcengineChatConfig.from_overrides(model=model, base_url=base_url).public_view()
+        runtime_view["fallback"] = DeepSeekChatConfig.from_env().public_view()
+        return runtime_view
+
+    def _build_chat_client(self, runtime_config: VolcengineChatConfig) -> FallbackChatClient:
+        """构建主模型 + DeepSeek 备用模型客户端。"""
+        deepseek_config = DeepSeekChatConfig.from_env()
+        fallback = DeepSeekChatClient(deepseek_config) if deepseek_config.can_attempt() else None
+        return FallbackChatClient(primary=VolcengineChatClient(runtime_config), fallback=fallback)
 
     async def generate_report(
         self,
@@ -126,7 +134,7 @@ class ReportService:
             "llm_raw": {},
         }
 
-        client = VolcengineChatClient(runtime_config)
+        client = self._build_chat_client(runtime_config)
         try:
             report_result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -139,6 +147,14 @@ class ReportService:
                 timeout=18.0,
             )
             bundle["llm_raw"]["report_response"] = report_result["content"]
+            bundle["llm_raw"]["report_provider"] = report_result.get("provider")
+            if report_result.get("fallback_from"):
+                bundle["llm_raw"]["fallback_from"] = report_result.get("fallback_from")
+                bundle["llm_raw"]["primary_error"] = report_result.get("primary_error")
+                bundle["report_briefing"]["meta"]["llm_fallback"] = {
+                    "from": report_result.get("fallback_from"),
+                    "to": report_result.get("provider"),
+                }
             validation_error = validate_report_output(report_result["content"], intent, report_briefing)
             if validation_error:
                 bundle["final_report"] = build_rule_based_report(intent, report_briefing)
