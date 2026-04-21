@@ -103,7 +103,7 @@ class ReportService:
         fallback = DeepSeekChatClient(deepseek_config) if deepseek_config.can_attempt() else None
         return FallbackChatClient(primary=VolcengineChatClient(runtime_config), fallback=fallback)
 
-    async def generate_report(
+    def build_report_package(
         self,
         *,
         query: str,
@@ -113,17 +113,53 @@ class ReportService:
         model: str | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
+        """构造报告基础包，供 EvidenceAgent 接管 RAG 证据。"""
         runtime_config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
         merged_data_package = build_merged_data_package(query, intent, analysis)
         report_briefing = build_report_briefing(query, intent, merged_data_package)
         report_input = build_report_input(query, intent, merged_data_package)
+        return {
+            "runtime": runtime_config.public_view(),
+            "merged_data_package": merged_data_package,
+            "report_input": report_input,
+            "report_briefing": report_briefing,
+            "research_context": research_context or {},
+        }
+
+    def attach_evidence(
+        self,
+        *,
+        query: str,
+        report_briefing: dict[str, Any],
+        report_input: dict[str, Any],
+        research_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """把 RAG 证据接入报告包，供 EvidenceAgent 记录交接结果。"""
         self._attach_rag_payload(
             query=query,
             report_briefing=report_briefing,
             report_input=report_input,
             research_context=research_context,
         )
+        meta = report_briefing.setdefault("meta", {})
+        return {
+            "retrieved_evidence": meta.get("retrieved_evidence", []),
+            "citation_map": meta.get("citation_map", {}),
+        }
 
+    async def render_report(
+        self,
+        *,
+        query: str,
+        intent: ParsedIntent,
+        merged_data_package: dict[str, Any],
+        report_input: dict[str, Any],
+        report_briefing: dict[str, Any],
+        model: str | None = None,
+        base_url: str | None = None,
+    ) -> dict[str, Any]:
+        """生成正式报告或结构化兜底报告，不在这里执行 RAG 一致性校验。"""
+        runtime_config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
         bundle: dict[str, Any] = {
             "runtime": runtime_config.public_view(),
             "report_input": report_input,
@@ -172,10 +208,50 @@ class ReportService:
             bundle["report_briefing"]["meta"]["report_mode"] = "fallback"
 
         self._attach_report_mode_notes(bundle, language_code=intent.system_context.language)
+        return bundle
+
+    def validate_report_bundle(self, bundle: dict[str, Any], *, language_code: str) -> dict[str, Any]:
+        """由 ValidatorAgent 调用，统一写入最终校验和可信度。"""
         if self.rag_service is not None:
-            self.rag_service.apply_validation(
+            return self.rag_service.apply_validation(
                 final_report=bundle["final_report"],
                 report_briefing=bundle["report_briefing"],
-                language_code=intent.system_context.language,
+                language_code=language_code,
             )
+        return bundle.get("report_briefing", {}).setdefault("meta", {})
+
+    async def generate_report(
+        self,
+        *,
+        query: str,
+        intent: ParsedIntent,
+        analysis: dict[str, Any],
+        research_context: dict[str, Any] | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+    ) -> dict[str, Any]:
+        report_package = self.build_report_package(
+            query=query,
+            intent=intent,
+            analysis=analysis,
+            research_context=research_context,
+            model=model,
+            base_url=base_url,
+        )
+        self.attach_evidence(
+            query=query,
+            report_briefing=report_package["report_briefing"],
+            report_input=report_package["report_input"],
+            research_context=research_context,
+        )
+        bundle = await self.render_report(
+            query=query,
+            intent=intent,
+            merged_data_package=report_package["merged_data_package"],
+            report_input=report_package["report_input"],
+            report_briefing=report_package["report_briefing"],
+            model=model,
+            base_url=base_url,
+        )
+        self.validate_report_bundle(bundle, language_code=intent.system_context.language)
         return bundle

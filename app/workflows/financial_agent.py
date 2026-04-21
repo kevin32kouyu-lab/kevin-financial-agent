@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.domain.contracts import AgentRunRequest
-from app.services.agent_service import AgentRunHooks, AgentService
+from app.services.agent_coordinator import AgentCoordinator, AgentRunHooks
 from app.services.profile_service import ProfileService
 from app.workflows.base import Workflow, WorkflowContext, WorkflowResult
 
@@ -9,7 +9,7 @@ from app.workflows.base import Workflow, WorkflowContext, WorkflowResult
 class FinancialAgentWorkflow(Workflow):
     key = "agent"
 
-    def __init__(self, agent_service: AgentService, *, profile_service: ProfileService):
+    def __init__(self, agent_service: AgentCoordinator, *, profile_service: ProfileService):
         self.agent_service = agent_service
         self.profile_service = profile_service
 

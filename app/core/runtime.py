@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.core.config import AppSettings
 from app.repositories.sqlite_knowledge_repository import SqliteKnowledgeRepository
 from app.repositories.sqlite_run_repository import SqliteRunRepository
-from app.services.agent_service import AgentService
+from app.services.agent_coordinator import AgentCoordinator
 from app.services.analysis_service import AnalysisService
 from app.services.backtest_service import BacktestService
 from app.services.rag_service import KnowledgeRagService
@@ -30,7 +30,7 @@ class ApplicationRuntime:
     toolkit: MarketToolKit
     analysis_service: AnalysisService
     report_service: ReportService
-    agent_service: AgentService
+    agent_service: AgentCoordinator
     profile_service: ProfileService
     run_audit_service: RunAuditService
     backtest_service: BacktestService
@@ -57,7 +57,7 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
     toolkit = MarketToolKit()
     analysis_service = AnalysisService(toolkit=toolkit, market_data_service=market_data_service)
     report_service = ReportService(rag_service=rag_service)
-    agent_service = AgentService(analysis_service, report_service)
+    agent_service = AgentCoordinator(analysis_service, report_service)
     profile_service = ProfileService(repository=repository)
     run_audit_service = RunAuditService()
     backtest_service = BacktestService(repository=repository, settings=resolved_settings)

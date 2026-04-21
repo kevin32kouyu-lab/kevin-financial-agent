@@ -13,12 +13,14 @@
 - 如果外部数据源限流了，系统还能不能继续工作
 - 最终给出的建议能不能导出成正式研究报告
 
-这个项目的目标，就是把这些问题做成一个可运行、可解释、可扩展的 Agent 系统。
+这个项目的目标，就是把这些问题做成一个可运行、可解释、可扩展的可控多智能体研究系统。
 
 ## 核心能力
 
 - 支持中文 / 英文投资需求输入
 - 支持自然语言 Agent 研究模式和结构化筛选模式
+- 支持可控多智能体投研流程：Intake、Planner、Data、Evidence、Report、Validator 六个角色分工协作
+- 支持 `research_plan` 与 `agent_trace`：每次研究都会留下计划和 agent 交接记录，便于 debug 和论文说明
 - 支持 `/terminal` 双模式：实时研究 + 历史回测研究
 - 支持首页 `/`：先看项目介绍与新手引导，再进入研究终端
 - 支持高强度动效背景（Canvas 粒子 + 流线 + 光晕）与毛玻璃视觉层
@@ -210,9 +212,18 @@ flowchart LR
     G --> API
 
     API --> RUN["Run Service"]
-    RUN --> AGENT["Agent Service"]
+    RUN --> COORD["Agent Coordinator"]
+    COORD --> INTAKE["Intake Agent"]
+    COORD --> PLAN["Planner Agent"]
+    COORD --> DATAAGENT["Data Agent"]
+    COORD --> EVIDENCE["Evidence Agent"]
+    COORD --> REPORTAGENT["Report Agent"]
+    COORD --> VALIDATOR["Validator Agent"]
     RUN --> ANALYSIS["Analysis Service"]
-    AGENT --> REPORT["Report Service"]
+    DATAAGENT --> ANALYSIS
+    EVIDENCE --> REPORT["Report Service"]
+    REPORTAGENT --> REPORT
+    VALIDATOR --> REPORT
     ANALYSIS --> TOOLKIT["Market Toolkit"]
 
     TOOLKIT --> FETCH["External Data Fetchers"]
@@ -235,7 +246,8 @@ sequenceDiagram
     participant Terminal as Terminal
     participant API as FastAPI
     participant Run as Run Service
-    participant Agent as Agent Service
+    participant Coord as Agent Coordinator
+    participant Agents as Role Agents
     participant Analysis as Analysis Service
     participant Data as Data Providers
     participant Report as Report Service
@@ -243,12 +255,16 @@ sequenceDiagram
     User->>Terminal: 输入投资目标
     Terminal->>API: POST /api/runs
     API->>Run: 创建 run
-    Run->>Agent: 解析意图
-    Agent->>Analysis: 结构化筛选
+    Run->>Coord: 启动可控多智能体流程
+    Coord->>Agents: Intake + Planner
+    Agents-->>Coord: research_plan + agent_trace
+    Coord->>Analysis: DataAgent 请求结构化筛选
     Analysis->>Data: 拉取价格/新闻/审计/宏观
     Data-->>Analysis: 返回多源数据
-    Analysis-->>Agent: 返回候选股与研究包
-    Agent->>Report: 生成正式报告
+    Analysis-->>Coord: 返回候选股与研究包
+    Coord->>Report: EvidenceAgent 接入 RAG 证据
+    Coord->>Report: ReportAgent 生成正式报告
+    Coord->>Report: ValidatorAgent 校验结论
     Report-->>Run: 返回 memo / fallback report
     Run->>API: 可选触发 backtest(replay/reference)
     API-->>Terminal: 返回回测摘要与收益曲线
@@ -418,7 +434,7 @@ $env:MARKET_PROXY_URL="http://127.0.0.1:7890"
 后端语法检查：
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile app\main.py app\services\analysis_service.py app\services\agent_service.py app\services\backtest_service.py app\services\toolkit.py app\tools\fetchers.py
+.\.venv\Scripts\python.exe -m py_compile app\main.py app\agent_runtime\controlled_agents.py app\services\agent_coordinator.py app\services\analysis_service.py app\services\agent_service.py app\services\backtest_service.py app\services\toolkit.py app\tools\fetchers.py
 ```
 
 单元测试：
@@ -443,6 +459,7 @@ npm run build
 ## 当前局限
 
 - 当前 RAG 采用本地 SQLite FTS5，不接外部向量数据库
+- 当前多智能体是“可控多角色流程”，不是完全自治 agent 辩论系统
 - 长期记忆当前按浏览器隔离，还不是跨设备同步的正式账户体系
 - Smart Money 目前仍然是公开持仓代理，不是真正的机构级资金流
 - 免费数据源容易遇到限流，系统目前通过备用源与本地缓存缓解，但无法完全避免
@@ -461,6 +478,7 @@ npm run build
 - 2026-04-13：本轮是既有功能收尾与整合，没有新增外部方案检索。
 - 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主展示方案，因为不支持 SSE。
 - 2026-04-21：本轮按既定开发计划实现本地 SQLite FTS5 知识库 RAG，没有新增外部方案检索。
+- 2026-04-21：本轮按既定架构计划实现可控多智能体流程，没有新增外部方案检索。
 
 ## 已完成与待办
 
@@ -480,8 +498,10 @@ npm run build
 - `/debug` 保留开发者链路可观测能力
 - Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
 - 本地知识库 RAG 与报告后结论校验层
+- 可控多智能体流程（六个角色 agent、研究计划、agent 交接记录）
 
 待办：
 - 把“需要补充信息”的追问做成更自然的连续研究体验
+- 在 debug 前端增加更友好的 agent_trace 可视化
 - 增加更稳定的历史新闻与历史 smart money 可回放数据源
 - 增加交易成本、分红再投资、税务口径等更真实的回测参数
