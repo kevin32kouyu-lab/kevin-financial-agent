@@ -15,9 +15,46 @@ from app.services.investment_memo import (
     build_rule_based_report,
     validate_report_output,
 )
+from app.services.rag_service import KnowledgeRagService
 
 
 class ReportService:
+    def __init__(self, rag_service: KnowledgeRagService | None = None):
+        self.rag_service = rag_service
+
+    def _attach_rag_payload(
+        self,
+        *,
+        query: str,
+        report_briefing: dict[str, Any],
+        report_input: dict[str, Any],
+        research_context: dict[str, Any] | None,
+    ) -> None:
+        """把 RAG 证据写入报告摘要和模型输入，失败时不阻断主报告。"""
+        if self.rag_service is None:
+            return
+        meta = report_briefing.setdefault("meta", {})
+        try:
+            ingested_count = self.rag_service.ingest_run_evidence(
+                query=query,
+                report_briefing=report_briefing,
+                research_context=research_context,
+            )
+            evidence_payload = self.rag_service.attach_retrieved_evidence(
+                query=query,
+                report_briefing=report_briefing,
+                research_context=research_context,
+            )
+            meta["rag_ingested_documents"] = ingested_count
+            report_input["Retrieved_Evidence"] = evidence_payload["retrieved_evidence"]
+            report_input["Citation_Map"] = evidence_payload["citation_map"]
+        except Exception as exc:
+            meta["rag_error"] = str(exc)
+            meta.setdefault("retrieved_evidence", [])
+            meta.setdefault("citation_map", {})
+            report_input["Retrieved_Evidence"] = []
+            report_input["Citation_Map"] = {}
+
     def _attach_report_mode_notes(self, bundle: dict[str, Any], *, language_code: str) -> None:
         """把报告模式与校验结果同步到用户可读摘要里。"""
         meta = bundle.get("report_briefing", {}).get("meta", {}) or {}
@@ -64,13 +101,20 @@ class ReportService:
         query: str,
         intent: ParsedIntent,
         analysis: dict[str, Any],
+        research_context: dict[str, Any] | None = None,
         model: str | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
         runtime_config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
         merged_data_package = build_merged_data_package(query, intent, analysis)
-        report_input = build_report_input(query, intent, merged_data_package)
         report_briefing = build_report_briefing(query, intent, merged_data_package)
+        report_input = build_report_input(query, intent, merged_data_package)
+        self._attach_rag_payload(
+            query=query,
+            report_briefing=report_briefing,
+            report_input=report_input,
+            research_context=research_context,
+        )
 
         bundle: dict[str, Any] = {
             "runtime": runtime_config.public_view(),
@@ -88,7 +132,7 @@ class ReportService:
                 asyncio.to_thread(
                     client.chat,
                     system_prompt=build_report_system_prompt(intent.system_context.language),
-                    user_prompt=build_report_user_prompt(query, intent, merged_data_package),
+                    user_prompt=build_report_user_prompt(query, intent, merged_data_package, report_input=report_input),
                     temperature=0.2,
                     max_tokens=1400,
                 ),
@@ -112,4 +156,10 @@ class ReportService:
             bundle["report_briefing"]["meta"]["report_mode"] = "fallback"
 
         self._attach_report_mode_notes(bundle, language_code=intent.system_context.language)
+        if self.rag_service is not None:
+            self.rag_service.apply_validation(
+                final_report=bundle["final_report"],
+                report_briefing=bundle["report_briefing"],
+                language_code=intent.system_context.language,
+            )
         return bundle

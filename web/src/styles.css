@@ -4164,6 +4164,10 @@ body::before {
     grid-template-columns: 1fr;
   }
 
+  .evidence-reference-list {
+    grid-template-columns: 1fr;
+  }
+
   .terminal-archive-actions,
   .terminal-summary-actions {
     justify-content: stretch;
@@ -4228,4 +4232,59 @@ body::before {
   display: grid;
   gap: 6px;
   color: rgba(223, 234, 248, 0.82);
+}
+
+.evidence-reference-panel {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(125, 211, 196, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(125, 211, 196, 0.1), transparent 42%),
+    rgba(6, 18, 33, 0.62);
+}
+
+.evidence-reference-head,
+.evidence-reference-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.evidence-reference-head h3,
+.evidence-reference-card h4 {
+  margin: 0;
+}
+
+.evidence-reference-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.evidence-reference-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(151, 197, 255, 0.12);
+  background: rgba(5, 15, 29, 0.66);
+}
+
+.evidence-reference-card a {
+  color: #dff8ef;
+}
+
+.evidence-reference-card p,
+.evidence-reference-meta {
+  margin: 0;
+  color: rgba(223, 234, 248, 0.78);
+}
+
+.evidence-reference-meta {
+  justify-content: flex-start;
+  font-size: 0.82rem;
 }

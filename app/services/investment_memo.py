@@ -75,7 +75,8 @@ def build_report_system_prompt(language_code: str) -> str:
         "3. You must mention every ticker from Price_Data.\n"
         "4. Put the verdict first, then the supporting evidence, then the execution guidance.\n"
         "5. Output Markdown only. Do not use fenced code blocks.\n\n"
-        "6. If the JSON includes assumptions, surface them briefly in the executive section.\n\n"
+        "6. If the JSON includes assumptions, surface them briefly in the executive section.\n"
+        "7. If Retrieved_Evidence is provided, use it as the boundary for key claims and include source/date/link references where relevant.\n\n"
         "[REQUIRED STRUCTURE]\n"
         f"# {labels['title']}\n"
         f"## {sections['executive']}\n"
@@ -88,8 +89,13 @@ def build_report_system_prompt(language_code: str) -> str:
     )
 
 
-def build_report_user_prompt(query: str, intent: ParsedIntent, merged_data_package: dict[str, Any]) -> str:
-    payload = build_report_input(query, intent, merged_data_package)
+def build_report_user_prompt(
+    query: str,
+    intent: ParsedIntent,
+    merged_data_package: dict[str, Any],
+    report_input: dict[str, Any] | None = None,
+) -> str:
+    payload = report_input or build_report_input(query, intent, merged_data_package)
     return (
         "[INPUT DATA]\n"
         f"User Financial Query:\n{query}\n\n"

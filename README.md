@@ -29,6 +29,8 @@
 - 支持长期偏好自动学习：本次问题里明确写出的资金、风险、期限、风格和偏好行业，会自动写回长期记忆
 - 支持少重复追问：后续自然语言研究会优先复用已保存的长期偏好，只补空缺，不覆盖本次明确输入
 - 支持结论依据与谨慎提示摘要：不仅给答案，也说明为什么这样判断、哪里需要谨慎
+- 支持本地知识库 RAG：每次研究会把新闻摘要、SEC、评分、宏观和数据来源写入 SQLite 知识库
+- 支持结论一致性校验：报告生成后会检查优先标的、评分、风险、数据降级和时间范围是否一致
 - 支持历史审计摘要：历史页可直接看到本次研究用了哪些数据、哪里降级了、最终优先看什么
 - 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
 - 支持“补一句继续研究”：当核心条件不足时，用户可直接补一句信息继续当前任务
@@ -72,6 +74,7 @@
 ### 数据与存储
 
 - SQLite
+- SQLite FTS5
 - pandas
 
 ### LLM
@@ -370,6 +373,7 @@ docker compose up --build
 | `ALPACA_API_SECRET_KEY` | Alpaca Secret |
 | `FINANCIAL_AGENT_DB_PATH` | run 数据库路径 |
 | `FINANCIAL_AGENT_MARKET_DB_PATH` | market 数据库路径 |
+| `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH` | 本地知识库数据库路径 |
 | `FINANCIAL_AGENT_UNIVERSE_CSV` | CSV 种子路径 |
 
 ## Railway 部署提醒
@@ -380,6 +384,7 @@ docker compose up --build
 - 推荐变量写法：
   - `FINANCIAL_AGENT_DB_PATH=/app/data/runtime/financial_agent_runs.sqlite3`
   - `FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/runtime/financial_agent_market.sqlite3`
+  - `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH=/app/data/runtime/financial_agent_knowledge.sqlite3`
 
 ## 代理场景配置示例
 
@@ -433,7 +438,7 @@ npm run build
 
 ## 当前局限
 
-- 当前“依据检索”仍是基于结构化研究结果的轻量版本，还不是完整知识库式 RAG
+- 当前 RAG 采用本地 SQLite FTS5，不接外部向量数据库
 - 长期记忆当前按浏览器隔离，还不是跨设备同步的正式账户体系
 - Smart Money 目前仍然是公开持仓代理，不是真正的机构级资金流
 - 免费数据源容易遇到限流，系统目前通过备用源与本地缓存缓解，但无法完全避免
@@ -451,6 +456,7 @@ npm run build
 
 - 2026-04-13：本轮是既有功能收尾与整合，没有新增外部方案检索。
 - 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主展示方案，因为不支持 SSE。
+- 2026-04-21：本轮按既定开发计划实现本地 SQLite FTS5 知识库 RAG，没有新增外部方案检索。
 
 ## 已完成与待办
 
@@ -469,9 +475,9 @@ npm run build
 - 报告区图表化与导出（PDF/HTML/Markdown/JSON）
 - `/debug` 保留开发者链路可观测能力
 - Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
+- 本地知识库 RAG 与报告后结论校验层
 
 待办：
-- 补更正式的知识检索层（RAG）与更强的结论校验层
 - 把“需要补充信息”的追问做成更自然的连续研究体验
 - 增加更稳定的历史新闻与历史 smart money 可回放数据源
 - 增加交易成本、分红再投资、税务口径等更真实的回测参数

@@ -41,6 +41,7 @@ class AppSettings:
     port: int = 8001
     db_path: Path = ROOT_DIR / "data" / "runtime" / "financial_agent_runs.sqlite3"
     market_db_path: Path = ROOT_DIR / "data" / "runtime" / "financial_agent_market.sqlite3"
+    knowledge_db_path: Path = ROOT_DIR / "data" / "runtime" / "financial_agent_knowledge.sqlite3"
     csv_universe_path: Path = ROOT_DIR / "data" / "seed" / "sp500_supabase_ready.csv"
     legacy_static_dir: Path = ROOT_DIR / "legacy" / "static"
     web_root_dir: Path = ROOT_DIR / "web"
@@ -79,6 +80,11 @@ class AppSettings:
             Path(os.getenv("FINANCIAL_AGENT_MARKET_DB_PATH", "")).expanduser()
             if os.getenv("FINANCIAL_AGENT_MARKET_DB_PATH")
             else ROOT_DIR / "data" / "runtime" / "financial_agent_market.sqlite3"
+        )
+        knowledge_db_path = (
+            Path(os.getenv("FINANCIAL_AGENT_KNOWLEDGE_DB_PATH", "")).expanduser()
+            if os.getenv("FINANCIAL_AGENT_KNOWLEDGE_DB_PATH")
+            else ROOT_DIR / "data" / "runtime" / "financial_agent_knowledge.sqlite3"
         )
         csv_universe_path = (
             Path(os.getenv("FINANCIAL_AGENT_UNIVERSE_CSV", "")).expanduser()
@@ -149,6 +155,7 @@ class AppSettings:
             port=port,
             db_path=db_path,
             market_db_path=market_db_path,
+            knowledge_db_path=knowledge_db_path,
             csv_universe_path=csv_universe_path,
             api_key=api_key,
             api_key_header=api_key_header,

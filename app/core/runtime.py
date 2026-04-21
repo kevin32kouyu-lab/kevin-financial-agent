@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from app.core.config import AppSettings
+from app.repositories.sqlite_knowledge_repository import SqliteKnowledgeRepository
 from app.repositories.sqlite_run_repository import SqliteRunRepository
 from app.services.agent_service import AgentService
 from app.services.analysis_service import AnalysisService
 from app.services.backtest_service import BacktestService
+from app.services.rag_service import KnowledgeRagService
 from app.services.market_data_service import MarketDataService
 from app.services.profile_service import ProfileService
 from app.services.report_service import ReportService
@@ -23,6 +25,7 @@ from app.workflows.structured_analysis import StructuredAnalysisWorkflow
 class ApplicationRuntime:
     settings: AppSettings
     repository: SqliteRunRepository
+    knowledge_repository: SqliteKnowledgeRepository
     market_data_service: MarketDataService
     toolkit: MarketToolKit
     analysis_service: AnalysisService
@@ -31,11 +34,13 @@ class ApplicationRuntime:
     profile_service: ProfileService
     run_audit_service: RunAuditService
     backtest_service: BacktestService
+    rag_service: KnowledgeRagService
     workflow_runner: WorkflowRunner
     run_service: RunService
 
     async def startup(self) -> None:
         self.repository.init_schema()
+        self.knowledge_repository.init_schema()
         self.market_data_service.startup()
         await self.workflow_runner.start()
 
@@ -46,10 +51,12 @@ class ApplicationRuntime:
 def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
     resolved_settings = settings or AppSettings.from_env()
     repository = SqliteRunRepository(resolved_settings.db_path)
+    knowledge_repository = SqliteKnowledgeRepository(resolved_settings.knowledge_db_path)
+    rag_service = KnowledgeRagService(knowledge_repository)
     market_data_service = MarketDataService(resolved_settings)
     toolkit = MarketToolKit()
     analysis_service = AnalysisService(toolkit=toolkit, market_data_service=market_data_service)
-    report_service = ReportService()
+    report_service = ReportService(rag_service=rag_service)
     agent_service = AgentService(analysis_service, report_service)
     profile_service = ProfileService(repository=repository)
     run_audit_service = RunAuditService()
@@ -63,6 +70,7 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
     return ApplicationRuntime(
         settings=resolved_settings,
         repository=repository,
+        knowledge_repository=knowledge_repository,
         market_data_service=market_data_service,
         toolkit=toolkit,
         analysis_service=analysis_service,
@@ -71,6 +79,7 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
         profile_service=profile_service,
         run_audit_service=run_audit_service,
         backtest_service=backtest_service,
+        rag_service=rag_service,
         workflow_runner=workflow_runner,
         run_service=run_service,
     )
@@ -83,5 +92,6 @@ def get_runtime(app: FastAPI) -> ApplicationRuntime:
         runtime = build_runtime(settings)
         app.state.runtime = runtime
         runtime.repository.init_schema()
+        runtime.knowledge_repository.init_schema()
         runtime.market_data_service.startup()
     return runtime

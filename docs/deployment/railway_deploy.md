@@ -69,12 +69,14 @@ Railway 会自动识别根目录 `Dockerfile`。
 - 历史研究记录
 - 回测结果
 - 最近一次用户偏好
+- 本地知识库证据
 
 建议在 Railway 给服务挂一个持久化卷，并把环境变量设成：
 
 ```text
 FINANCIAL_AGENT_DB_PATH=/app/data/runtime/financial_agent_runs.sqlite3
 FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/runtime/financial_agent_market.sqlite3
+FINANCIAL_AGENT_KNOWLEDGE_DB_PATH=/app/data/runtime/financial_agent_knowledge.sqlite3
 ```
 
 如果不挂卷，服务重建后这些数据可能会丢失。

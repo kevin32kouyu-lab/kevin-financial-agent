@@ -193,6 +193,7 @@ class AgentService:
             query=normalized_query,
             intent=parsed_intent,
             analysis=analysis,
+            research_context=payload.research_context.model_dump(),
             model=payload.llm.model,
             base_url=payload.llm.base_url,
         )

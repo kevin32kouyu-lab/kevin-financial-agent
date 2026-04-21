@@ -155,6 +155,37 @@ function buildProfileFacts(locale: Locale, userProfile: GenericRecord | null): s
   ].filter(Boolean);
 }
 
+function evidenceTypeLabel(locale: Locale, item: GenericRecord): string {
+  const sourceType = toText(item.source_type, "").toLowerCase();
+  const labelsZh: Record<string, string> = {
+    news: "新闻",
+    sec: "SEC 披露",
+    score_fact: "评分事实",
+    macro: "宏观",
+    data_source: "数据来源",
+    research_card: "研究摘要",
+  };
+  const labelsEn: Record<string, string> = {
+    news: "News",
+    sec: "SEC filing",
+    score_fact: "Score fact",
+    macro: "Macro",
+    data_source: "Data source",
+    research_card: "Research note",
+  };
+  const sourceName = toText(item.source_name, "");
+  const typeLabel = (locale === "zh" ? labelsZh : labelsEn)[sourceType] || toText(item.source_type, locale === "zh" ? "证据" : "Evidence");
+  return sourceName ? `${typeLabel} · ${sourceName}` : typeLabel;
+}
+
+function evidenceDateLabel(locale: Locale, item: GenericRecord): string {
+  const publishedAt = toText(item.published_at, "");
+  const asOfDate = toText(item.as_of_date, "");
+  if (publishedAt) return locale === "zh" ? `日期 ${publishedAt}` : `Date ${publishedAt}`;
+  if (asOfDate) return locale === "zh" ? `截至 ${asOfDate}` : `As of ${asOfDate}`;
+  return locale === "zh" ? "日期未标注" : "Date unavailable";
+}
+
 function renderReportMarkdown(text: string) {
   const lines = repairText(text, "").split(/\r?\n/);
   const blocks: Array<
@@ -471,6 +502,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
   const evidenceSummary = asRecord(meta?.evidence_summary);
   const validationSummary = asRecord(meta?.validation_summary);
   const safetySummary = asRecord(meta?.safety_summary);
+  const retrievedEvidence = asArray(meta?.retrieved_evidence);
   const memorySummary = asRecord(result.memory_summary);
   const profileFacts = buildProfileFacts(locale, userProfile);
   const headerTitle = locale === "zh" ? "机构级投资研究报告" : "Institutional Investment Research Report";
@@ -529,6 +561,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       {variant === "terminal" ? (
         <nav className="report-anchor-nav">
           <a href="#report-overview" className="anchor-chip">{copy.report.labels.overview}</a>
+          {retrievedEvidence.length ? <a href="#report-evidence" className="anchor-chip">{locale === "zh" ? "证据" : "Evidence"}</a> : null}
           <a href="#report-charts" className="anchor-chip">{copy.report.labels.charts}</a>
           <a href="#report-scoreboard" className="anchor-chip">{locale === "zh" ? "候选池" : "Scoreboard"}</a>
           <a href="#report-coverage" className="anchor-chip">{copy.report.labels.coverage}</a>
@@ -667,6 +700,37 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
           </div>
         </>
       )}
+
+      {variant === "terminal" && retrievedEvidence.length ? (
+        <section id="report-evidence" className="evidence-reference-panel anchor-target">
+          <div className="evidence-reference-head">
+            <div>
+              <p className="eyebrow">{locale === "zh" ? "证据来源" : "Evidence references"}</p>
+              <h3>{locale === "zh" ? "这次结论引用了哪些材料" : "What this conclusion cites"}</h3>
+            </div>
+            <span className="chip neutral">{retrievedEvidence.length} {locale === "zh" ? "条" : "items"}</span>
+          </div>
+          <div className="evidence-reference-list">
+            {retrievedEvidence.slice(0, 6).map((item, index) => {
+              const citationKey = toText(item.citation_key, `C${index + 1}`);
+              const title = toText(item.title, locale === "zh" ? "未命名证据" : "Untitled evidence");
+              const url = toText(item.url, "");
+              return (
+                <article key={toText(item.id, `${citationKey}-${index}`)} className="evidence-reference-card">
+                  <div className="evidence-reference-meta">
+                    <span className="chip positive">{citationKey}</span>
+                    {toText(item.ticker, "") ? <span className="chip">{toText(item.ticker)}</span> : null}
+                    <span>{evidenceTypeLabel(locale, item)}</span>
+                    <span>{evidenceDateLabel(locale, item)}</span>
+                  </div>
+                  <h4>{url.startsWith("http") ? <a href={url} target="_blank" rel="noreferrer">{title}</a> : title}</h4>
+                  <p>{toText(item.summary || item.content, locale === "zh" ? "暂无摘要。" : "No summary available.")}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div id="report-overview" className="executive-grid anchor-target">
         <article className="executive-card">
