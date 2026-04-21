@@ -67,6 +67,17 @@ def test_deepseek_config_reads_env_with_safe_public_view(monkeypatch: pytest.Mon
     }
 
 
+def test_deepseek_key_strips_invisible_bom(monkeypatch: pytest.MonkeyPatch) -> None:
+    """从部署平台读取密钥时，应清理可能混入的 BOM 字符。"""
+    _clear_ark_env(monkeypatch)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "\ufeffsk-real-deepseek-key")
+
+    config = DeepSeekChatConfig.from_env()
+
+    assert config.api_key == "sk-real-deepseek-key"
+    assert config.can_attempt() is True
+
+
 def test_deepseek_placeholder_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """DeepSeek 示例 Key 不能被当成真实备用源。"""
     _clear_ark_env(monkeypatch)

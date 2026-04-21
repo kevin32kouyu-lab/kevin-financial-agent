@@ -24,7 +24,7 @@ def _get_first_env(*names: str) -> str | None:
     for name in names:
         value = os.getenv(name)
         if value:
-            return value.strip()
+            return value.strip().lstrip("\ufeff")
     return None
 
 
