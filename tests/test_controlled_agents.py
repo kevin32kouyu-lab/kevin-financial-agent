@@ -113,6 +113,8 @@ def test_planner_agent_builds_research_plan_from_intent():
 
     assert result.plan["objective"]
     assert result.plan["data_requirements"] == ["market_data", "fundamentals", "news", "sec_filings", "macro", "rag_evidence"]
+    assert result.plan["tool_candidates"] == ["screener", "market_toolkit", "knowledge_rag", "report_builder", "rag_validator"]
+    assert result.plan["fallback_policy"]["market_data"] == "use_backup_sources_and_cache"
     assert "formal_report" in result.plan["expected_outputs"]
     assert result.trace.agent_name == "PlannerAgent"
     assert result.trace.artifact_keys == ["research_plan"]
@@ -146,11 +148,31 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
         "ValidatorAgent",
     ]
     for item in response["agent_trace"]:
-        assert set(item) == {"agent_name", "input_summary", "output_summary", "confidence", "warnings", "artifact_keys"}
+        assert set(item) == {
+            "agent_name",
+            "status",
+            "started_at",
+            "finished_at",
+            "elapsed_ms",
+            "input_summary",
+            "output_summary",
+            "confidence",
+            "warnings",
+            "artifact_keys",
+            "evidence_count",
+            "error_message",
+        }
+        assert item["status"] == "completed"
+        assert isinstance(item["elapsed_ms"], float)
+        assert item["started_at"]
+        assert item["finished_at"]
+    evidence_trace = next(item for item in response["agent_trace"] if item["agent_name"] == "EvidenceAgent")
+    assert evidence_trace["evidence_count"] == 1
 
     artifact_names = {(kind, name) for kind, name, _ in artifacts}
     assert ("derived", "research_plan") in artifact_names
     assert ("derived", "agent_trace") in artifact_names
+    assert ("derived", "memory_resolution") in artifact_names
 
 
 @pytest.mark.asyncio

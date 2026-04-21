@@ -93,6 +93,15 @@ function createGeometry(
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function numberValue(value: unknown): number | null {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+}
+
 export function BacktestPanel({
   locale,
   copy,
@@ -116,6 +125,23 @@ export function BacktestPanel({
   const positions = backtest?.positions || [];
   const attributionSummary = Array.isArray(backtest?.meta?.attribution_summary)
     ? (backtest?.meta?.attribution_summary as Array<unknown>).map((item) => String(item || "")).filter(Boolean)
+    : [];
+  const assumptions = asRecord(backtest?.meta?.assumptions);
+  const transactionCostBps = numberValue(assumptions?.transaction_cost_bps);
+  const slippageBps = numberValue(assumptions?.slippage_bps);
+  const dividendIncluded = assumptions?.dividend_included === true;
+  const assumptionRows = assumptions
+    ? [
+        locale === "zh"
+          ? `交易成本：${transactionCostBps ?? 0} bps，滑点：${slippageBps ?? 0} bps。`
+          : `Transaction cost: ${transactionCostBps ?? 0} bps, slippage: ${slippageBps ?? 0} bps.`,
+        locale === "zh"
+          ? `分红：${dividendIncluded ? "已纳入" : "未纳入，除非数据源本身提供总回报价格"}。`
+          : `Dividends: ${dividendIncluded ? "included" : "not included unless the source provides total-return prices"}.`,
+        locale === "zh"
+          ? `再平衡：${String(assumptions.rebalance || "none_buy_and_hold")}。`
+          : `Rebalance: ${String(assumptions.rebalance || "none_buy_and_hold")}.`,
+      ]
     : [];
   const rangeLabels = {
     "1M": copy.backtest.ranges.m1,
@@ -289,6 +315,15 @@ export function BacktestPanel({
             <div className="mini-card">
               <span className="mini-label">{locale === "zh" ? "回测复盘说明" : "Backtest interpretation"}</span>
               {attributionSummary.map((item, index) => (
+                <p key={`${item}-${index}`}>{item}</p>
+              ))}
+            </div>
+          ) : null}
+
+          {assumptionRows.length ? (
+            <div className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "本次回测口径" : "Backtest assumptions"}</span>
+              {assumptionRows.map((item, index) => (
                 <p key={`${item}-${index}`}>{item}</p>
               ))}
             </div>

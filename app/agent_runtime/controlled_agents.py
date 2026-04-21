@@ -20,16 +20,28 @@ class AgentTraceEntry:
     confidence: float
     warnings: list[str] = field(default_factory=list)
     artifact_keys: list[str] = field(default_factory=list)
+    status: str = "completed"
+    started_at: str | None = None
+    finished_at: str | None = None
+    elapsed_ms: float = 0.0
+    evidence_count: int | None = None
+    error_message: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转换为前端和 artifact 可直接保存的字典。"""
         return {
             "agent_name": self.agent_name,
+            "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "elapsed_ms": round(max(float(self.elapsed_ms or 0.0), 0.0), 2),
             "input_summary": self.input_summary,
             "output_summary": self.output_summary,
             "confidence": round(max(0.0, min(self.confidence, 1.0)), 2),
             "warnings": list(self.warnings),
             "artifact_keys": list(self.artifact_keys),
+            "evidence_count": self.evidence_count,
+            "error_message": self.error_message,
         }
 
 
@@ -174,6 +186,13 @@ class PlannerAgent:
             "tickers": tickers,
             "preferred_sectors": sectors,
             "data_requirements": ["market_data", "fundamentals", "news", "sec_filings", "macro", "rag_evidence"],
+            "tool_candidates": ["screener", "market_toolkit", "knowledge_rag", "report_builder", "rag_validator"],
+            "fallback_policy": {
+                "market_data": "use_backup_sources_and_cache",
+                "rag_evidence": "continue_with_validation_warning",
+                "llm_report": "fallback_to_rule_based_report",
+                "backtest": "drop_unpriced_tickers_and_disclose",
+            },
             "expected_outputs": ["candidate_scoreboard", "evidence_summary", "formal_report", "validation_checks"],
             "handoff_order": [
                 "IntakeAgent",
@@ -282,6 +301,7 @@ class EvidenceAgent:
                 confidence=0.78 if evidence_count else 0.56,
                 warnings=warnings,
                 artifact_keys=["report_input", "report_briefing", "retrieved_evidence", "citation_map"],
+                evidence_count=evidence_count,
             ),
         )
 

@@ -186,6 +186,40 @@ function evidenceDateLabel(locale: Locale, item: GenericRecord): string {
   return locale === "zh" ? "日期未标注" : "Date unavailable";
 }
 
+function evidenceFreshnessLabel(locale: Locale, item: GenericRecord): string {
+  const freshness = toText(item.freshness, "").toLowerCase();
+  const labelsZh: Record<string, string> = {
+    current: "时效：当前",
+    recent: "时效：近期",
+    stale: "时效：较旧",
+    future: "时效：未来资料",
+    undated: "时效：未标日期",
+  };
+  const labelsEn: Record<string, string> = {
+    current: "Freshness: current",
+    recent: "Freshness: recent",
+    stale: "Freshness: stale",
+    future: "Freshness: future-dated",
+    undated: "Freshness: undated",
+  };
+  return (locale === "zh" ? labelsZh : labelsEn)[freshness] || "";
+}
+
+function evidenceReliabilityLabel(locale: Locale, item: GenericRecord): string {
+  const reliability = toText(item.source_reliability, "").toLowerCase();
+  const labelsZh: Record<string, string> = {
+    high: "来源：高可靠",
+    medium: "来源：中等可靠",
+    low: "来源：低可靠",
+  };
+  const labelsEn: Record<string, string> = {
+    high: "Source: high reliability",
+    medium: "Source: medium reliability",
+    low: "Source: low reliability",
+  };
+  return (locale === "zh" ? labelsZh : labelsEn)[reliability] || "";
+}
+
 function renderReportMarkdown(text: string) {
   const lines = repairText(text, "").split(/\r?\n/);
   const blocks: Array<
@@ -715,6 +749,8 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
               const citationKey = toText(item.citation_key, `C${index + 1}`);
               const title = toText(item.title, locale === "zh" ? "未命名证据" : "Untitled evidence");
               const url = toText(item.url, "");
+              const freshnessLabel = evidenceFreshnessLabel(locale, item);
+              const reliabilityLabel = evidenceReliabilityLabel(locale, item);
               return (
                 <article key={toText(item.id, `${citationKey}-${index}`)} className="evidence-reference-card">
                   <div className="evidence-reference-meta">
@@ -722,6 +758,8 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
                     {toText(item.ticker, "") ? <span className="chip">{toText(item.ticker)}</span> : null}
                     <span>{evidenceTypeLabel(locale, item)}</span>
                     <span>{evidenceDateLabel(locale, item)}</span>
+                    {freshnessLabel ? <span>{freshnessLabel}</span> : null}
+                    {reliabilityLabel ? <span>{reliabilityLabel}</span> : null}
                   </div>
                   <h4>{url.startsWith("http") ? <a href={url} target="_blank" rel="noreferrer">{title}</a> : title}</h4>
                   <p>{toText(item.summary || item.content, locale === "zh" ? "暂无摘要。" : "No summary available.")}</p>

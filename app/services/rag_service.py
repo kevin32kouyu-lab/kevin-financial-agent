@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from app.repositories.sqlite_knowledge_repository import (
@@ -55,7 +56,7 @@ class KnowledgeRagService:
             research_mode=research_mode,
             limit=limit,
         )
-        public_evidence = self._with_citation_keys(evidence)
+        public_evidence = self._with_citation_keys(evidence, as_of_date=as_of_date)
         citation_map = {
             item["citation_key"]: {
                 "evidence_id": item["id"],
@@ -65,6 +66,9 @@ class KnowledgeRagService:
                 "title": item.get("title"),
                 "url": item.get("url"),
                 "published_at": item.get("published_at"),
+                "freshness": item.get("freshness"),
+                "source_reliability": item.get("source_reliability"),
+                "used_in_sections": item.get("used_in_sections"),
             }
             for item in public_evidence
         }
@@ -260,14 +264,72 @@ class KnowledgeRagService:
                 )
             )
 
-    def _with_citation_keys(self, evidence: list[RetrievedEvidence]) -> list[dict[str, Any]]:
-        """给证据条目增加 C1/C2 形式引用编号。"""
+    def _with_citation_keys(self, evidence: list[RetrievedEvidence], *, as_of_date: str | None) -> list[dict[str, Any]]:
+        """给证据条目增加引用编号、时效和来源质量说明。"""
         items: list[dict[str, Any]] = []
         for index, item in enumerate(evidence, start=1):
             payload = item.to_public_dict()
             payload["citation_key"] = f"C{index}"
+            payload["freshness"] = self._freshness_label(payload.get("published_at"), as_of_date)
+            payload["source_reliability"] = self._source_reliability(payload.get("source_type"))
+            payload["used_in_sections"] = self._used_in_sections(payload.get("source_type"))
             items.append(payload)
         return items
+
+    @staticmethod
+    def _freshness_label(published_at: Any, as_of_date: str | None) -> str:
+        """按研究日期粗略标记证据是否新鲜。"""
+        published = KnowledgeRagService._parse_date(published_at)
+        if published is None:
+            return "undated"
+        anchor = KnowledgeRagService._parse_date(as_of_date)
+        if anchor is None:
+            return "current"
+        age_days = (anchor - published).days
+        if age_days < 0:
+            return "future"
+        if age_days <= 14:
+            return "current"
+        if age_days <= 90:
+            return "recent"
+        return "stale"
+
+    @staticmethod
+    def _source_reliability(source_type: Any) -> str:
+        """给不同来源类型一个可解释的可靠性分层。"""
+        normalized = str(source_type or "").strip().lower()
+        if normalized in {"sec", "score_fact", "macro", "data_source"}:
+            return "high"
+        if normalized in {"research_card", "news"}:
+            return "medium"
+        return "low"
+
+    @staticmethod
+    def _used_in_sections(source_type: Any) -> list[str]:
+        """说明证据主要支撑报告里的哪些用户可见区域。"""
+        normalized = str(source_type or "").strip().lower()
+        mapping = {
+            "score_fact": ["scoreboard", "executive"],
+            "sec": ["ticker_cards", "risk_register"],
+            "news": ["ticker_cards", "risk_register"],
+            "macro": ["macro", "risk_register"],
+            "data_source": ["evidence_summary", "validation"],
+            "research_card": ["ticker_cards", "executive"],
+        }
+        return mapping.get(normalized, ["ticker_cards"])
+
+    @staticmethod
+    def _parse_date(value: Any) -> date | None:
+        """兼容 ISO 日期和日期时间字符串。"""
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
 
     def _build_search_query(self, query: str, report_briefing: dict[str, Any], tickers: list[str]) -> str:
         """组合用户问题、优先标的和摘要关键词，提升检索召回。"""

@@ -90,6 +90,10 @@ def test_rag_service_ingests_report_briefing_and_builds_citations(tmp_path):
     assert len(evidence_payload["retrieved_evidence"]) >= 3
     assert evidence_payload["citation_map"]
     assert briefing["meta"]["retrieved_evidence"] == evidence_payload["retrieved_evidence"]
+    first = evidence_payload["retrieved_evidence"][0]
+    assert first["freshness"] in {"current", "recent", "stale", "undated"}
+    assert first["source_reliability"] in {"high", "medium", "low"}
+    assert "used_in_sections" in first
 
 
 def test_rag_validation_flags_missing_top_pick_and_lowers_confidence(tmp_path):
@@ -116,6 +120,57 @@ def test_rag_validation_flags_missing_top_pick_and_lowers_confidence(tmp_path):
     assert meta["confidence_level"] == "low"
     assert any(item["id"] == "report_mentions_top_pick" and item["status"] == "fail" for item in meta["validation_checks"])
     assert any("AAPL" in item for item in meta["validation_summary"]["items"])
+
+
+def test_rag_validation_flags_empty_and_stale_evidence(tmp_path):
+    """确认没有证据或证据过旧时会产生用户可读校验提示。"""
+    service = KnowledgeRagService(SqliteKnowledgeRepository(tmp_path / "knowledge.sqlite3"))
+    briefing = _sample_briefing()
+    briefing["meta"]["retrieved_evidence"] = [
+        {
+            "citation_key": "C1",
+            "ticker": "AAPL",
+            "source_type": "news",
+            "source_name": "Market news summary",
+            "title": "Old Apple news",
+            "published_at": "2025-01-01",
+            "freshness": "stale",
+            "source_reliability": "medium",
+            "summary": "Old summary",
+        }
+    ]
+
+    meta = service.apply_validation(
+        final_report="# Research Report\n\nAAPL remains the top pick.",
+        report_briefing=briefing,
+        language_code="en",
+    )
+
+    assert any(item["id"] == "evidence_freshness" and item["status"] == "warn" for item in meta["validation_checks"])
+    assert meta["confidence_level"] == "medium"
+
+
+def test_rag_validation_flags_top_pick_not_highest_score(tmp_path):
+    """确认优先标的不是最高评分时会被标记为谨慎。"""
+    service = KnowledgeRagService(SqliteKnowledgeRepository(tmp_path / "knowledge.sqlite3"))
+    briefing = _sample_briefing()
+    briefing["scoreboard"] = [
+        {"ticker": "AAPL", "composite_score": 70, "suitability_score": 70, "verdict_label": "Strong Buy"},
+        {"ticker": "MSFT", "composite_score": 91, "suitability_score": 91, "verdict_label": "Strong Buy"},
+    ]
+    briefing["meta"]["retrieved_evidence"] = [
+        {"citation_key": "C1", "ticker": "AAPL", "published_at": "2026-04-21", "freshness": "current", "source_reliability": "high"},
+        {"citation_key": "C2", "ticker": "MSFT", "published_at": "2026-04-21", "freshness": "current", "source_reliability": "high"},
+        {"citation_key": "C3", "ticker": None, "published_at": "2026-04-21", "freshness": "current", "source_reliability": "medium"},
+    ]
+
+    meta = service.apply_validation(
+        final_report="# Research Report\n\nAAPL remains the top pick.",
+        report_briefing=briefing,
+        language_code="en",
+    )
+
+    assert any(item["id"] == "top_pick_ranking" and item["status"] == "warn" for item in meta["validation_checks"])
 
 
 def _sample_briefing():

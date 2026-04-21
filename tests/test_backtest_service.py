@@ -10,6 +10,34 @@ from app.core.config import AppSettings
 from app.repositories.sqlite_run_repository import SqliteRunRepository
 
 
+def test_backtest_assumptions_apply_costs_and_slippage():
+    """确认回测默认会记录并应用保守交易口径。"""
+    settings = AppSettings()
+    service = BacktestService(repository=None, settings=settings)  # type: ignore
+    price_frames = {
+        "AAPL": pd.DataFrame(
+            {"Open": [100.0], "Close": [110.0]},
+            index=pd.date_range("2026-01-01", periods=1, freq="D"),
+        )
+    }
+    assumptions = service._build_backtest_assumptions()
+
+    positions = service._materialize_portfolio_positions(
+        positions_seed=[{"ticker": "AAPL", "weight": 100.0, "verdict": "Buy"}],
+        capital_amount=10000.0,
+        entry_date=date(2026, 1, 1),
+        price_frames=price_frames,
+        assumptions=assumptions,
+    )
+
+    assert assumptions["transaction_cost_bps"] == 10
+    assert assumptions["slippage_bps"] == 5
+    assert assumptions["dividend_treatment"] == "excluded_unless_source_provides_total_return"
+    assert positions[0].entry_price == pytest.approx(100.05, rel=0.0001)
+    assert positions[0].invested_amount == pytest.approx(9990.0, rel=0.0001)
+    assert positions[0].shares == pytest.approx(99.8500749, rel=0.0001)
+
+
 class TestAnnualizedReturnPct:
     """Test annualized return calculation."""
 
@@ -179,7 +207,7 @@ class TestBuildPositionsSeed:
         result = service._build_positions_seed(executive=executive, scoreboard=[], report_briefing={})
         assert len(result) == 2
         assert result[0]["ticker"] == "AAPL"
-        assert result[0]["weight"] == 57.142857142857146  # Normalized to 100
+        assert result[0]["weight"] == pytest.approx(57.142857142857146)  # Normalized to 100
         assert result[1]["ticker"] == "MSFT"
 
     def test_build_positions_from_scoreboard(self):
@@ -253,6 +281,33 @@ class TestMaterializePortfolioPositions:
         assert positions[0].entry_price == 140.0
         assert positions[0].invested_amount == 4000.0
         assert positions[0].shares == pytest.approx(28.571428571428573, rel=0.01)
+
+    def test_materialize_positions_applies_conservative_costs_when_requested(self):
+        """确认回测 V1.5 能把交易成本和滑点计入口径。"""
+        settings = AppSettings()
+        service = BacktestService(repository=None, settings=settings)  # type: ignore
+        price_frames = {
+            "AAPL": pd.DataFrame(
+                {"Open": [100.0], "Close": [110.0]},
+                index=pd.date_range("2026-01-01", periods=1, freq="D"),
+            )
+        }
+        assumptions = service._build_backtest_assumptions()
+
+        positions = service._materialize_portfolio_positions(
+            positions_seed=[{"ticker": "AAPL", "weight": 100.0, "verdict": "Buy"}],
+            capital_amount=10000.0,
+            entry_date=date(2026, 1, 1),
+            price_frames=price_frames,
+            assumptions=assumptions,
+        )
+
+        assert assumptions["transaction_cost_bps"] == 10
+        assert assumptions["slippage_bps"] == 5
+        assert assumptions["dividend_treatment"] == "excluded_unless_source_provides_total_return"
+        assert positions[0].entry_price == pytest.approx(100.05, rel=0.0001)
+        assert positions[0].invested_amount == pytest.approx(9990.0, rel=0.0001)
+        assert positions[0].shares == pytest.approx(99.8500749, rel=0.0001)
 
 
 class TestFindCommonDates:

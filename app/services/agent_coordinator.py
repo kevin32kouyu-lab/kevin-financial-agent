@@ -17,7 +17,7 @@ from app.agent_runtime.controlled_agents import (
     ValidatorAgent,
 )
 from app.agent_runtime.memory import build_preference_snapshot
-from app.domain.contracts import AgentRunRequest
+from app.domain.contracts import AgentRunRequest, utc_now_iso
 
 
 AsyncHook = Callable[..., Any] | None
@@ -106,6 +106,22 @@ class AgentCoordinator:
         await self._publish_artifact(hooks, "derived", "agent_trace", response["agent_trace"])
         await self._publish_snapshot(hooks, response)
 
+    @staticmethod
+    def _finish_trace(
+        trace: Any,
+        *,
+        started_at: str,
+        started_perf: float,
+        status: str = "completed",
+        error_message: str | None = None,
+    ) -> None:
+        """补齐 agent trace 的时间、状态和错误字段。"""
+        trace.status = status
+        trace.started_at = started_at
+        trace.finished_at = utc_now_iso()
+        trace.elapsed_ms = (perf_counter() - started_perf) * 1000
+        trace.error_message = error_message
+
     def get_runtime_config(self, *, model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
         """读取模型运行配置的公开视图。"""
         return self.report_service.get_runtime_config(model=model, base_url=base_url)
@@ -127,12 +143,21 @@ class AgentCoordinator:
         await self._publish_artifact(hooks, "runtime", "research_context", response["research_context"])
         await self._publish_snapshot(hooks, response)
 
+        intake_started_at = utc_now_iso()
         intake_started = perf_counter()
         intake = self.intake_agent.run(payload)
+        self._finish_trace(intake.trace, started_at=intake_started_at, started_perf=intake_started)
         response["query"] = intake.normalized_query
         response["memory_applied_fields"] = intake.memory_applied_fields
         response["parsed_intent"] = intake.parsed_intent.model_dump()
+        response["memory_resolution"] = {
+            "reused_memory": bool(intake.memory_summary.get("used")),
+            "applied_fields": intake.memory_applied_fields,
+            "applied_labels": list(intake.memory_summary.get("applied_labels") or []),
+            "note": intake.memory_summary.get("note"),
+        }
         await self._publish_artifact(hooks, "derived", "parsed_intent", response["parsed_intent"])
+        await self._publish_artifact(hooks, "derived", "memory_resolution", response["memory_resolution"])
         if payload.memory_context is not None:
             response["memory_context"] = payload.memory_context.model_dump()
             await self._publish_artifact(hooks, "derived", "memory_context", response["memory_context"])
@@ -182,8 +207,10 @@ class AgentCoordinator:
             await self._publish_snapshot(hooks, response)
             return response
 
+        planner_started_at = utc_now_iso()
         planner_started = perf_counter()
         planner = self.planner_agent.run(query=intake.normalized_query, intent=intake.parsed_intent, payload=payload)
+        self._finish_trace(planner.trace, started_at=planner_started_at, started_perf=planner_started)
         response["research_plan"] = planner.plan
         await self._publish_artifact(hooks, "derived", "research_plan", response["research_plan"])
         await self._append_trace(hooks, response, planner.trace)
@@ -197,8 +224,10 @@ class AgentCoordinator:
             summary=planner.trace.output_summary,
         )
 
+        data_started_at = utc_now_iso()
         data_started = perf_counter()
         data = await self.data_agent.run(intent=intake.parsed_intent, payload=payload)
+        self._finish_trace(data.trace, started_at=data_started_at, started_perf=data_started)
         response["analysis"] = data.analysis
         await self._publish_artifact(hooks, "analysis", "structured_analysis", data.analysis)
         await self._append_trace(hooks, response, data.trace)
@@ -212,6 +241,7 @@ class AgentCoordinator:
             summary=data.trace.output_summary,
         )
 
+        evidence_started_at = utc_now_iso()
         evidence_started = perf_counter()
         evidence = self.evidence_agent.run(
             query=intake.normalized_query,
@@ -219,6 +249,7 @@ class AgentCoordinator:
             analysis=data.analysis,
             payload=payload,
         )
+        self._finish_trace(evidence.trace, started_at=evidence_started_at, started_perf=evidence_started)
         response["report_input"] = evidence.report_package["report_input"]
         response["report_briefing"] = evidence.report_package["report_briefing"]
         await self._publish_artifact(hooks, "report", "input", response["report_input"])
@@ -236,6 +267,7 @@ class AgentCoordinator:
             summary=evidence.trace.output_summary,
         )
 
+        report_started_at = utc_now_iso()
         report_started = perf_counter()
         report = await self.report_agent.run(
             query=intake.normalized_query,
@@ -243,6 +275,7 @@ class AgentCoordinator:
             report_package=evidence.report_package,
             payload=payload,
         )
+        self._finish_trace(report.trace, started_at=report_started_at, started_perf=report_started)
         response["report_input"] = report.bundle["report_input"]
         response["report_briefing"] = report.bundle["report_briefing"]
         response["final_report"] = report.bundle["final_report"]
@@ -267,8 +300,10 @@ class AgentCoordinator:
             summary=report.trace.output_summary,
         )
 
+        validation_started_at = utc_now_iso()
         validation_started = perf_counter()
         validation = self.validator_agent.run(bundle=report.bundle, language_code=intake.parsed_intent.system_context.language)
+        self._finish_trace(validation.trace, started_at=validation_started_at, started_perf=validation_started)
         response["report_briefing"] = validation.bundle["report_briefing"]
         response["preference_snapshot"] = build_preference_snapshot(
             intake.parsed_intent,

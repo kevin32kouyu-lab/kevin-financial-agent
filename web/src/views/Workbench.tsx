@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ArtifactPanel } from "../components/ArtifactPanel";
+import { AgentTracePanel } from "../components/AgentTracePanel";
 import { BacktestPanel } from "../components/BacktestPanel";
 import { ReportPanel } from "../components/ReportPanel";
 import { StagePanel } from "../components/StagePanel";
@@ -78,7 +79,7 @@ export function WorkbenchView() {
   const debugSummary = asRecord(analysis?.debug_summary);
   const backtestMeta = asRecord(backtestDetail?.meta);
   const warningFlags = Array.isArray(debugSummary?.warning_flags) ? debugSummary?.warning_flags.join(", ") : "N/A";
-  const [debugTab, setDebugTab] = useState<"overview" | "stages" | "artifacts" | "raw">("overview");
+  const [debugTab, setDebugTab] = useState<"overview" | "agents" | "stages" | "artifacts" | "raw">("overview");
 
   return (
     <div className="workspace-shell">
@@ -315,6 +316,13 @@ export function WorkbenchView() {
               </button>
               <button
                 type="button"
+                className={debugTab === "agents" ? "side-tab active" : "side-tab"}
+                onClick={() => setDebugTab("agents")}
+              >
+                {copy.debug.tabs.agents}
+              </button>
+              <button
+                type="button"
                 className={debugTab === "artifacts" ? "side-tab active" : "side-tab"}
                 onClick={() => setDebugTab("artifacts")}
               >
@@ -360,6 +368,8 @@ export function WorkbenchView() {
           ) : null}
 
           {debugTab === "stages" ? <StagePanel locale={locale} copy={copy} steps={runDetail?.steps || []} /> : null}
+
+          {debugTab === "agents" ? <AgentTracePanel locale={locale} trace={result?.agent_trace} /> : null}
 
           {debugTab === "artifacts" ? (
             <ArtifactPanel

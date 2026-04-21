@@ -322,6 +322,7 @@ export interface LocalePack {
     subtitle: string;
     tabs: {
       overview: string;
+      agents: string;
       stages: string;
       artifacts: string;
       rawJson: string;
@@ -679,6 +680,7 @@ const zh: LocalePack = {
     subtitle: "保留阶段、产物与原始快照，便于排查链路。",
     tabs: {
       overview: "概览",
+      agents: "智能体",
       stages: "阶段",
       artifacts: "产物",
       rawJson: "原始 JSON",
@@ -1045,6 +1047,7 @@ const en: LocalePack = {
     subtitle: "Stage timeline, artifacts and raw snapshots for diagnostics.",
     tabs: {
       overview: "Overview",
+      agents: "Agents",
       stages: "Stages",
       artifacts: "Artifacts",
       rawJson: "Raw JSON",

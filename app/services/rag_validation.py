@@ -44,10 +44,13 @@ class ReportValidationService:
         top_pick = self._text(executive.get("top_pick")).upper()
         return [
             self._check_evidence_count(evidence, language_code),
+            self._check_evidence_freshness(evidence, language_code),
             self._check_top_pick_evidence(evidence, top_pick, language_code),
+            self._check_top_pick_ranking(report_briefing, top_pick, language_code),
             self._check_report_mentions_top_pick(final_report, top_pick, language_code),
             self._check_time_scope(evidence, self._text(meta.get("as_of_date")), language_code),
             self._check_score_consistency(report_briefing, top_pick, language_code),
+            self._check_risk_coverage(report_briefing, language_code),
             self._check_data_degradation(meta, language_code),
         ]
 
@@ -63,6 +66,33 @@ class ReportValidationService:
             else f"Retrieved {count} evidence items for this report."
         )
         return self._check("evidence_count", "证据数量" if language_code == "zh" else "Evidence count", status, summary)
+
+    def _check_evidence_freshness(self, evidence: list[dict[str, Any]], language_code: str) -> dict[str, Any]:
+        """检查 RAG 证据是否过旧或混入未来资料。"""
+        stale_items = [item for item in evidence if self._text(item.get("freshness")).lower() == "stale"]
+        future_items = [item for item in evidence if self._text(item.get("freshness")).lower() == "future"]
+        undated_items = [item for item in evidence if self._text(item.get("freshness")).lower() == "undated"]
+        if future_items:
+            status = "fail"
+            summary = (
+                f"发现 {len(future_items)} 条未来证据，需要降低结论可信度。"
+                if language_code == "zh"
+                else f"Found {len(future_items)} future-dated evidence items; confidence was downgraded."
+            )
+        elif stale_items:
+            status = "warn"
+            summary = (
+                f"发现 {len(stale_items)} 条较旧证据，结论需要谨慎阅读。"
+                if language_code == "zh"
+                else f"Found {len(stale_items)} stale evidence items; read the conclusion cautiously."
+            )
+        elif undated_items and not evidence:
+            status = "warn"
+            summary = "没有可判断时效的证据。" if language_code == "zh" else "No dateable evidence was available."
+        else:
+            status = "pass"
+            summary = "证据时效没有发现明显问题。" if language_code == "zh" else "Evidence freshness did not show obvious issues."
+        return self._check("evidence_freshness", "证据时效" if language_code == "zh" else "Evidence freshness", status, summary)
 
     def _check_top_pick_evidence(self, evidence: list[dict[str, Any]], top_pick: str, language_code: str) -> dict[str, Any]:
         """检查优先标的是否有直接证据支持。"""
@@ -83,6 +113,30 @@ class ReportValidationService:
             else f"Top pick {top_pick} has direct retrieved evidence."
         )
         return self._check("top_pick_has_evidence", "优先标的证据" if language_code == "zh" else "Top pick evidence", status, summary)
+
+    def _check_top_pick_ranking(self, report_briefing: dict[str, Any], top_pick: str, language_code: str) -> dict[str, Any]:
+        """检查优先标的是否由评分排序支持。"""
+        rows = self._as_list(report_briefing.get("scoreboard"))
+        scored_rows = [(self._text(row.get("ticker")).upper(), self._score_value(row)) for row in rows]
+        scored_rows = [(ticker, score) for ticker, score in scored_rows if ticker and score is not None]
+        top_score = next((score for ticker, score in scored_rows if ticker == top_pick), None)
+        best_score = max((score for _, score in scored_rows), default=None)
+        if not top_pick or top_score is None or best_score is None:
+            return self._check(
+                "top_pick_ranking",
+                "优先标的排序" if language_code == "zh" else "Top pick ranking",
+                "pass",
+                "缺少足够评分数据，排序校验由评分一致性检查覆盖。" if language_code == "zh" else "Ranking check was skipped because score data is incomplete.",
+            )
+        status = "warn" if top_score + 5 < best_score else "pass"
+        summary = (
+            f"优先标的 {top_pick} 不是评分最高标的，建议谨慎解读。"
+            if language_code == "zh" and status != "pass"
+            else f"Top pick {top_pick} is not the highest-scored candidate; read the ranking cautiously."
+            if status != "pass"
+            else f"Top pick {top_pick} is supported by the score ranking."
+        )
+        return self._check("top_pick_ranking", "优先标的排序" if language_code == "zh" else "Top pick ranking", status, summary)
 
     def _check_report_mentions_top_pick(self, final_report: str, top_pick: str, language_code: str) -> dict[str, Any]:
         """检查正式报告是否没有遗漏优先标的。"""
@@ -144,6 +198,28 @@ class ReportValidationService:
         )
         return self._check("score_consistency", "评分一致性" if language_code == "zh" else "Score consistency", status, summary)
 
+    def _check_risk_coverage(self, report_briefing: dict[str, Any], language_code: str) -> dict[str, Any]:
+        """检查报告是否至少保留主要风险提示。"""
+        risk_register = self._as_list(report_briefing.get("risk_register"))
+        card_risks = [
+            risk
+            for card in self._as_list(report_briefing.get("ticker_cards"))
+            for risk in (card.get("risks") or [])
+            if self._text(risk)
+        ]
+        has_risk = bool(risk_register or card_risks)
+        status = "pass" if has_risk else "warn"
+        summary = (
+            "报告没有找到明确风险提示，需要谨慎阅读。"
+            if language_code == "zh" and not has_risk
+            else "No explicit risk coverage was found; read the report cautiously."
+            if not has_risk
+            else "报告包含主要风险提示。"
+            if language_code == "zh"
+            else "The report includes explicit risk coverage."
+        )
+        return self._check("risk_coverage", "风险覆盖" if language_code == "zh" else "Risk coverage", status, summary)
+
     def _check_data_degradation(self, meta: dict[str, Any], language_code: str) -> dict[str, Any]:
         """检查是否存在数据降级或覆盖不足提示。"""
         flags = list(meta.get("coverage_flags") or [])
@@ -204,6 +280,10 @@ class ReportValidationService:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def _score_value(self, row: dict[str, Any]) -> float | None:
+        """读取评分表里最能代表排序的分数。"""
+        return self._number(row.get("suitability_score") or row.get("composite_score") or row.get("score"))
 
     @staticmethod
     def _dedupe_texts(values: list[str]) -> list[str]:

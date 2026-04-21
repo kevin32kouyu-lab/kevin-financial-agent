@@ -194,12 +194,14 @@ class BacktestService:
             if benchmark_frame is not None
             else None
         )
+        backtest_assumptions = self._build_backtest_assumptions()
 
         portfolio_positions = self._materialize_portfolio_positions(
             positions_seed=positions_seed,
             capital_amount=capital_amount,
             entry_date=entry_date,
             price_frames=price_frames,
+            assumptions=backtest_assumptions,
         )
         points, benchmark_final_value = self._build_backtest_points(
             positions=portfolio_positions,
@@ -261,7 +263,8 @@ class BacktestService:
             "as_of_date": research_context.get("as_of_date"),
             "warning_flags": run_warnings,
             "allocation_rule": "allocation_plan_or_equal_weight",
-            "return_basis": "price_return_vs_benchmark",
+            "return_basis": backtest_assumptions["return_basis"],
+            "assumptions": backtest_assumptions,
             "currency": currency,
             "attribution_summary": attribution_summary,
             "requested_count": requested_count,
@@ -913,13 +916,20 @@ class BacktestService:
         capital_amount: float,
         entry_date: date,
         price_frames: dict[str, pd.DataFrame],
+        assumptions: dict[str, Any] | None = None,
     ) -> list[PortfolioPosition]:
+        """把权重转换成持仓，并按需要计入保守交易口径。"""
+        assumptions = assumptions or {}
+        transaction_cost_bps = max(float(assumptions.get("transaction_cost_bps") or 0.0), 0.0)
+        slippage_bps = max(float(assumptions.get("slippage_bps") or 0.0), 0.0)
         positions: list[PortfolioPosition] = []
         for item in positions_seed:
             ticker = item["ticker"]
             frame = price_frames[ticker]
-            entry_price = float(frame.loc[pd.Timestamp(entry_date), "Open"])
-            invested_amount = capital_amount * (item["weight"] / 100)
+            raw_entry_price = float(frame.loc[pd.Timestamp(entry_date), "Open"])
+            entry_price = raw_entry_price * (1 + slippage_bps / 10000)
+            gross_amount = capital_amount * (item["weight"] / 100)
+            invested_amount = max(gross_amount * (1 - transaction_cost_bps / 10000), 0.0)
             shares = invested_amount / entry_price if entry_price > 0 else 0
             positions.append(
                 PortfolioPosition(
@@ -932,6 +942,19 @@ class BacktestService:
                 )
             )
         return positions
+
+    @staticmethod
+    def _build_backtest_assumptions() -> dict[str, Any]:
+        """生成回测 V1.5 的默认保守口径。"""
+        return {
+            "transaction_cost_bps": 10,
+            "slippage_bps": 5,
+            "dividend_treatment": "excluded_unless_source_provides_total_return",
+            "dividend_included": False,
+            "rebalance": "none_buy_and_hold",
+            "benchmark_costs_applied": False,
+            "return_basis": "price_return_after_entry_costs_vs_benchmark_price_return",
+        }
 
     def _build_backtest_points(
         self,

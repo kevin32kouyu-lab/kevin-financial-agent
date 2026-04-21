@@ -63,7 +63,7 @@ def _normalize_trend_score(value: Any) -> float:
 
 def _analyst_bonus(analyst_rating: Any) -> float:
     """Get bonus score from analyst rating."""
-    lowered = str(analyst_rating or "").strip().lower()
+    lowered = str(analyst_rating or "").strip().lower().replace(" ", "_").replace("-", "_")
     if lowered == "strong_buy":
         return 10.0
     if lowered == "buy":
@@ -80,9 +80,10 @@ def _macro_is_severe(macro_data: dict[str, Any]) -> bool:
     Returns:
         True if macro conditions warrant defensive stance
     """
-    regime = str(macro_data.get("Global_Regime") or "").lower()
-    warning_text = str(macro_data.get("Systemic_Risk_Warning") or "").lower()
-    vix = _coerce_float(macro_data.get("VIX_Volatility_Index"))
+    normalized_macro = {str(key).lower(): value for key, value in macro_data.items()}
+    regime = str(normalized_macro.get("global_regime") or normalized_macro.get("regime") or "").lower()
+    warning_text = str(normalized_macro.get("systemic_risk_warning") or "").lower()
+    vix = _coerce_float(normalized_macro.get("vix_volatility_index"))
     return (
         "risk-off" in regime
         or "panic" in regime
@@ -516,7 +517,16 @@ def _build_allocation_plan(
     Returns:
         List of allocation dictionaries with ticker, weight, and verdict
     """
-    selected = [item for item in candidates if item.get("ticker")]
+    eligible_verdicts = {"strong_buy", "accumulate"}
+    selected = [
+        item
+        for item in candidates
+        if item.get("ticker")
+        and not bool(item.get("veto"))
+        and str(item.get("verdict_key") or "").strip().lower() in eligible_verdicts
+    ]
+    if max_positions is None:
+        max_positions = 3
     if max_positions is not None:
         selected = selected[: max(1, int(max_positions))]
     if not selected:
