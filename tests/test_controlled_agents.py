@@ -14,8 +14,13 @@ from app.services.agent_coordinator import AgentCoordinator, AgentRunHooks
 class FakeAnalysisService:
     """提供稳定的结构化分析结果，避免测试依赖外部行情。"""
 
+    def __init__(self):
+        """记录被真实执行的次数，用于验证 checkpoint 恢复不会重跑上游。"""
+        self.call_count = 0
+
     async def run_structured_analysis(self, payload: Any) -> dict[str, Any]:
         """返回一个最小可用的股票研究包。"""
+        self.call_count += 1
         return {
             "debug_summary": {"selected_ticker_count": 1},
             "comparison_matrix": [{"Ticker": "AAPL", "Total_Quant_Score": 82}],
@@ -113,9 +118,20 @@ def test_planner_agent_builds_research_plan_from_intent():
 
     assert result.plan["objective"]
     assert result.plan["data_requirements"] == ["market_data", "fundamentals", "news", "sec_filings", "macro", "rag_evidence"]
-    assert result.plan["tool_candidates"] == ["screener", "market_toolkit", "knowledge_rag", "report_builder", "rag_validator"]
+    assert result.plan["agent_architecture"] == "limited_autonomous_multi_agent"
+    assert result.plan["tool_candidates"] == [
+        "market.research_package",
+        "report.build_package",
+        "rag.attach_evidence",
+        "report.render",
+        "report.validate",
+    ]
     assert result.plan["fallback_policy"]["market_data"] == "use_backup_sources_and_cache"
     assert "formal_report" in result.plan["expected_outputs"]
+    assert result.plan["autonomy_budget"]["max_debate_rounds"] == 1
+    assert result.plan["tool_policy"]["DataAgent"] == ["market.research_package"]
+    assert result.plan["debate_policy"]["agents"] == ["BullAnalystAgent", "BearAnalystAgent", "ArbiterAgent"]
+    assert "ArbiterAgent" in [item["agent_name"] for item in result.plan["agent_task_graph"]]
     assert result.trace.agent_name == "PlannerAgent"
     assert result.trace.artifact_keys == ["research_plan"]
 
@@ -134,9 +150,12 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
     response = await coordinator.run(payload, hooks=AgentRunHooks(artifact_callback=on_artifact))
 
     assert response["status"] == "completed"
-    assert response["research_plan"]["agent_architecture"] == "controlled_multi_agent"
+    assert response["research_plan"]["agent_architecture"] == "limited_autonomous_multi_agent"
     assert response["report_briefing"]["meta"]["retrieved_evidence"][0]["citation_key"] == "E1"
     assert response["report_briefing"]["meta"]["validation_checks"][0]["status"] == "pass"
+    assert response["debate_rounds"][0]["arbiter"]["decision"]
+    assert response["tool_invocations"]
+    assert response["agent_checkpoints"]
 
     agent_names = [item["agent_name"] for item in response["agent_trace"]]
     assert agent_names == [
@@ -144,11 +163,14 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
         "PlannerAgent",
         "DataAgent",
         "EvidenceAgent",
+        "BullAnalystAgent",
+        "BearAnalystAgent",
+        "ArbiterAgent",
         "ReportAgent",
         "ValidatorAgent",
     ]
     for item in response["agent_trace"]:
-        assert set(item) == {
+        assert {
             "agent_name",
             "status",
             "started_at",
@@ -161,18 +183,55 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
             "artifact_keys",
             "evidence_count",
             "error_message",
-        }
+            "decision",
+            "tool_calls",
+            "checkpoint_id",
+            "debate_refs",
+            "rerunnable",
+            "dependency_artifacts",
+        }.issubset(set(item))
         assert item["status"] == "completed"
         assert isinstance(item["elapsed_ms"], float)
         assert item["started_at"]
         assert item["finished_at"]
+        assert item["checkpoint_id"]
     evidence_trace = next(item for item in response["agent_trace"] if item["agent_name"] == "EvidenceAgent")
     assert evidence_trace["evidence_count"] == 1
+    assert [call["tool_name"] for call in evidence_trace["tool_calls"]] == ["report.build_package", "rag.attach_evidence"]
+    arbiter_trace = next(item for item in response["agent_trace"] if item["agent_name"] == "ArbiterAgent")
+    assert arbiter_trace["debate_refs"] == ["debate-1"]
 
     artifact_names = {(kind, name) for kind, name, _ in artifacts}
     assert ("derived", "research_plan") in artifact_names
     assert ("derived", "agent_trace") in artifact_names
     assert ("derived", "memory_resolution") in artifact_names
+    assert ("derived", "tool_invocations") in artifact_names
+    assert ("derived", "debate_rounds") in artifact_names
+    assert ("derived", "agent_checkpoints") in artifact_names
+
+
+@pytest.mark.asyncio
+async def test_agent_coordinator_resume_from_agent_reuses_upstream_checkpoint():
+    """从指定 agent 恢复时，应复用上游 checkpoint，只重跑该 agent 及下游。"""
+    analysis_service = FakeAnalysisService()
+    coordinator = AgentCoordinator(analysis_service, FakeReportService())
+    payload = AgentRunRequest(query="Find low risk quality tech stocks for 10000 USD")
+    first_response = await coordinator.run(payload)
+
+    resumed = await coordinator.resume_from_agent(
+        payload,
+        previous_result=first_response,
+        agent_name="EvidenceAgent",
+        reason="debug retry evidence",
+    )
+
+    assert analysis_service.call_count == 1
+    assert resumed["status"] == "completed"
+    assert resumed["resume_context"]["from_agent"] == "EvidenceAgent"
+    reused = [item for item in resumed["agent_trace"] if item["status"] == "reused_checkpoint"]
+    assert [item["agent_name"] for item in reused] == ["IntakeAgent", "PlannerAgent", "DataAgent"]
+    rerun = [item["agent_name"] for item in resumed["agent_trace"] if item["status"] == "completed"]
+    assert rerun == ["EvidenceAgent", "BullAnalystAgent", "BearAnalystAgent", "ArbiterAgent", "ReportAgent", "ValidatorAgent"]
 
 
 @pytest.mark.asyncio

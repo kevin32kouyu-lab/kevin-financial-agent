@@ -6,6 +6,9 @@ type GenericRecord = Record<string, unknown>;
 interface AgentTracePanelProps {
   locale: Locale;
   trace: unknown;
+  runId?: string | null;
+  resumeBusyAgent?: string | null;
+  onResumeFromAgent?: (agentName: string) => void;
 }
 
 function asTraceRows(value: unknown): GenericRecord[] {
@@ -35,7 +38,7 @@ function elapsed(value: unknown): string {
   return `${(number / 1000).toFixed(2)} s`;
 }
 
-export function AgentTracePanel({ locale, trace }: AgentTracePanelProps) {
+export function AgentTracePanel({ locale, trace, runId, resumeBusyAgent, onResumeFromAgent }: AgentTracePanelProps) {
   const rows = asTraceRows(trace);
   const labels =
     locale === "zh"
@@ -51,6 +54,13 @@ export function AgentTracePanel({ locale, trace }: AgentTracePanelProps) {
           artifacts: "产物",
           warnings: "提醒",
           error: "失败原因",
+          decision: "决策",
+          checkpoint: "恢复点",
+          dependencies: "依赖",
+          tools: "工具调用",
+          debate: "论证引用",
+          resume: "从这里继续",
+          resuming: "正在恢复",
         }
       : {
           eyebrow: "Agent Trace",
@@ -64,7 +74,17 @@ export function AgentTracePanel({ locale, trace }: AgentTracePanelProps) {
           artifacts: "Artifacts",
           warnings: "Warnings",
           error: "Error",
+          decision: "Decision",
+          checkpoint: "Checkpoint",
+          dependencies: "Dependencies",
+          tools: "Tool calls",
+          debate: "Debate refs",
+          resume: "Resume from here",
+          resuming: "Resuming",
         };
+
+  const toolRows = rows.flatMap((item) => asTraceRows(item.tool_calls).map((call) => ({ ...call, agent_name: item.agent_name })));
+  const debateRows = rows.filter((item) => textList(item.debate_refs).length || text(item.agent_name).includes("Analyst") || text(item.agent_name).includes("Arbiter"));
 
   return (
     <section className="panel-surface">
@@ -76,25 +96,75 @@ export function AgentTracePanel({ locale, trace }: AgentTracePanelProps) {
       </div>
       {!rows.length ? <div className="empty-state small">{labels.empty}</div> : null}
       {rows.length ? (
-        <div className="summary-grid">
+        <div className="summary-grid two-up">
           {rows.map((item, index) => {
             const warnings = textList(item.warnings);
             const artifacts = textList(item.artifact_keys);
+            const dependencies = textList(item.dependency_artifacts);
+            const debateRefs = textList(item.debate_refs);
             const errorMessage = text(item.error_message, "");
+            const agentName = text(item.agent_name);
+            const canResume = Boolean(runId && onResumeFromAgent && item.rerunnable);
             return (
-              <article className="mini-card" key={`${text(item.agent_name)}-${index}`}>
-                <span className="mini-label">{text(item.agent_name)}</span>
+              <article className="mini-card" key={`${agentName}-${index}`}>
+                <span className="mini-label">{agentName}</span>
                 <strong>{`${labels.status}: ${text(item.status)}`}</strong>
                 <p>{`${labels.elapsed}: ${elapsed(item.elapsed_ms)}`}</p>
                 <p>{`${labels.evidence}: ${text(item.evidence_count, "0")}`}</p>
+                <p>{`${labels.checkpoint}: ${text(item.checkpoint_id)}`}</p>
+                {text(item.decision, "") ? <p>{`${labels.decision}: ${text(item.decision)}`}</p> : null}
                 <p>{`${labels.input}: ${text(item.input_summary)}`}</p>
                 <p>{`${labels.output}: ${text(item.output_summary)}`}</p>
                 {artifacts.length ? <p>{`${labels.artifacts}: ${artifacts.join(", ")}`}</p> : null}
+                {dependencies.length ? <p>{`${labels.dependencies}: ${dependencies.join(", ")}`}</p> : null}
+                {debateRefs.length ? <p>{`${labels.debate}: ${debateRefs.join(", ")}`}</p> : null}
                 {warnings.length ? <p>{`${labels.warnings}: ${warnings.join(locale === "zh" ? "；" : "; ")}`}</p> : null}
                 {errorMessage ? <p>{`${labels.error}: ${errorMessage}`}</p> : null}
+                {canResume ? (
+                  <button
+                    type="button"
+                    className="secondary-button compact-action"
+                    disabled={resumeBusyAgent === agentName}
+                    onClick={() => onResumeFromAgent?.(agentName)}
+                  >
+                    {resumeBusyAgent === agentName ? labels.resuming : labels.resume}
+                  </button>
+                ) : null}
               </article>
             );
           })}
+        </div>
+      ) : null}
+      {toolRows.length ? (
+        <div className="panel-subsection">
+          <p className="eyebrow">{labels.tools}</p>
+          <div className="summary-grid two-up">
+            {toolRows.map((item, index) => (
+              <article className="mini-card" key={`${text(item.tool_name)}-${index}`}>
+                <span className="mini-label">{text(item.agent_name)}</span>
+                <strong>{`${text(item.tool_name)} · ${text(item.status)}`}</strong>
+                <p>{`${labels.elapsed}: ${elapsed(item.elapsed_ms)}`}</p>
+                <p>{`Scope: ${text(item.permission_scope)}`}</p>
+                <p>{`Attempts: ${text(item.attempts, "0")}`}</p>
+                {text(item.error_message, "") ? <p>{`${labels.error}: ${text(item.error_message)}`}</p> : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {debateRows.length ? (
+        <div className="panel-subsection">
+          <p className="eyebrow">{labels.debate}</p>
+          <div className="summary-grid two-up">
+            {debateRows.map((item, index) => (
+              <article className="mini-card" key={`${text(item.agent_name)}-debate-${index}`}>
+                <span className="mini-label">{text(item.agent_name)}</span>
+                <strong>{text(item.decision, text(item.output_summary))}</strong>
+                <p>{text(item.output_summary)}</p>
+                {textList(item.warnings).length ? <p>{textList(item.warnings).join(locale === "zh" ? "；" : "; ")}</p> : null}
+              </article>
+            ))}
+          </div>
         </div>
       ) : null}
     </section>

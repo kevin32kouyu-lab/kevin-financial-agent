@@ -69,6 +69,35 @@ def test_knowledge_repository_filters_future_evidence_for_historical_date(tmp_pa
     assert [item.title for item in results] == ["Microsoft cloud growth"]
 
 
+def test_rag_service_records_historical_archive_gaps(tmp_path):
+    """历史模式缺少可回放新闻或资金面资料时，应显式写入缺口和校验提示。"""
+    service = KnowledgeRagService(SqliteKnowledgeRepository(tmp_path / "knowledge.sqlite3"))
+    briefing = _sample_briefing()
+    briefing["ticker_cards"][0]["news_label"] = "Historical Unavailable"
+    briefing["ticker_cards"][0]["smart_money_positioning"] = "Unavailable"
+    briefing["ticker_cards"][0]["smart_money_source"] = "unavailable"
+
+    service.ingest_run_evidence(
+        query="Find durable AI compounders",
+        report_briefing=briefing,
+        research_context={"research_mode": "historical", "as_of_date": "2026-04-21"},
+    )
+    service.attach_retrieved_evidence(
+        query="Find durable AI compounders",
+        report_briefing=briefing,
+        research_context={"research_mode": "historical", "as_of_date": "2026-04-21"},
+    )
+    meta = service.apply_validation(
+        final_report="# Research Report\n\nAAPL remains the top pick.",
+        report_briefing=briefing,
+        language_code="en",
+    )
+
+    gaps = briefing["meta"]["historical_archive_gaps"]
+    assert {item["source_type"] for item in gaps} >= {"news", "smart_money"}
+    assert any(item["id"] == "historical_archive_gaps" and item["status"] == "warn" for item in meta["validation_checks"])
+
+
 def test_rag_service_ingests_report_briefing_and_builds_citations(tmp_path):
     """确认报告摘要能转成证据，并回填引用列表。"""
     service = KnowledgeRagService(SqliteKnowledgeRepository(tmp_path / "knowledge.sqlite3"))

@@ -51,6 +51,7 @@ class ReportValidationService:
             self._check_time_scope(evidence, self._text(meta.get("as_of_date")), language_code),
             self._check_score_consistency(report_briefing, top_pick, language_code),
             self._check_risk_coverage(report_briefing, language_code),
+            self._check_historical_archive_gaps(meta, language_code),
             self._check_data_degradation(meta, language_code),
         ]
 
@@ -234,6 +235,26 @@ class ReportValidationService:
             else "No additional data degradation warnings were found."
         )
         return self._check("data_degradation", "数据降级" if language_code == "zh" else "Data degradation", status, summary)
+
+    def _check_historical_archive_gaps(self, meta: dict[str, Any], language_code: str) -> dict[str, Any]:
+        """检查历史研究是否有本地归档缺口。"""
+        gaps = self._as_list(meta.get("historical_archive_gaps"))
+        status = "warn" if gaps else "pass"
+        summary = (
+            f"历史资料归档存在 {len(gaps)} 个缺口，相关结论需要保守阅读。"
+            if language_code == "zh" and gaps
+            else f"Historical archive has {len(gaps)} gaps; related conclusions should be read cautiously."
+            if gaps
+            else "历史资料归档没有发现新的缺口。"
+            if language_code == "zh"
+            else "No historical archive gaps were detected."
+        )
+        return self._check(
+            "historical_archive_gaps",
+            "历史资料缺口" if language_code == "zh" else "Historical archive gaps",
+            status,
+            summary,
+        )
 
     @staticmethod
     def _check(check_id: str, label: str, status: str, summary: str) -> dict[str, Any]:

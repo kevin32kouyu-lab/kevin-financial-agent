@@ -1185,6 +1185,10 @@ select:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.panel-subsection {
+  margin-top: 18px;
+}
+
 .mini-card p,
 .candidate-card p,
 .risk-item p {

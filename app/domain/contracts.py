@@ -26,6 +26,11 @@ class RunCreateRequest(BaseModel):
     structured: DebugAnalysisRequest | None = None
 
 
+class AgentResumeRequest(BaseModel):
+    agent_name: str = Field(min_length=1)
+    reason: str = ""
+
+
 class RunSummary(BaseModel):
     id: str
     mode: RunMode
@@ -223,6 +228,7 @@ def utc_now_iso() -> str:
 
 __all__ = [
     "AgentRunRequest",
+    "AgentResumeRequest",
     "DebugAnalysisRequest",
     "ExplicitTargets",
     "FundamentalFilters",

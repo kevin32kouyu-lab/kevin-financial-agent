@@ -13,14 +13,15 @@
 - 如果外部数据源限流了，系统还能不能继续工作
 - 最终给出的建议能不能导出成正式研究报告
 
-这个项目的目标，就是把这些问题做成一个可运行、可解释、可扩展的可控多智能体研究系统。
+这个项目的目标，就是把这些问题做成一个可运行、可解释、可扩展的受限自治多智能体研究系统。
 
 ## 核心能力
 
 - 支持中文 / 英文投资需求输入
 - 支持自然语言 Agent 研究模式和结构化筛选模式
-- 支持可控多智能体投研流程：Intake、Planner、Data、Evidence、Report、Validator 六个角色分工协作
-- 支持增强版 `research_plan` 与 `agent_trace`：每次研究都会留下目标、数据需求、降级策略、agent 状态、耗时和证据数量
+- 支持受限自治多智能体投研流程：Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个角色分工协作
+- 支持内部工具中台：agent 只能调用 Planner 授权的工具，系统统一记录权限、重试、耗时和调用审计
+- 支持增强版 `research_plan` 与 `agent_trace`：每次研究都会留下任务图、工具白名单、辩论策略、checkpoint、agent 状态、耗时和证据数量
 - 支持 `/terminal` 双模式：实时研究 + 历史回测研究
 - 支持首页 `/`：先看项目介绍与新手引导，再进入研究终端
 - 支持高强度动效背景（Canvas 粒子 + 流线 + 光晕）与毛玻璃视觉层
@@ -33,6 +34,9 @@
 - 支持结论依据与谨慎提示摘要：不仅给答案，也说明为什么这样判断、哪里需要谨慎
 - 支持本地知识库 RAG：每次研究会把新闻摘要、SEC、评分、宏观和数据来源写入 SQLite 知识库
 - 支持结论一致性校验：报告生成后会检查优先标的、评分排序、风险、数据降级、证据时效和时间范围是否一致
+- 支持正反论证：Bull / Bear 提出支持和反对观点，Arbiter 汇总成报告可用裁决
+- 支持细粒度恢复：debug 中可从某个 agent 的 checkpoint 继续，只重跑该 agent 及下游
+- 支持历史资料缺口提示：历史模式缺新闻或 smart money 回放资料时会显式降级，不静默伪装完整
 - 支持历史审计摘要：历史页可直接看到本次研究用了哪些数据、哪里降级了、最终优先看什么
 - 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
 - 支持“补一句继续研究”：当核心条件不足时，用户可直接补一句信息继续当前任务
@@ -147,7 +151,7 @@
 
 - 概览（运行状态、研究模式、as_of_date、warning flags、模型路由）
 - 阶段（阶段时间线）
-- 智能体（六个 agent 的交接状态、耗时、证据数量、警告和失败原因）
+- 智能体（九个 agent 的时间线、工具调用、正反观点、Arbiter 裁决、checkpoint 和恢复入口）
 - 产物（中间产物明细）
 - 原始 JSON（事件与快照原文）
 
@@ -216,15 +220,23 @@ flowchart LR
     RUN --> COORD["Agent Coordinator"]
     COORD --> INTAKE["Intake Agent"]
     COORD --> PLAN["Planner Agent"]
+    COORD --> TOOLRUN["Tool Registry / Runner"]
     COORD --> DATAAGENT["Data Agent"]
     COORD --> EVIDENCE["Evidence Agent"]
+    COORD --> BULL["Bull Analyst"]
+    COORD --> BEAR["Bear Analyst"]
+    COORD --> ARBITER["Arbiter Agent"]
     COORD --> REPORTAGENT["Report Agent"]
     COORD --> VALIDATOR["Validator Agent"]
     RUN --> ANALYSIS["Analysis Service"]
-    DATAAGENT --> ANALYSIS
-    EVIDENCE --> REPORT["Report Service"]
-    REPORTAGENT --> REPORT
-    VALIDATOR --> REPORT
+    DATAAGENT --> TOOLRUN
+    EVIDENCE --> TOOLRUN
+    REPORTAGENT --> TOOLRUN
+    VALIDATOR --> TOOLRUN
+    TOOLRUN --> ANALYSIS
+    TOOLRUN --> REPORT["Report Service"]
+    BULL --> ARBITER
+    BEAR --> ARBITER
     ANALYSIS --> TOOLKIT["Market Toolkit"]
 
     TOOLKIT --> FETCH["External Data Fetchers"]
@@ -256,14 +268,15 @@ sequenceDiagram
     User->>Terminal: 输入投资目标
     Terminal->>API: POST /api/runs
     API->>Run: 创建 run
-    Run->>Coord: 启动可控多智能体流程
+    Run->>Coord: 启动受限自治多智能体流程
     Coord->>Agents: Intake + Planner
     Agents-->>Coord: research_plan + agent_trace
-    Coord->>Analysis: DataAgent 请求结构化筛选
+    Coord->>Analysis: DataAgent 通过授权工具请求结构化筛选
     Analysis->>Data: 拉取价格/新闻/审计/宏观
     Data-->>Analysis: 返回多源数据
     Analysis-->>Coord: 返回候选股与研究包
     Coord->>Report: EvidenceAgent 接入 RAG 证据
+    Coord->>Agents: Bull / Bear / Arbiter 进行一轮正反论证
     Coord->>Report: ReportAgent 生成正式报告
     Coord->>Report: ValidatorAgent 校验结论
     Report-->>Run: 返回 memo / fallback report
@@ -284,6 +297,7 @@ sequenceDiagram
 ## Run 控制（新增）
 
 - `POST /api/runs/{run_id}/cancel`：撤回正在执行的任务
+- `POST /api/runs/{run_id}/resume-from-agent`：从指定 agent 的 checkpoint 继续，重跑该 agent 及下游
 - run 状态新增：`cancelled`
 - SSE 事件新增：`run.cancelled`
 
@@ -463,7 +477,7 @@ npm run build
 ## 当前局限
 
 - 当前 RAG 采用本地 SQLite FTS5，不接外部向量数据库
-- 当前多智能体是“可控多角色流程”，不是完全自治 agent 辩论系统
+- 当前多智能体是“受限自治”，不是完全开放式自治系统；工具调用和辩论轮次都被 Planner 策略限制
 - 长期记忆当前按浏览器隔离，还不是跨设备同步的正式账户体系
 - Smart Money 目前仍然是公开持仓代理，不是真正的机构级资金流
 - 免费数据源容易遇到限流，系统目前通过备用源与本地缓存缓解，但无法完全避免
@@ -483,6 +497,7 @@ npm run build
 - 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主展示方案，因为不支持 SSE。
 - 2026-04-21：本轮按既定开发计划实现本地 SQLite FTS5 知识库 RAG，没有新增外部方案检索。
 - 2026-04-21：本轮按既定架构计划实现可控多智能体流程，没有新增外部方案检索。
+- 2026-04-22：本轮按既定计划实现受限自治 agent、工具中台和 checkpoint 恢复，没有新增外部方案检索。
 
 ## 已完成与待办
 
@@ -503,10 +518,14 @@ npm run build
 - Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
 - 本地知识库 RAG 与报告后结论校验层
 - 可控多智能体流程（六个角色 agent、研究计划、agent 交接记录）
+- 受限自治多智能体流程（九个角色 agent、工具白名单、正反论证、Arbiter 裁决）
+- 工具中台与调用审计（ToolRegistry / ToolRunner / tool_invocations）
+- agent checkpoint 与 debug 恢复入口
+- 历史资料回放缺口提示（新闻、smart money、SEC 摘要）
 - RAG 证据时效 / 来源可靠性标记、增强版结论校验和 debug agent trace 可视化
 - 回测 V1.5 保守口径说明（交易成本、滑点、分红、再平衡）
 
 待办：
 - 把“需要补充信息”的追问做成更自然的连续研究体验
-- 增加更稳定的历史新闻与历史 smart money 可回放数据源
+- 继续积累更稳定的历史新闻与历史 smart money 可回放数据源
 - 增加分红再投资、税务口径等更真实的回测参数

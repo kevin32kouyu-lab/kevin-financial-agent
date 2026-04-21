@@ -28,10 +28,27 @@ class FinancialAgentWorkflow(Workflow):
             artifact_callback=on_artifact,
             snapshot_callback=on_snapshot,
         )
-        response = await self.agent_service.run(payload, hooks=hooks)
+        run = context.repository.get_run(context.run_id)
+        metadata = run.metadata if run else {}
+        resume_agent = str(metadata.get("resume_from_agent") or "").strip()
+        source_run_id = str(metadata.get("source_run_id") or "").strip()
+        if resume_agent and source_run_id:
+            previous_result = (
+                context.repository.get_artifact_content(source_run_id, kind="output", name="final_response")
+                or context.repository.get_artifact_content(source_run_id, kind="snapshot", name="current")
+                or {}
+            )
+            response = await self.agent_service.resume_from_agent(
+                payload,
+                previous_result=previous_result,
+                agent_name=resume_agent,
+                reason=str(metadata.get("resume_reason") or ""),
+                hooks=hooks,
+            )
+        else:
+            response = await self.agent_service.run(payload, hooks=hooks)
         preference_snapshot = response.get("preference_snapshot")
         if isinstance(preference_snapshot, dict):
-            run = context.repository.get_run(context.run_id)
             client_id = str((run.metadata if run else {}).get("client_id") or "default")
             stored_preferences = self.profile_service.save_snapshot(
                 run_id=context.run_id,

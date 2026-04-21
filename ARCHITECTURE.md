@@ -7,23 +7,24 @@
 - `app/core/runtime.py`：把仓储、服务和工作流装配成可运行的应用运行时。
 - `app/core/auth.py`：处理公开接口的 API Key 校验，并读取浏览器侧传来的 `X-Client-Id`。
 - `app/integrations/llm_client.py`：封装火山主源、DeepSeek 备用源和自动回退请求。
-- `app/api/runs.py`：处理 run 的创建、查询、重试、撤回和事件流。
+- `app/api/runs.py`：处理 run 的创建、查询、重试、按 agent 恢复、撤回和事件流。
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
 - `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
 - `app/api/history.py`：提供历史研究列表与单条研究审计摘要接口。
-- `app/services/run_service.py`：管理 run 生命周期（含取消），并把任务交给对应 workflow。
-- `app/workflows/financial_agent.py`：执行自然语言研究流程。
-- `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Report、Validator 六个固定角色 agent，以及增强版计划和交接记录。
+- `app/services/run_service.py`：管理 run 生命周期（含取消和按 agent 恢复），并把任务交给对应 workflow。
+- `app/workflows/financial_agent.py`：执行自然语言研究流程，并在恢复任务时复用上游 checkpoint。
+- `app/agent_runtime/tool_registry.py`：注册内部工具，统一处理 agent 工具权限、重试、超时和调用审计。
+- `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个受限自治角色 agent，以及增强版计划和交接记录。
 - `app/agent_runtime/memory.py`：把最近一次会话里的偏好补到当前问题中，但只补缺失字段。
-- `app/services/agent_coordinator.py`：串联六个角色 agent，发布 `research_plan`、`agent_trace`、stage 和 artifact。
+- `app/services/agent_coordinator.py`：串联九个角色 agent，发布 `research_plan`、`agent_trace`、`tool_invocations`、`debate_rounds`、checkpoint、stage 和 artifact。
 - `app/services/agent_service.py`：保留旧导入兼容层，实际指向 `AgentCoordinator`。
 - `app/services/analysis_service.py`：做筛选、数据聚合和研究快照拼装。
 - `app/services/toolkit.py`：统一调度各类数据抓取器（价格、技术、新闻、审计、宏观等）。
 - `app/tools/fetchers.py`：对接外部数据源并提供主源/备用源回退。
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：提供报告包构建、RAG 证据接入、正式报告生成和最终校验入口。
-- `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，并标记证据时效、来源可靠性和引用映射。
-- `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、数据降级和时间范围。
+- `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，标记证据时效、来源可靠性、引用映射和历史资料缺口。
+- `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、历史资料缺口、数据降级和时间范围。
 - `app/services/backtest_service.py`：根据历史建议计算组合收益、基准对比、逐票贡献和保守回测口径。
 - `app/services/profile_service.py`：把长期偏好写入本地数据库，并提供读取、更新和清空能力。
 - `app/services/run_audit_service.py`：把完整 run 结果压缩成历史页可读的简版审计摘要。
@@ -40,7 +41,7 @@
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
 - `web/src/components/TerminalTrustPanels.tsx`：旧版可信度概览组件，用户终端前台不再直接使用。
 - `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要和导出操作。
-- `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 交接时间线、耗时、证据数量和警告。
+- `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 时间线、工具调用、正反论证、checkpoint 和恢复按钮。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格和本次回测口径。
 - `web/src/lib/motion.ts`：动效偏好读写（本地记忆 + 系统低动态检测）。
 - `Dockerfile`：把前端和后端一起打包成单服务容器，并在启动时读取平台注入的 `PORT`。
@@ -59,19 +60,21 @@
 10. 如果当前问题没写清风险、期限或风格，`memory.py` 会把当前浏览器最近一次已知偏好补进来，但不会覆盖本次明确输入。
 11. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，并按当前 `client_id` 写回数据库。
 12. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
-13. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、数据需求、候选工具、失败降级策略和预期输出。
-14. `DataAgent` 调用 `AnalysisService` 拉取并组装多源数据。
+13. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、任务图、工具白名单、辩论策略、恢复策略、失败降级策略和预期输出。
+14. `DataAgent` 通过 `ToolRunner` 调用 Planner 授权的行情研究工具，拉取并组装多源数据。
 15. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
-16. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
-17. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
-18. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
-19. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
-20. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-21. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-22. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-23. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-24. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-25. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
+16. `EvidenceAgent` 通过授权工具写入知识库、检索证据并生成引用映射。
+17. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决。
+18. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
+19. `ValidatorAgent` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
+20. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
+21. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+22. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
+23. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
+24. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+25. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+26. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+27. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
 
 ## 关键设计决定与原因
 
@@ -84,7 +87,9 @@
 - 公开展示优先采用 Docker 单服务部署：因为前后端已经由同一个 FastAPI 服务托管，最适合直接在 Railway 这类平台上公开发布。
 - Railway 的持久化卷挂到 `/app/data/runtime`：这样既能保留运行历史，也不会覆盖镜像里的 `data/seed` 种子文件。
 - 知识库采用本地 SQLite + FTS5，而不是外部向量数据库：保持 Railway 单服务部署简单，同时让报告证据可持久化、可回查。
-- 多智能体采用“可控多角色”而不是完全自治辩论：每个 agent 有固定职责和交接记录，稳定性优先。
+- 多智能体采用“受限自治”而不是完全开放自治：agent 可以在白名单工具内选择调用并做一轮正反论证，但不能无限调用工具或自由执行代码。
+- 工具调用统一经过 `ToolRegistry` / `ToolRunner`：这样权限、重试、超时和审计口径一致，也方便以后接 MCP / Skills 式工具。
+- 恢复策略采用“从指定 agent 重跑到下游”：上游 checkpoint 可复用，下游依赖可能变化，所以不保留旧下游结果。
 - `agent_trace` 记录时间、状态、证据数量和错误原因：这样 debug 能看到每个环节是否真的执行，以及慢点或失败点在哪里。
 - 保留 `AgentService` 兼容导入：旧 workflow 和外部调用不用跟着重命名，实际执行已经切到 `AgentCoordinator`。
 - LLM 路由采用“火山主源 + DeepSeek 备用源”：火山接口失败时自动回退，避免报告生成直接中断。
@@ -101,7 +106,7 @@
 - `/terminal` 只保留用户决策相关信息，过程性中间产物全部收口到 `/debug`。
 - 回测分为 `replay` 和 `reference`：一个强调历史建议回放，一个强调历史表现参考，语义更清楚。
 - 回测默认采用保守 V1.5 口径：先把交易成本、滑点、分红是否纳入和再平衡说清楚，避免用户把演示结果当成精确收益。
-- 历史模式严格限制 `as_of_date`：宁可降级提示，也不混入未来数据，保证结论可信。
+- 历史模式严格限制 `as_of_date`，并记录本地归档缺口：宁可降级提示，也不混入未来数据或假装历史新闻、smart money 完整。
 - 外部数据采用主源 + 备用源 + 缓存：面对免费数据源限流时，系统仍可稳定输出结果。
 - 价格链路统一为“Alpaca -> yfinance -> Alpha Vantage -> 6小时缓存”：实时研究、历史研究和回测口径保持一致。
 - yfinance 采用“代理隔离路由 + 自动接管”：默认 `auto` 先直连，失败后自动尝试系统代理，且不污染其他数据源的网络设置。
