@@ -140,7 +140,7 @@ class PdfExportService:
     <section class="hero">
       <p class="eyebrow">Investment report PDF</p>
       <h1>{_esc(title)}</h1>
-      <p class="hero-summary">{_esc(executive.get("presentation_call") or executive.get("primary_call"))}</p>
+      <p class="hero-summary">{_esc(executive.get("display_call") or executive.get("primary_call"))}</p>
       <div class="chips">
         <span class="chip">Run: {_esc(run_id)}</span>
         <span class="chip">Top pick: {_esc(executive.get("top_pick"))}</span>
@@ -159,7 +159,7 @@ class PdfExportService:
     <div class="grid">
       <section class="section">
         <h2>Executive conclusion</h2>
-        <p>{_esc(executive.get("presentation_action_summary") or executive.get("action_summary"))}</p>
+        <p>{_esc(executive.get("display_action_summary") or executive.get("action_summary"))}</p>
       </section>
       <section class="section">
         <h2>Market context</h2>

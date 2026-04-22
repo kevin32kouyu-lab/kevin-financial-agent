@@ -32,8 +32,8 @@ def _sample_report_result() -> dict:
                 },
             },
             "executive": {
-                "presentation_call": "Prefer AAPL, keep MSFT on watchlist.",
-                "presentation_action_summary": "Start with a smaller position and review after earnings.",
+                "display_call": "Prefer AAPL, keep MSFT on watchlist.",
+                "display_action_summary": "Start with a smaller position and review after earnings.",
                 "top_pick": "AAPL",
                 "market_stance": "selective",
                 "mandate_fit_score": 82,

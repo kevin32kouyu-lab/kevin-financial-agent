@@ -146,8 +146,8 @@ function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, ba
     ...(repairText(memorySummary?.note, "") ? [`- ${repairText(memorySummary?.note)}`] : []),
     "",
     `## ${locale === "zh" ? "执行结论" : "Executive verdict"}`,
-    `- ${repairText(executive?.presentation_call || executive?.primary_call, locale === "zh" ? "暂无结论" : "No verdict yet")}`,
-    `- ${repairText(executive?.presentation_action_summary || executive?.action_summary, "")}`,
+    `- ${repairText(executive?.display_call || executive?.primary_call, locale === "zh" ? "暂无结论" : "No verdict yet")}`,
+    `- ${repairText(executive?.display_action_summary || executive?.action_summary, "")}`,
     "",
     `## ${locale === "zh" ? "结论依据" : "Decision evidence"}`,
     `- ${repairText(evidenceSummary?.headline, locale === "zh" ? "暂无依据摘要。" : "No evidence summary yet.")}`,
@@ -318,7 +318,7 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
     <section class="hero">
       <p>${escapeHtml(meta?.subtitle || "")}</p>
       <h1>${escapeHtml(meta?.title || (locale === "zh" ? "投资研究报告" : "Investment Research Report"))}</h1>
-      <p>${escapeHtml(executive?.presentation_call || executive?.primary_call)}</p>
+      <p>${escapeHtml(executive?.display_call || executive?.primary_call)}</p>
       <div class="pill-row">
         <span class="pill">Top Pick: ${escapeHtml(executive?.top_pick)}</span>
         <span class="pill">${locale === "zh" ? "市场姿态" : "Market Stance"}: ${escapeHtml(executive?.market_stance)}</span>
@@ -351,7 +351,7 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
       </section>
       <section class="section">
         <h2>${locale === "zh" ? "执行摘要" : "Execution Summary"}</h2>
-        <p>${escapeHtml(executive?.presentation_action_summary || executive?.action_summary)}</p>
+        <p>${escapeHtml(executive?.display_action_summary || executive?.action_summary)}</p>
       </section>
     </div>
     <div class="grid">

@@ -91,6 +91,13 @@ const DEFAULT_FILTERS: HistoryFilters = {
   status: "",
 };
 
+interface RunBundleCacheEntry {
+  detail: RunDetailResponse;
+  artifacts: ArtifactRecord[];
+  auditSummary: RunAuditSummary | null;
+  supplementalLoaded: boolean;
+}
+
 const EMPTY_PROFILE: UserProfile = {
   capital_amount: null,
   currency: null,
@@ -109,13 +116,6 @@ function daysAgoIso(days: number) {
   const value = new Date();
   value.setDate(value.getDate() - days);
   return value.toISOString().slice(0, 10);
-}
-
-function plusDaysIso(value: string, days: number) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return todayIso();
-  parsed.setDate(parsed.getDate() + days);
-  return parsed.toISOString().slice(0, 10);
 }
 
 function initialTerminalMode(): TerminalMode {
@@ -205,16 +205,6 @@ function toUserProfile(payload: UserPreferenceSummary | null): UserProfile {
   };
 }
 
-function needsBacktestUpgrade(detail: BacktestDetail | null): boolean {
-  if (!detail) return false;
-  const meta = (detail.meta || {}) as Record<string, unknown>;
-  const schemaVersion = Number(meta.schema_version ?? 0);
-  if (!Number.isFinite(schemaVersion) || schemaVersion < 2) return true;
-  if ((detail.summary.requested_count || 0) <= 0) return true;
-  if ((detail.summary.coverage_count || 0) <= 0) return true;
-  return detail.positions.some((item) => !Array.isArray(item.timeseries) || item.timeseries.length === 0);
-}
-
 function buildStructuredPayload(form: StructuredFormState) {
   return {
     risk_profile: { tolerance_level: form.riskLevel },
@@ -277,7 +267,6 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [backtestDetail, setBacktestDetail] = useState<BacktestDetail | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestCreating, setBacktestCreating] = useState(false);
-  const [isBacktestAutoUpgrading, setIsBacktestAutoUpgrading] = useState(false);
 
   const [statusText, setStatusText] = useState(copy.status.ready);
   const [errorText, setErrorText] = useState("");
@@ -292,6 +281,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const deferredSearch = useDeferredValue(filters.search);
   const eventSourceRef = useRef<EventSource | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const runBundleCacheRef = useRef<Map<string, RunBundleCacheEntry>>(new Map());
+  const backtestCacheRef = useRef<Map<string, BacktestDetail | null>>(new Map());
 
   const closeEventSource = useEffectEvent(() => {
     if (eventSourceRef.current) {
@@ -354,15 +345,22 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   });
 
-  const loadBacktest = useEffectEvent(async (runId: string) => {
+  const loadBacktest = useEffectEvent(async (runId: string, force = false) => {
+    if (!force && backtestCacheRef.current.has(runId)) {
+      const cached = backtestCacheRef.current.get(runId) ?? null;
+      startTransition(() => setBacktestDetail(cached));
+      return cached;
+    }
     setBacktestLoading(true);
     try {
       const response = await listBacktests(runId, 1);
       if (!response.items.length) {
+        backtestCacheRef.current.set(runId, null);
         startTransition(() => setBacktestDetail(null));
         return null;
       }
       const detail = await getBacktest(response.items[0].id);
+      backtestCacheRef.current.set(runId, detail);
       startTransition(() => setBacktestDetail(detail));
       return detail;
     } catch (error) {
@@ -414,6 +412,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
           entry_date: entryDate || null,
           end_date: endDate || null,
         });
+        backtestCacheRef.current.set(targetRunId, detail);
         startTransition(() => setBacktestDetail(detail));
         setStatusText(
           modeSelected === "replay"
@@ -434,16 +433,13 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     },
   );
 
-  const loadRunBundle = useEffectEvent(async (runId: string) => {
-    setRunLoading(true);
+  const loadRunSupplemental = useEffectEvent(async (runId: string) => {
     try {
-      const [detailResponse, artifactResponse, auditResponse] = await Promise.all([
-        getRunDetail(runId),
+      const [artifactResponse, auditResponse] = await Promise.all([
         getRunArtifacts(runId),
         getRunAuditSummary(runId).catch(() => null),
       ]);
       startTransition(() => {
-        setRunDetail(detailResponse);
         setArtifacts(artifactResponse.artifacts);
         setAuditSummary(auditResponse);
         setSelectedArtifactId((current) =>
@@ -451,8 +447,58 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
             ? current
             : artifactResponse.artifacts[0]?.id ?? null,
         );
-        setMode(detailResponse.run.mode);
       });
+      const current = runBundleCacheRef.current.get(runId);
+      if (current) {
+        runBundleCacheRef.current.set(runId, {
+          ...current,
+          artifacts: artifactResponse.artifacts,
+          auditSummary: auditResponse,
+          supplementalLoaded: true,
+        });
+      }
+    } catch {
+      // 补充调试数据不应阻塞正式报告阅读。
+    }
+  });
+
+  const loadRunBundle = useEffectEvent(async (runId: string) => {
+    const cached = runBundleCacheRef.current.get(runId);
+    if (cached) {
+      startTransition(() => {
+        setRunDetail(cached.detail);
+        setArtifacts(cached.artifacts);
+        setAuditSummary(cached.auditSummary);
+        setSelectedArtifactId((current) =>
+          cached.artifacts.some((artifact) => artifact.id === current)
+            ? current
+            : cached.artifacts[0]?.id ?? null,
+        );
+        setMode(cached.detail.run.mode);
+        setBacktestDetail(backtestCacheRef.current.has(runId) ? backtestCacheRef.current.get(runId) ?? null : null);
+      });
+      setRunLoading(false);
+      if (!cached.supplementalLoaded) {
+        void loadRunSupplemental(runId);
+      }
+      return cached.detail;
+    }
+
+    setRunLoading(true);
+    try {
+      const detailResponse = await getRunDetail(runId);
+      startTransition(() => {
+        setRunDetail(detailResponse);
+        setMode(detailResponse.run.mode);
+        setBacktestDetail(backtestCacheRef.current.has(runId) ? backtestCacheRef.current.get(runId) ?? null : null);
+      });
+      runBundleCacheRef.current.set(runId, {
+        detail: detailResponse,
+        artifacts: [],
+        auditSummary: null,
+        supplementalLoaded: false,
+      });
+      void loadRunSupplemental(runId);
 
       const resultRecord = (detailResponse.result || {}) as Record<string, unknown>;
       const storedPreferences =
@@ -494,43 +540,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         });
       }
 
-      if (detailResponse.run.status === "completed") {
-        const existing = await loadBacktest(runId);
-        const result = detailResponse.result || {};
-        const researchContext =
-          result && typeof result === "object" ? ((result as Record<string, unknown>).research_context as Record<string, unknown> | undefined) : undefined;
-        const researchMode = String(researchContext?.research_mode || "realtime");
-        const runAsOfDate = String(researchContext?.as_of_date || "");
-        if (existing && needsBacktestUpgrade(existing)) {
-          setIsBacktestAutoUpgrading(true);
-          try {
-            const meta = (existing.meta || {}) as Record<string, unknown>;
-            const backtestKind = String(meta.backtest_kind || (researchMode === "historical" ? "replay" : "reference")) as BacktestMode;
-            const currentEntry = existing.summary.entry_date || referenceStartDate;
-            const currentEnd = existing.summary.end_date || historicalBacktestEndDate || todayIso();
-            if (backtestKind === "reference") {
-              const safeEnd = currentEnd > currentEntry ? currentEnd : plusDaysIso(currentEntry, 1);
-              await runBacktest(runId, "reference", currentEntry, safeEnd);
-            } else {
-              const anchor = runAsOfDate || asOfDate;
-              const safeEnd = anchor && currentEnd <= anchor ? plusDaysIso(anchor, 1) : currentEnd;
-              await runBacktest(runId, "replay", null, safeEnd);
-            }
-            await loadBacktest(runId);
-          } finally {
-            setIsBacktestAutoUpgrading(false);
-          }
-        }
-
-        if (!existing && researchMode === "historical") {
-          let replayEnd = historicalBacktestEndDate || todayIso();
-          if (runAsOfDate && replayEnd <= runAsOfDate) {
-            replayEnd = todayIso() > runAsOfDate ? todayIso() : plusDaysIso(runAsOfDate, 1);
-            startTransition(() => setHistoricalBacktestEndDate(replayEnd));
-          }
-          await runBacktest(runId, "replay", null, replayEnd);
-        }
-      } else {
+      if (detailResponse.run.status !== "completed") {
         startTransition(() => setBacktestDetail(null));
       }
       return detailResponse;
@@ -923,7 +933,6 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     backtestDetail,
     backtestLoading,
     backtestCreating,
-    isBacktestAutoUpgrading,
     selectedArtifactId,
     selectedArtifactKind,
     statusText,

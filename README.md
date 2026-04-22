@@ -42,6 +42,7 @@
 - 支持生产治理基础能力：`/healthz`、`/readyz`、结构化日志、管理员审计事件和 GitHub Actions CI
 - 支持数据刷新任务记录：股票池、宏观和全量刷新可手动触发，并保留最近任务状态
 - 支持 Playwright 端到端 smoke test：覆盖 Terminal 四个主路由
+- 支持 Terminal 内部路由切换：四个子页保留 URL，但点击切换不再整页刷新
 - 支持任务进度条与“撤回任务”能力（cancelled 状态）
 - 支持 Terminal 非阻断式 3 步新手引导（按需展开查看）
 - 支持用户前台 `/terminal` 与开发者后台 `/debug`
@@ -51,13 +52,6 @@
 - 支持同公司多代码防错（如 GOOG/GOOGL）：默认去重，用户明确点名时保留多类别
 - 支持逐票卡片中的可点击新闻链接与 SEC 披露链接
 - 支持回测“结果解释卡”和“本次回测口径”，说明为何跑赢或跑输基准，以及收益计算的保守假设
-
-## 计划文档入口（2026-04-18）
-
-- 周末冲刺计划（48小时）：[`docs/plans/weekend_terminal_sprint_plan.md`](docs/plans/weekend_terminal_sprint_plan.md)
-- 周末冲刺计划 PDF：[`docs/plans/weekend_terminal_sprint_plan.pdf`](docs/plans/weekend_terminal_sprint_plan.pdf)
-- 10周成熟化路线图：[`docs/plans/10week_mature_agent_roadmap.md`](docs/plans/10week_mature_agent_roadmap.md)
-- 10周成熟化路线图 PDF：[`docs/plans/10week_mature_agent_roadmap.pdf`](docs/plans/10week_mature_agent_roadmap.pdf)
 
 ## 技术栈
 

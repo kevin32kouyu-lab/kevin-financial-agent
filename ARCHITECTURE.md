@@ -35,7 +35,8 @@
 - `web/src/views/Terminal.tsx`：面向用户的研究终端页面（四页结构：开始研究、研究结论、回测页、历史页）。
 - `web/src/views/Landing.tsx`：首页入口页面（品牌主视觉、动态研究场景、三步引导、语言切换、进入终端）。
 - `web/src/views/Workbench.tsx`：面向开发者的调试与诊断页面（五标签：概览/阶段/智能体/产物/原始 JSON）。
-- `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排，并同步任务进度、历史和当前 run。
+- `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排，并用轻量缓存同步任务进度、历史、当前 run 和回测。
+- `web/src/hooks/useTerminalNavigation.ts`：管理 Terminal 四页内部导航，保留 URL 与 `run` 参数，同时避免整页刷新。
 - `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准演示问题，并支持按语言清空本地轻量记忆。
 - `web/src/lib/clientIdentity.ts`：为每个浏览器生成并持久化 `client_id`，作为长期记忆的隔离单位。
 - `web/src/components/ProfileMemoryCard.tsx`：调试或旧入口可复用的长期偏好编辑卡片。
@@ -44,7 +45,7 @@
 - `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要和导出操作。
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 交接时间线、耗时、证据数量和警告。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格、税费/分红/再平衡和本次回测口径。
-- `web/e2e/terminal-smoke.spec.ts`：用 Playwright 验证 Terminal 四个主路由能正常返回前端壳。
+- `web/e2e/terminal-smoke.spec.ts`：用 Playwright 验证 Terminal 四个主路由、内部切换、回测延迟加载和 PDF 后端导出。
 - `web/src/lib/motion.ts`：动效偏好读写（本地记忆 + 系统低动态检测）。
 - `Dockerfile`：把前端和后端一起打包成单服务容器，安装 Chromium，并在启动时读取平台注入的 `PORT`。
 
@@ -62,22 +63,24 @@
 10. 未登录时后端继续按浏览器隔离长期记忆；登录后 `ProfileService` 优先使用账户档案。
 11. 如果当前问题没写清风险、期限或风格，`memory.py` 会把最近一次已知偏好补进来，但不会覆盖本次明确输入。
 12. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，并写回浏览器或账户档案。
-12. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
-13. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、数据需求、候选工具、失败降级策略和预期输出。
-14. `DataAgent` 调用 `AnalysisService` 拉取并组装多源数据。
-15. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
-16. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
-17. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
-18. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
-19. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
-20. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-21. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-22. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-23. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-24. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf`，后端读取同一份 run 数据和最近回测，用 Playwright/Chromium 返回真实 PDF 文件。
-25. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-26. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
-27. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
+13. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
+14. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、数据需求、候选工具、失败降级策略和预期输出。
+15. `DataAgent` 调用 `AnalysisService` 拉取并组装多源数据。
+16. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
+17. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
+18. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
+19. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
+20. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
+21. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+22. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
+23. 结论页优先加载 run detail；artifact、audit summary 和 backtest 不阻塞正式报告阅读。
+24. 用户进入回测页或手动触发回测时，前端才调用回测相关接口。
+25. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+26. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+27. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf`，后端读取同一份 run 数据和最近回测，用 Playwright/Chromium 返回真实 PDF 文件。
+28. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+29. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
+30. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
 
 ## 关键设计决定与原因
 
@@ -106,6 +109,8 @@
 - Terminal 改为“四页终端”而不是“所有内容堆在一页”：让提问、结论、回测、历史各自清楚，不再互相挤压。
 - 结论页首屏改为“摘要卡片”而不是“巨大标题海报”：让结论、风险、动作、原始问题都能一眼读清。
 - 当前 run 通过地址参数保留：用户在结论页、回测页、历史页之间切换时，不会丢掉正在查看的那份报告。
+- Terminal 子页切换采用前端内部导航：保留可分享 URL，同时避免整页刷新造成的等待和状态闪烁。
+- 结论页不自动创建回测：报告阅读优先保持轻快，回测只在进入回测页或用户主动触发时加载。
 - `/terminal` 只保留用户决策相关信息，过程性中间产物全部收口到 `/debug`。
 - 回测分为 `replay` 和 `reference`：一个强调历史建议回放，一个强调历史表现参考，语义更清楚。
 - 回测升级为 V2 可配置口径：默认保守，但允许显式开启分红、简化税费和再平衡，避免用户把演示结果当成精确收益。

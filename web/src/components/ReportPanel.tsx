@@ -774,8 +774,8 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       <div id="report-overview" className="executive-grid anchor-target">
         <article className="executive-card">
           <p className="eyebrow">{locale === "zh" ? "执行结论" : "Executive verdict"}</p>
-          <h3>{toText(executive?.presentation_call || executive?.primary_call, copy.report.empty)}</h3>
-          <p>{toText(executive?.presentation_action_summary || executive?.action_summary, copy.report.empty)}</p>
+          <h3>{toText(executive?.display_call || executive?.primary_call, copy.report.empty)}</h3>
+          <p>{toText(executive?.display_action_summary || executive?.action_summary, copy.report.empty)}</p>
           <div className="chip-row">
             {watchlist.map((item) => (
               <span key={item} className="chip positive">{item}</span>

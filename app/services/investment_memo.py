@@ -578,26 +578,26 @@ def _build_validation_summary(report_briefing: dict[str, Any], intent: ParsedInt
             "warning": "The current verdict should be read conservatively before acting on it.",
         }
 
-    presentation_call = None
-    presentation_action = None
+    display_call = None
+    display_action = None
     if top_pick and level == "warning":
-        presentation_call = (
+        display_call = (
             f"当前更适合把 {top_pick_ticker} 视作相对更优候选，而不是直接下强结论。"
             if language_code == "zh"
             else f"{top_pick_ticker} is better framed as the relatively stronger candidate rather than a full-strength call."
         )
-        presentation_action = (
+        display_action = (
             "先小步试探或继续观察，等待风险信号缓和后再加大仓位。"
             if language_code == "zh"
             else "Start small or stay on watch until the risk signals ease."
         )
     elif top_pick and level == "caution":
-        presentation_call = (
+        display_call = (
             f"当前最匹配的候选仍是 {top_pick_ticker}，但更适合按分批、保守方式执行。"
             if language_code == "zh"
             else f"{top_pick_ticker} remains the best fit, but the execution should stay staged and conservative."
         )
-        presentation_action = (
+        display_action = (
             "先按计划分批布局，并持续确认新闻、审计与宏观信号是否继续支持。"
             if language_code == "zh"
             else "Scale in gradually and keep confirming news, audit and macro signals."
@@ -607,7 +607,7 @@ def _build_validation_summary(report_briefing: dict[str, Any], intent: ParsedInt
         "level": level,
         "headline": headline_map[level],
         "items": items[:4],
-    }, presentation_call, presentation_action
+    }, display_call, display_action
 
 
 def _build_safety_summary(
@@ -703,7 +703,7 @@ def _attach_user_facing_summaries(
 
     meta["user_profile"] = _build_user_profile(intent, language_code)
     meta["evidence_summary"] = _build_evidence_summary(report_briefing, language_code)
-    validation_summary, presentation_call, presentation_action = _build_validation_summary(
+    validation_summary, display_call, display_action = _build_validation_summary(
         report_briefing,
         intent,
         language_code,
@@ -722,7 +722,7 @@ def _attach_user_facing_summaries(
     meta["coverage_flags"] = list((meta.get("safety_summary") or {}).get("degraded_modules") or [])
 
     executive = report_briefing.setdefault("executive", {})
-    if presentation_call:
-        executive["presentation_call"] = presentation_call
-    if presentation_action:
-        executive["presentation_action_summary"] = presentation_action
+    if display_call:
+        executive["display_call"] = display_call
+    if display_action:
+        executive["display_action_summary"] = display_action
