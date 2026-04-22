@@ -88,6 +88,26 @@ const demoResult = {
     risk_register: [{ category: "Valuation", ticker: "MSFT", summary: "Multiple compression risk." }],
   },
   final_report: "Full memo text for the PDF export test.",
+  report_outputs: {
+    investment: {
+      markdown: "# Institutional Investment Research Report\n\n## Executive Summary\n\nFocus on MSFT first.",
+      charts: {
+        portfolio_allocation: { status: "ready", items: [{ ticker: "MSFT", weight: 70 }] },
+        candidate_score_comparison: { status: "ready", items: [{ ticker: "MSFT", composite: 88 }] },
+        portfolio_vs_benchmark_backtest: { status: "missing", message: "Data is insufficient; this chart was not generated." },
+        risk_contribution: { status: "ready", items: [{ name: "Valuation", value: 60 }] },
+      },
+    },
+    development: {
+      markdown: "# Agentic Research Development Report\n\n## Agent Workflow\n\n- EvidenceAgent: retrieved mock evidence.\n\n## RAG Evidence Coverage\n\n- Retrieved evidence items: 1",
+      diagnostics: {
+        agent_count: 6,
+        rag_evidence_count: 1,
+        validation_warning_count: 0,
+        backtest_status: "missing",
+      },
+    },
+  },
 };
 
 const demoDetail = {
@@ -122,7 +142,7 @@ async function mockTerminalApis(
     options.captureBacktestPosts?.push(route.request().method());
     await route.fulfill({ json: { summary: { id: "bt-1", source_run_id: "demo-run", mode: "replay", entry_date: "2026-01-16", end_date: "2026-04-22", metrics: {} }, positions: [], points: [], meta: {} } });
   });
-  await page.route("**/api/v1/runs/demo-run/export/pdf", async (route) => {
+  await page.route("**/api/v1/runs/demo-run/export/pdf**", async (route) => {
     options.capturePdfRequests?.push(route.request().url());
     await route.fulfill({
       status: 200,
@@ -178,9 +198,28 @@ test("terminal PDF export uses the backend PDF endpoint", async ({ page }) => {
   await mockTerminalApis(page, { capturePdfRequests: pdfRequests });
 
   await page.goto("/terminal/conclusion?run=demo-run");
-  await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
-  await page.getByRole("button", { name: "Export PDF" }).click();
+  await expect(page.getByRole("button", { name: "Export Investment PDF" })).toBeVisible();
+  await page.getByRole("button", { name: "Export Investment PDF" }).click();
 
   await expect.poll(() => pdfRequests.length).toBe(1);
   expect(pdfRequests[0]).toContain("/api/v1/runs/demo-run/export/pdf");
+  expect(pdfRequests[0]).toContain("kind=investment");
+});
+
+test("terminal conclusion page switches between investment and development reports", async ({ page }) => {
+  const pdfRequests: string[] = [];
+  await mockTerminalApis(page, { capturePdfRequests: pdfRequests });
+
+  await page.goto("/terminal/conclusion?run=demo-run");
+  await expect(page.getByRole("tab", { name: "Investment Report" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Recommended Portfolio Allocation")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Development Report" }).click();
+  await expect(page.getByRole("tab", { name: "Development Report" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Agent Workflow")).toBeVisible();
+  await expect(page.getByText("EvidenceAgent: retrieved mock evidence.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Export Development PDF" }).click();
+  await expect.poll(() => pdfRequests.length).toBe(1);
+  expect(pdfRequests[0]).toContain("kind=development");
 });

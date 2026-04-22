@@ -22,7 +22,8 @@
 - `app/tools/fetchers.py`：对接外部数据源并提供主源/备用源回退。
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：提供报告包构建、RAG 证据接入、正式报告生成和最终校验入口。
-- `app/services/pdf_export_service.py`：把 run 的完整报告数据整理成打印版 HTML，并调用 Playwright 生成真实 PDF。
+- `app/services/report_outputs.py`：把同一次 run 的结构化结果整理成投资报告和开发报告，并让 `final_report` 继续兼容投资报告正文。
+- `app/services/pdf_export_service.py`：按 `kind=investment/development` 把 run 的完整报告数据整理成打印版 HTML，并调用 Playwright 生成真实 PDF。
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，并标记证据时效、来源可靠性和引用映射。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、数据降级和时间范围。
 - `app/services/tool_registry.py`：提供受控工具注册、权限检查、超时、重试、缓存和调用审计的基础层。
@@ -43,7 +44,7 @@
 - `web/src/components/ProfileMemoryCard.tsx`：调试或旧入口可复用的长期偏好编辑卡片。
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
 - `web/src/components/TerminalTrustPanels.tsx`：旧版可信度概览组件，用户终端前台不再直接使用。
-- `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要和导出操作。
+- `web/src/components/ReportPanel.tsx`：展示投资报告 / 开发报告双标签、结论依据、证据引用、校验摘要和导出操作。
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 交接时间线、耗时、证据数量和警告。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格、税费/分红/再平衡和本次回测口径。
 - `web/e2e/terminal-smoke.spec.ts`：用 Playwright 验证 Terminal 四个主路由、内部切换、回测延迟加载和 PDF 后端导出。
@@ -56,7 +57,7 @@
 
 1. 用户先访问 `/` 查看首页，再进入 `/terminal`。
 2. `/terminal` 默认进入开始研究页，只展示提问入口、进度和必要操作。
-3. 研究完成后自动跳到 `/terminal/conclusion?run=<id>`，结论页只展示用户能理解的摘要、证据引用和正式报告。
+3. 研究完成后自动跳到 `/terminal/conclusion?run=<id>`，结论页默认展示投资报告，并可切换到开发报告。
 4. 回测页通过 `/terminal/backtest` 独立查看组合与单股回测。
 5. 历史页通过 `/terminal/archive` 独立查看最近报告并再次打开。
 6. 前端调用 `POST /api/runs` 创建 run。
@@ -74,17 +75,18 @@
 18. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
 19. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
 20. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
-21. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
-22. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-23. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
-24. 结论页优先加载 run detail；artifact、audit summary 和 backtest 不阻塞正式报告阅读。
-25. 用户进入回测页或手动触发回测时，前端才调用回测相关接口。
-26. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-27. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-28. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf`，后端读取同一份 run 数据和最近回测，用 Playwright/Chromium 返回真实 PDF 文件。
-29. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-30. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
-31. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
+21. `report_outputs.py` 基于同一份 run 生成两份输出：投资报告给普通用户阅读，开发报告给开源项目读者理解 Agent、RAG、校验和回测支撑链路。
+22. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
+23. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+24. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
+25. 结论页优先加载 run detail；artifact、audit summary 和 backtest 不阻塞正式报告阅读。
+26. 用户进入回测页或手动触发回测时，前端才调用回测相关接口。
+27. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+28. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+29. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf?kind=...`，后端读取同一份 run 数据和最近回测，用 Playwright/Chromium 返回真实 PDF 文件。
+30. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+31. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
+32. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
 
 ## 关键设计决定与原因
 
@@ -107,6 +109,7 @@
 - `ValidatorAgent` 统一计算 `confidence_level`：避免多个模块各写各的可信度，减少前后不一致。
 - 澄清机制采用“一句短追问”而不是长段解释：减少用户把补充信息步骤误解成系统报错。
 - 结论、依据、校验、安全摘要共用同一份结构化数据：保证页面、历史记录和导出内容一致。
+- 双报告输出共用同一次 run：投资报告和开发报告不会各跑一遍研究，避免结论互相打架。
 - PDF 导出放到后端统一生成：避免浏览器 `window.print()` 造成的假 PDF、样式偏差和内容缺失。
 - 首页与终端共享同一动态背景与玻璃层：保证视觉语言统一，不再出现“首页一套、终端一套”的割裂。
 - 首页改为“品牌入口 + 强 CTA + 研究场景预览”：让第一次访问的用户先建立信任，再进入终端。

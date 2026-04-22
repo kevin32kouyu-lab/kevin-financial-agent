@@ -5,6 +5,7 @@ import type { BacktestDetail, Locale } from "./types";
 
 type GenericRecord = Record<string, unknown>;
 export type ReportExportFormat = "markdown" | "html" | "json" | "pdf";
+export type ReportKind = "investment" | "development";
 
 function asRecord(value: unknown): GenericRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as GenericRecord) : null;
@@ -66,9 +67,9 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
   return match?.[1]?.trim() || fallback;
 }
 
-async function downloadPdfFromBackend(runId: string, fallbackName: string) {
+async function downloadPdfFromBackend(runId: string, fallbackName: string, kind: ReportKind) {
   const clientId = getClientId();
-  const response = await fetch(`/api/v1/runs/${encodeURIComponent(runId)}/export/pdf`, {
+  const response = await fetch(`/api/v1/runs/${encodeURIComponent(runId)}/export/pdf?kind=${encodeURIComponent(kind)}`, {
     headers: {
       ...(clientId ? { "X-Client-Id": clientId } : {}),
     },
@@ -93,6 +94,63 @@ function buildBulletLines(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => repairText(item, "")).filter(Boolean) : [];
 }
 
+function getReportOutput(result: Record<string, unknown>, kind: ReportKind): GenericRecord | null {
+  const reportOutputs = asRecord(result.report_outputs);
+  return asRecord(reportOutputs?.[kind]);
+}
+
+function getOutputMarkdown(result: Record<string, unknown>, kind: ReportKind): string {
+  return repairText(getReportOutput(result, kind)?.markdown, "");
+}
+
+function markdownToHtml(markdown: string): string {
+  const htmlLines: string[] = [];
+  let inList = false;
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (inList) {
+        htmlLines.push("</ul>");
+        inList = false;
+      }
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      if (inList) {
+        htmlLines.push("</ul>");
+        inList = false;
+      }
+      htmlLines.push(`<h3>${escapeHtml(line.slice(4))}</h3>`);
+    } else if (line.startsWith("## ")) {
+      if (inList) {
+        htmlLines.push("</ul>");
+        inList = false;
+      }
+      htmlLines.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+    } else if (line.startsWith("# ")) {
+      if (inList) {
+        htmlLines.push("</ul>");
+        inList = false;
+      }
+      htmlLines.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+    } else if (line.startsWith("- ")) {
+      if (!inList) {
+        htmlLines.push("<ul>");
+        inList = true;
+      }
+      htmlLines.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+    } else {
+      if (inList) {
+        htmlLines.push("</ul>");
+        inList = false;
+      }
+      htmlLines.push(`<p>${escapeHtml(line)}</p>`);
+    }
+  }
+  if (inList) htmlLines.push("</ul>");
+  return htmlLines.join("\n");
+}
+
 function buildBacktestSummary(backtest: BacktestDetail | null | undefined, locale: Locale): string[] {
   if (!backtest?.summary?.metrics) return [];
   const metrics = backtest.summary.metrics;
@@ -107,7 +165,9 @@ function buildBacktestSummary(backtest: BacktestDetail | null | undefined, local
   ];
 }
 
-function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null): string {
+function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
+  const outputMarkdown = getOutputMarkdown(result, kind);
+  if (outputMarkdown) return outputMarkdown;
   const finalReport = repairText(result.final_report, "");
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
@@ -193,7 +253,29 @@ function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, ba
   return lines.join("\n");
 }
 
-function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null): string {
+function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
+  const outputMarkdown = getOutputMarkdown(result, kind);
+  if (outputMarkdown) {
+    const title = kind === "development"
+      ? locale === "zh" ? "开发报告" : "Development Report"
+      : locale === "zh" ? "投资报告" : "Investment Report";
+    return `<!doctype html>
+<html lang="${locale}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: "Aptos", "Segoe UI", sans-serif; color: #10233b; background: #f4f7fb; margin: 0; }
+    main { max-width: 960px; margin: 0 auto; padding: 36px 28px 56px; }
+    article { background: #fff; border: 1px solid #d8e2ee; border-radius: 22px; padding: 28px; }
+    h1, h2, h3 { font-family: Cambria, Georgia, serif; }
+    p, li { line-height: 1.75; }
+  </style>
+</head>
+<body><main><article>${markdownToHtml(outputMarkdown)}</article></main></body>
+</html>`;
+  }
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
   const executive = asRecord(reportBriefing?.executive);
@@ -422,14 +504,16 @@ export function exportReport(
   format: ReportExportFormat,
   backtest?: BacktestDetail | null,
   runId?: string,
+  kind: ReportKind = "investment",
 ) {
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
-  const html = buildReportHtml(result, locale, backtest);
-  const baseName = `${slugify(repairText(meta?.title, locale === "zh" ? "投资研究报告" : "investment-report"))}-${timestampStamp()}`;
+  const html = buildReportHtml(result, locale, backtest, kind);
+  const fallbackTitle = kind === "development" ? "development-report" : locale === "zh" ? "投资研究报告" : "investment-report";
+  const baseName = `${slugify(repairText(meta?.title, fallbackTitle))}-${kind}-${timestampStamp()}`;
 
   if (format === "markdown") {
-    downloadBlob(`${baseName}.md`, buildReportMarkdown(result, locale, backtest), "text/markdown;charset=utf-8");
+    downloadBlob(`${baseName}.md`, buildReportMarkdown(result, locale, backtest, kind), "text/markdown;charset=utf-8");
     return;
   }
   if (format === "html") {
@@ -441,7 +525,7 @@ export function exportReport(
       window.alert(locale === "zh" ? "当前报告缺少 run id，无法生成后端 PDF。" : "This report is missing a run id, so the backend PDF cannot be generated.");
       return;
     }
-    void downloadPdfFromBackend(runId, baseName).catch((error) => {
+    void downloadPdfFromBackend(runId, baseName, kind).catch((error) => {
       window.alert(error instanceof Error ? error.message : locale === "zh" ? "PDF 导出失败。" : "PDF export failed.");
     });
     return;

@@ -1,7 +1,7 @@
 /** 正式报告面板：负责渲染报告正文、依据摘要、逐票研究卡与导出入口。 */
 import { useEffect, useRef, useState } from "react";
 import { formatDateTime, formatJson, formatScore, repairText } from "../lib/format";
-import { exportReport } from "../lib/reportExport";
+import { exportReport, type ReportKind } from "../lib/reportExport";
 import type { BacktestDetail, DataStatus, Locale } from "../lib/types";
 import type { LocalePack } from "../lib/i18n";
 import { ResearchCharts } from "./ResearchCharts";
@@ -332,6 +332,166 @@ function renderReportMarkdown(text: string) {
   });
 }
 
+function getReportOutput(result: GenericRecord, kind: ReportKind): GenericRecord | null {
+  const outputs = asRecord(result.report_outputs);
+  return asRecord(outputs?.[kind]);
+}
+
+function chartValue(item: GenericRecord, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = toNumber(item[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function chartLabel(item: GenericRecord, keys: string[]): string {
+  for (const key of keys) {
+    const value = toText(item[key], "");
+    if (value) return value;
+  }
+  return "N/A";
+}
+
+function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: GenericRecord | null }) {
+  const sections = [
+    {
+      key: "portfolio_allocation",
+      title: locale === "zh" ? "推荐组合仓位" : "Recommended Portfolio Allocation",
+      valueKeys: ["weight", "weight_pct", "allocation"],
+      labelKeys: ["ticker", "name"],
+      suffix: "%",
+    },
+    {
+      key: "candidate_score_comparison",
+      title: locale === "zh" ? "候选股评分对比" : "Candidate Score Comparison",
+      valueKeys: ["composite", "composite_score", "score"],
+      labelKeys: ["ticker", "name"],
+      suffix: "",
+    },
+    {
+      key: "portfolio_vs_benchmark_backtest",
+      title: locale === "zh" ? "组合 vs 基准回测" : "Portfolio vs Benchmark Backtest",
+      valueKeys: ["portfolio_return_pct", "total_return_pct", "value"],
+      labelKeys: ["name", "label", "ticker"],
+      suffix: "%",
+    },
+    {
+      key: "risk_contribution",
+      title: locale === "zh" ? "风险贡献" : "Risk Contribution",
+      valueKeys: ["value", "risk", "risk_score", "weight"],
+      labelKeys: ["name", "category", "ticker"],
+      suffix: "%",
+    },
+  ];
+
+  return (
+    <div className="research-chart-grid output-chart-grid">
+      {sections.map((section) => {
+        const chart = asRecord(charts?.[section.key]);
+        const items = asArray(chart?.items);
+        const isMissing = toText(chart?.status, "") === "missing" || !items.length;
+        const maxValue = Math.max(1, ...items.map((item) => chartValue(item, section.valueKeys) || 0));
+        return (
+          <article key={section.key} className="chart-card output-chart-card">
+            <div>
+              <p className="eyebrow">{locale === "zh" ? "报告图表" : "Report chart"}</p>
+              <h3>{section.title}</h3>
+            </div>
+            {isMissing ? (
+              <p className="section-note">{toText(chart?.message, locale === "zh" ? "数据不足，未生成该图表。" : "Data is insufficient; this chart was not generated.")}</p>
+            ) : (
+              <div className="output-chart-bars">
+                {items.slice(0, 8).map((item, index) => {
+                  const value = chartValue(item, section.valueKeys) || 0;
+                  const width = `${Math.max(6, Math.min(100, (value / maxValue) * 100))}%`;
+                  const label = chartLabel(item, section.labelKeys);
+                  return (
+                    <div key={`${section.key}-${label}-${index}`} className="output-chart-row">
+                      <span>{label}</span>
+                      <div className="output-chart-track">
+                        <span style={{ width }} />
+                      </div>
+                      <strong>{value.toFixed(1)}{section.suffix}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function DevelopmentReportView({
+  locale,
+  result,
+  output,
+  backtest,
+}: {
+  locale: Locale;
+  result: GenericRecord;
+  output: GenericRecord | null;
+  backtest?: BacktestDetail | null;
+}) {
+  const diagnostics = asRecord(output?.diagnostics);
+  const markdown = repairText(output?.markdown, "");
+  const agentTrace = asArray(result.agent_trace);
+  const fallbackMarkdown = [
+    "# Agentic Research Development Report",
+    "",
+    "## Run Overview",
+    `- Query: ${toText(result.query, "No original request.")}`,
+    "",
+    "## Agent Workflow",
+    ...(agentTrace.length
+      ? agentTrace.map((item) => `- ${toText(item.agent_name, "Agent")}: ${toText(item.output_summary, "No summary.")}`)
+      : ["- Agent trace is not available for this run."]),
+  ].join("\n");
+  const backtestAssumptions = asRecord(backtest?.meta?.["assumptions"]);
+
+  return (
+    <div className="development-report-view">
+      <div className="summary-grid four-up">
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "Agent 数量" : "Agent count"}</h3>
+          <strong>{toText(diagnostics?.agent_count, String(agentTrace.length || 0))}</strong>
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "RAG 证据" : "RAG evidence"}</h3>
+          <strong>{toText(diagnostics?.rag_evidence_count, "0")}</strong>
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "校验提醒" : "Validation warnings"}</h3>
+          <strong>{toText(diagnostics?.validation_warning_count, "0")}</strong>
+        </div>
+        <div className="mini-card">
+          <h3>{locale === "zh" ? "回测状态" : "Backtest status"}</h3>
+          <strong>{toText(diagnostics?.backtest_status, backtest ? "available" : "missing")}</strong>
+        </div>
+      </div>
+
+      {backtestAssumptions ? (
+        <div className="warning-banner assumption-banner">
+          <strong>{locale === "zh" ? "回测口径" : "Backtest assumptions"}:</strong>{" "}
+          {[
+            `cost ${toText(backtestAssumptions.transaction_cost_bps, "N/A")} bps`,
+            `slippage ${toText(backtestAssumptions.slippage_bps, "N/A")} bps`,
+            `dividend ${toText(backtestAssumptions.dividend_mode, "N/A")}`,
+            `rebalance ${toText(backtestAssumptions.rebalance, "N/A")}`,
+          ].join(" · ")}
+        </div>
+      ) : null}
+
+      <section className="report-markdown development-report-markdown">
+        {renderReportMarkdown(markdown || fallbackMarkdown)}
+      </section>
+    </div>
+  );
+}
+
 function ClarificationState({
   locale,
   copy,
@@ -462,7 +622,12 @@ function StructuredSnapshot({ locale, copy, result }: { locale: Locale; copy: Lo
 
 export function ReportPanel({ locale, copy, result, dataStatus, backtest = null, runId, variant = "debug" }: ReportPanelProps) {
   const [activeMetricHelpId, setActiveMetricHelpId] = useState<string | null>(null);
+  const [activeReportKind, setActiveReportKind] = useState<ReportKind>("investment");
   const metricHelpRootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setActiveReportKind("investment");
+  }, [runId, result]);
 
   useEffect(() => {
     function onDocumentMouseDown(event: MouseEvent) {
@@ -509,6 +674,10 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
   const meta = asRecord(reportBriefing.meta);
   const executive = asRecord(reportBriefing.executive);
   const macro = asRecord(reportBriefing.macro);
+  const investmentOutput = getReportOutput(result, "investment");
+  const developmentOutput = getReportOutput(result, "development");
+  const hasDevelopmentOutput = Boolean(repairText(developmentOutput?.markdown, ""));
+  const investmentCharts = asRecord(investmentOutput?.charts);
   const parsedIntent = asRecord(result.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
   const researchContext = asRecord(result.research_context);
@@ -543,8 +712,22 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
   const retrievedEvidence = asArray(meta?.retrieved_evidence);
   const memorySummary = asRecord(result.memory_summary);
   const profileFacts = buildProfileFacts(locale, userProfile);
-  const headerTitle = locale === "zh" ? "机构级投资研究报告" : "Institutional Investment Research Report";
-  const headerSubtitle = locale === "zh" ? "研究终端 / 投资决策备忘录" : "Research terminal / portfolio decision memo";
+  const headerTitle =
+    activeReportKind === "development"
+      ? locale === "zh"
+        ? "开发报告"
+        : "Agentic Research Development Report"
+      : locale === "zh"
+        ? "机构级投资研究报告"
+        : "Institutional Investment Research Report";
+  const headerSubtitle =
+    activeReportKind === "development"
+      ? locale === "zh"
+        ? "Agent / RAG / 校验 / 回测支撑链路"
+        : "Agent / RAG / validation / backtest support trail"
+      : locale === "zh"
+        ? "研究终端 / 投资决策备忘录"
+        : "Research terminal / portfolio decision memo";
 
   const effectiveDataStatus = dataProvenance || (dataStatus as unknown as GenericRecord | null);
   const mandateSummary = toText(meta?.mandate_summary, locale === "zh" ? "暂无 mandate 摘要。" : "Mandate summary unavailable.");
@@ -572,19 +755,22 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
           <div className="button-row compact">
             {variant === "terminal" ? (
               <>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest, runId)}>
-                  {locale === "zh" ? "导出 PDF" : "Export PDF"}
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest, runId, "investment")}>
+                  {locale === "zh" ? "导出投资 PDF" : "Export Investment PDF"}
                 </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest)}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest, runId, "development")}>
+                  {locale === "zh" ? "导出开发 PDF" : "Export Development PDF"}
+                </button>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest, undefined, activeReportKind)}>
                   {locale === "zh" ? "下载 HTML" : "Download HTML"}
                 </button>
               </>
             ) : (
               <>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "markdown", backtest)}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "markdown", backtest, undefined, activeReportKind)}>
                   {locale === "zh" ? "下载 Markdown" : "Download Markdown"}
                 </button>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest)}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest, undefined, activeReportKind)}>
                   {locale === "zh" ? "下载 HTML" : "Download HTML"}
                 </button>
                 <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "json", backtest)}>
@@ -596,6 +782,35 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
         </div>
       </div>
 
+      {hasDevelopmentOutput ? (
+        <div className="report-kind-tabs" role="tablist" aria-label={locale === "zh" ? "报告类型" : "Report type"}>
+          {(["investment", "development"] as ReportKind[]).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              role="tab"
+              aria-selected={activeReportKind === kind}
+              className={`anchor-chip ${activeReportKind === kind ? "active" : ""}`}
+              onClick={() => setActiveReportKind(kind)}
+            >
+              {kind === "investment"
+                ? locale === "zh"
+                  ? "投资报告"
+                  : "Investment Report"
+                : locale === "zh"
+                  ? "开发报告"
+                  : "Development Report"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {variant === "terminal" && activeReportKind === "development" ? (
+        <DevelopmentReportView locale={locale} result={result} output={developmentOutput} backtest={backtest} />
+      ) : null}
+
+      {variant !== "terminal" || activeReportKind === "investment" ? (
+        <>
       {variant === "terminal" ? (
         <nav className="report-anchor-nav">
           <a href="#report-overview" className="anchor-chip">{copy.report.labels.overview}</a>
@@ -814,7 +1029,11 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       </div>
 
       <div id="report-charts" className="anchor-target">
-        <ResearchCharts locale={locale} copy={copy} ranking={ranking} dimensions={dimensions} allocation={allocation} />
+        {investmentCharts ? (
+          <ReportOutputCharts locale={locale} charts={investmentCharts} />
+        ) : (
+          <ResearchCharts locale={locale} copy={copy} ranking={ranking} dimensions={dimensions} allocation={allocation} />
+        )}
       </div>
 
       <div id="report-scoreboard" className="section-head report-subhead anchor-target">
@@ -1100,6 +1319,8 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
           <summary>{copy.report.fullReport}</summary>
           <article className="report-prose">{renderReportMarkdown(finalReport)}</article>
         </details>
+      ) : null}
+        </>
       ) : null}
 
       {variant === "debug" ? (
