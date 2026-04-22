@@ -28,6 +28,8 @@ export function MotionBackdrop({ enabled, level = "high", className }: MotionBac
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
+    const activeCanvas = canvas;
+    const activeContext = context;
 
     const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const shouldAnimate = enabled && !reducedMotion;
@@ -39,11 +41,11 @@ export function MotionBackdrop({ enabled, level = "high", className }: MotionBac
 
     function resize() {
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.floor(window.innerWidth * ratio);
-      canvas.height = Math.floor(window.innerHeight * ratio);
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      activeCanvas.width = Math.floor(window.innerWidth * ratio);
+      activeCanvas.height = Math.floor(window.innerHeight * ratio);
+      activeCanvas.style.width = `${window.innerWidth}px`;
+      activeCanvas.style.height = `${window.innerHeight}px`;
+      activeContext.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
 
     function createParticles() {
@@ -61,32 +63,32 @@ export function MotionBackdrop({ enabled, level = "high", className }: MotionBac
     }
 
     function drawBackground(time: number) {
-      context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      activeContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
-      const gradient = context.createLinearGradient(0, 0, window.innerWidth, window.innerHeight);
+      const gradient = activeContext.createLinearGradient(0, 0, window.innerWidth, window.innerHeight);
       gradient.addColorStop(0, "rgba(17, 40, 71, 0.20)");
       gradient.addColorStop(0.55, "rgba(9, 22, 40, 0.06)");
       gradient.addColorStop(1, "rgba(19, 56, 90, 0.16)");
-      context.fillStyle = gradient;
-      context.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      activeContext.fillStyle = gradient;
+      activeContext.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
       if (shouldAnimate) {
         const sweep = (Math.sin(time / 3500) + 1) / 2;
         const sweepX = sweep * window.innerWidth;
         const reverseSweep = (Math.cos(time / 4200) + 1) / 2;
         const reverseX = reverseSweep * window.innerWidth;
-        context.strokeStyle = "rgba(94, 168, 255, 0.17)";
-        context.lineWidth = 1;
-        context.beginPath();
-        context.moveTo(sweepX - 160, 0);
-        context.lineTo(sweepX + 220, window.innerHeight);
-        context.stroke();
+        activeContext.strokeStyle = "rgba(94, 168, 255, 0.17)";
+        activeContext.lineWidth = 1;
+        activeContext.beginPath();
+        activeContext.moveTo(sweepX - 160, 0);
+        activeContext.lineTo(sweepX + 220, window.innerHeight);
+        activeContext.stroke();
 
-        context.strokeStyle = "rgba(104, 229, 215, 0.11)";
-        context.beginPath();
-        context.moveTo(reverseX + 180, 0);
-        context.lineTo(reverseX - 120, window.innerHeight);
-        context.stroke();
+        activeContext.strokeStyle = "rgba(104, 229, 215, 0.11)";
+        activeContext.beginPath();
+        activeContext.moveTo(reverseX + 180, 0);
+        activeContext.lineTo(reverseX - 120, window.innerHeight);
+        activeContext.stroke();
       }
     }
 
@@ -105,13 +107,13 @@ export function MotionBackdrop({ enabled, level = "high", className }: MotionBac
         if (point.y > window.innerHeight + 16) point.y = -16;
 
         const pulse = shouldAnimate ? (Math.sin(time / 1200 + i * 0.33) + 1) / 2 : 0.45;
-        context.beginPath();
-        context.fillStyle = `rgba(144, 210, 255, ${Math.min(0.86, point.alpha + pulse * 0.24)})`;
-        context.arc(point.x, point.y, point.radius + pulse * 0.9, 0, Math.PI * 2);
-        context.fill();
+        activeContext.beginPath();
+        activeContext.fillStyle = `rgba(144, 210, 255, ${Math.min(0.86, point.alpha + pulse * 0.24)})`;
+        activeContext.arc(point.x, point.y, point.radius + pulse * 0.9, 0, Math.PI * 2);
+        activeContext.fill();
       }
 
-      context.lineWidth = 1;
+      activeContext.lineWidth = 1;
       for (let i = 0; i < particles.length; i += 1) {
         for (let j = i + 1; j < particles.length; j += 1) {
           const a = particles[i];
@@ -121,11 +123,11 @@ export function MotionBackdrop({ enabled, level = "high", className }: MotionBac
           const distance = Math.sqrt(dx * dx + dy * dy);
           if (distance > linkDistance) continue;
           const opacity = (1 - distance / linkDistance) * (shouldAnimate ? 0.15 : 0.08);
-          context.strokeStyle = `rgba(118, 198, 255, ${opacity})`;
-          context.beginPath();
-          context.moveTo(a.x, a.y);
-          context.lineTo(b.x, b.y);
-          context.stroke();
+          activeContext.strokeStyle = `rgba(118, 198, 255, ${opacity})`;
+          activeContext.beginPath();
+          activeContext.moveTo(a.x, a.y);
+          activeContext.lineTo(b.x, b.y);
+          activeContext.stroke();
         }
       }
     }

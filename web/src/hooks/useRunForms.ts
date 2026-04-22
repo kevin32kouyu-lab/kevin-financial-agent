@@ -19,6 +19,8 @@ const DEFAULT_AGENT_FORM: AgentFormState = {
   query: "",
   maxResults: 5,
   fetchLiveData: true,
+  allocationMode: "equal_weight",
+  customWeights: "",
 };
 
 const DEFAULT_STRUCTURED_FORM: StructuredFormState = {

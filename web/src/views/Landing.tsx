@@ -46,7 +46,7 @@ const LANDING_COPY = {
         text: "研究、回测、导出都在同一条任务流里完成。",
       },
     ],
-    footer: "当前版本已按桌面演示场景优化，并保留基础移动端适配。",
+    footer: "当前版本已按桌面研究场景优化，并保留基础移动端适配。",
     sceneTickets: ["需求已解析", "覆盖已同步", "风险已锁定", "回放已就绪"],
   },
   en: {
@@ -86,7 +86,7 @@ const LANDING_COPY = {
         text: "Research, replay, and export stay inside one task flow.",
       },
     ],
-    footer: "This version is tuned for desktop demos and keeps baseline mobile support.",
+    footer: "This version is tuned for desktop research workflows and keeps baseline mobile support.",
     sceneTickets: ["Mandate parsed", "Coverage synced", "Risk locked", "Replay ready"],
   },
 } as const;

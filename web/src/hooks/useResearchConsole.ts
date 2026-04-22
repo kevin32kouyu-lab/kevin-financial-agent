@@ -1,4 +1,4 @@
-/** 研究终端主 Hook：负责运行、历史、回测、轻量记忆和演示场景。 */
+/** 研究终端主 Hook：负责运行、历史、回测、轻量记忆和示例场景。 */
 import {
   startTransition,
   useDeferredValue,
@@ -35,7 +35,7 @@ import { readLocale, syncDocumentLocale, writeLocale } from "../lib/locale";
 import {
   buildMemoryFromParsedIntent,
   clearIntentMemory,
-  getDemoScenarios,
+  getSampleScenarios,
   readIntentMemory,
   writeIntentMemory,
 } from "../lib/terminalMemory";
@@ -56,6 +56,7 @@ import type {
   RuntimeConfig,
   StructuredFormState,
   TerminalMode,
+  PreferenceValues,
   UserPreferenceSummary,
   UserProfile,
 } from "../lib/types";
@@ -173,7 +174,7 @@ function toStoredMemoryFromPreferences(
   locale: Locale,
   payload: {
     updated_at?: string | null;
-    values?: Record<string, unknown>;
+    values?: Partial<PreferenceValues>;
   } | null,
 ) {
   const values = payload?.values || {};
@@ -236,7 +237,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const copy = getLocalePack(locale);
   const t = (zhText: string, enText: string) => (locale === "zh" ? zhText : enText);
   const [memoryPreview, setMemoryPreview] = useState(() => readIntentMemory(readLocale()));
-  const demoScenarios = getDemoScenarios(locale);
+  const sampleScenarios = getSampleScenarios(locale);
 
   const [mode, setMode] = useState<RunMode>(defaultMode);
   const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
@@ -881,8 +882,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
-  const applyDemoScenario = (scenarioId: string) => {
-    const scenario = demoScenarios.find((item) => item.id === scenarioId);
+  const applySampleScenario = (scenarioId: string) => {
+    const scenario = sampleScenarios.find((item) => item.id === scenarioId);
     if (!scenario) return;
     setTerminalMode(scenario.terminalMode);
     setAgentFormState({
@@ -938,7 +939,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     statusText,
     errorText,
     memoryPreview,
-    demoScenarios,
+    sampleScenarios,
     creatingRun,
     cancelingRun,
     retryingRun,
@@ -972,8 +973,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     refreshHistory: () => loadHistory({ ...filters, search: deferredSearch }),
     loadBacktest,
     runBacktest,
-    applyDemoScenario,
-    fillAgentSample: () => applyDemoScenario(demoScenarios[0]?.id || "steady-income"),
+    applySampleScenario,
+    fillAgentSample: () => applySampleScenario(sampleScenarios[0]?.id || "steady-income"),
     fillStructuredSample: () =>
       setStructuredFormState({
         ...DEFAULT_STRUCTURED_FORM,

@@ -37,7 +37,7 @@
 - 支持历史审计摘要：历史页可直接看到本次研究用了哪些数据、哪里降级了、最终优先看什么
 - 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
 - 支持“补一句继续研究”：当核心条件不足时，用户可直接补一句信息继续当前任务
-- 支持 3 条固定标准演示问题，便于稳定演示中文、英文和历史回测场景
+- 支持 3 条固定标准示例问题，便于稳定覆盖中文、英文和历史回测场景
 - 支持回测 V2：历史建议回放（replay）与历史表现参考（reference），并可配置交易成本、滑点、分红、简化税费和再平衡口径
 - 支持生产治理基础能力：`/healthz`、`/readyz`、结构化日志、管理员审计事件和 GitHub Actions CI
 - 支持数据刷新任务记录：股票池、宏观和全量刷新可手动触发，并保留最近任务状态
@@ -106,7 +106,7 @@
 
 ### `/`
 
-面向演示和首次访问用户的首页，主要展示：
+面向首次访问用户和评审者的首页，主要展示：
 
 - 品牌主视觉与产品价值
 - 三步上手引导
@@ -149,11 +149,23 @@
 - 产物（中间产物明细）
 - 原始 JSON（事件与快照原文）
 
-说明：`/debug` 仍保留，但默认不在 Terminal 顶部导航中展示，演示时聚焦用户前台。
+说明：`/debug` 仍保留，但默认不在 Terminal 顶部导航中展示，普通用户只需要关注前台。
 
-## 对外展示方式
+## 正式文档入口
 
-当前最推荐的展示方式是：
+- [Quickstart](docs/quickstart.md)：从零启动本地项目
+- [API Reference](docs/api.md)：主要接口和返回结构
+- [Architecture](ARCHITECTURE.md)：模块职责、调用关系和设计决定
+- [Tool Registry](docs/tool_registry.md)：受控 agent 工具层的权限、重试、超时和审计口径
+- [RAG Evaluation](docs/rag_evaluation.md)：知识库检索、引用和时间边界评测方式
+- [Production Governance](docs/production_governance.md)：部署、自检、监控、密钥和审计治理
+- [Security](SECURITY.md)：密钥、会话、报告和漏洞处理说明
+- [Contributing](CONTRIBUTING.md)：贡献流程和本地验证要求
+- [License](LICENSE)：开源许可证
+
+## 发布方式
+
+当前最推荐的发布方式是：
 
 - 用 Railway 按 Docker 单服务部署
 - 部署后直接获得一个公网网址
@@ -228,8 +240,9 @@ flowchart LR
     REPORTAGENT --> REPORT
     VALIDATOR --> REPORT
     ANALYSIS --> TOOLKIT["Market Toolkit"]
+    TOOLKIT --> REGISTRY["Tool Registry"]
 
-    TOOLKIT --> FETCH["External Data Fetchers"]
+    REGISTRY --> FETCH["External Data Fetchers"]
     FETCH --> YF["yfinance"]
     FETCH --> SEC["SEC EDGAR"]
     FETCH --> RSS["Yahoo RSS"]
@@ -437,6 +450,25 @@ $env:MARKET_PROXY_URL="http://127.0.0.1:7890"
 
 ## 测试方法与常用命令
 
+统一验证（本地推荐）：
+
+```powershell
+.\scripts\verify.ps1 -SkipE2E
+```
+
+完整验证（包含浏览器端到端测试）：
+
+```powershell
+.\scripts\verify.ps1
+```
+
+如果从 npm 入口运行：
+
+```powershell
+npm run verify:fast
+npm run verify
+```
+
 后端语法检查：
 
 ```powershell
@@ -494,7 +526,7 @@ npx playwright install chromium
 ## 搜索记录
 
 - 2026-04-13：本轮是既有功能收尾与整合，没有新增外部方案检索。
-- 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主展示方案，因为不支持 SSE。
+- 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主发布方案，因为不支持 SSE。
 - 2026-04-21：本轮按既定开发计划实现本地 SQLite FTS5 知识库 RAG，没有新增外部方案检索。
 - 2026-04-21：本轮按既定架构计划实现可控多智能体流程，没有新增外部方案检索。
 
@@ -509,7 +541,7 @@ npx playwright install chromium
 - 历史审计摘要接口与历史页摘要侧栏
 - 结论依据摘要、谨慎提示与更短的澄清追问
 - `needs_clarification` 状态下的“补一句继续研究”流程
-- 3 条固定标准演示问题（中文稳健型 / 英文成长型 / 历史回测型）
+- 3 条固定标准示例问题（中文稳健型 / 英文成长型 / 历史回测型）
 - `/terminal` 双模式：实时研究 + 历史回测研究
 - 回测接口与前端联动（replay / reference）
 - 报告区图表化与导出（后端真 PDF / HTML / Markdown / JSON）

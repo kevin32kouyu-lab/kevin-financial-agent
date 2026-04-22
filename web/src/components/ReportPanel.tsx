@@ -304,28 +304,31 @@ function renderReportMarkdown(text: string) {
         </ul>
       );
     }
-    return (
-      <div key={index} className="report-table-wrap">
-        <table className="report-table">
-          <thead>
-            <tr>
-              {block.rows[0].map((cell, cellIndex) => (
-                <th key={cellIndex}>{cell}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.slice(1).map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell}</td>
+    if (block.type === "table") {
+      return (
+        <div key={index} className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                {block.rows[0].map((cell: string, cellIndex: number) => (
+                  <th key={cellIndex}>{cell}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+            </thead>
+            <tbody>
+              {block.rows.slice(1).map((row: string[], rowIndex: number) => (
+                <tr key={rowIndex}>
+                  {row.map((cell: string, cellIndex: number) => (
+                    <td key={cellIndex}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    return null;
   });
 }
 

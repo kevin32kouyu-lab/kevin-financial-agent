@@ -12,6 +12,7 @@ import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 import { useResearchConsole } from "../hooks";
 import { buildTerminalHref, type TerminalPage, useTerminalNavigation } from "../hooks/useTerminalNavigation";
+import type { UserPreferenceSummary } from "../lib/types";
 
 type GenericRecord = Record<string, unknown>;
 
@@ -472,7 +473,7 @@ function ClarificationContinueCard({
   setClarificationAnswer: (value: string) => void;
   onContinue: () => void;
   creatingRun: boolean;
-  profilePreferences: Record<string, unknown> | null;
+  profilePreferences: UserPreferenceSummary | null;
 }) {
   const preferenceValues =
     profilePreferences && typeof profilePreferences.values === "object"
@@ -803,7 +804,7 @@ export function TerminalView() {
     backtestCreating,
     statusText,
     errorText,
-    demoScenarios,
+    sampleScenarios,
     creatingRun,
     cancelingRun,
     historyLoading,
@@ -814,7 +815,7 @@ export function TerminalView() {
     openRun,
     loadBacktest,
     runBacktest,
-    applyDemoScenario,
+    applySampleScenario,
   } = useResearchConsole("agent");
   const { terminalPage, routeRunId, navigateTerminal, replaceTerminalRun } = useTerminalNavigation(activeRunId);
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
@@ -1052,13 +1053,13 @@ export function TerminalView() {
 
               <div className="terminal-example-block">
                 <div className="terminal-example-caption">{locale === "zh" ? "示例问题" : "Example prompts"}</div>
-                <div className="terminal-demo-strip">
-                  {demoScenarios.map((scenario) => (
+                <div className="terminal-sample-strip">
+                  {sampleScenarios.map((scenario) => (
                     <button
                       key={scenario.id}
                       type="button"
-                      className="terminal-demo-chip"
-                      onClick={() => applyDemoScenario(scenario.id)}
+                      className="terminal-sample-chip"
+                      onClick={() => applySampleScenario(scenario.id)}
                     >
                       {scenario.label}
                     </button>
