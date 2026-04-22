@@ -1,455 +1,340 @@
 # Financial Agent
 
-面向美股研究场景的双语 Financial Research Agent。  
-它把“用户自然语言需求 -> 股票筛选 -> 多源数据聚合 -> 风险校验 -> 投资报告输出”串成一条完整链路，同时保留开发者调试视图，方便继续迭代。
+Financial Agent 是一个面向美股研究场景的双语投研 Agent。它把用户的自然语言问题，转成可追踪的研究流程：理解需求、筛选股票、收集数据、检索证据、生成报告、校验结论，并支持回测和 PDF 导出。
 
-## 这个项目解决什么问题
+这个项目适合作为 MSc 展示项目：它不是单纯聊天机器人，而是一个带前端产品界面、后端多角色流程、RAG 证据库、回测和部署能力的完整研究系统。
 
-普通投资类聊天机器人往往只会“说观点”，但很难回答下面这些更接近真实投研的问题：
+## 给 ChatGPT 的快速阅读提示
 
-- 用户的投资目标到底是什么
-- 系统是按什么规则筛出候选股的
-- 数据来自哪里，哪些是实时的，哪些是缓存的
-- 如果外部数据源限流了，系统还能不能继续工作
-- 最终给出的建议能不能导出成正式研究报告
+如果你正在用 ChatGPT 帮我做展示 PPT，请优先理解这几件事：
 
-这个项目的目标，就是把这些问题做成一个可运行、可解释、可扩展的可控多智能体研究系统。
+- 项目主题：AI-powered financial research agent for US equities。
+- 用户入口：`/terminal`，包含开始研究、研究结论、回测页、历史页。
+- 开发者入口：`/debug`，展示 agent trace、阶段、产物和原始 JSON。
+- 核心卖点：可控多智能体流程、本地知识库 RAG、结论一致性校验、真实 PDF 报告导出、回测 V2、长期记忆。
+- 部署方式：单仓库、单 Docker 服务，适合 Railway 发布。
+- 当前定位：研究型可演示系统，不是投资建议平台，也不是完整生产交易系统。
 
-## 核心能力
+推荐阅读顺序：
 
-- 支持中文 / 英文投资需求输入
-- 支持自然语言 Agent 研究模式和结构化筛选模式
-- 支持可控多智能体投研流程：Intake、Planner、Data、Evidence、Report、Validator 六个角色分工协作
-- 支持增强版 `research_plan` 与 `agent_trace`：每次研究都会留下目标、数据需求、降级策略、agent 状态、耗时和证据数量
-- 支持 `/terminal` 双模式：实时研究 + 历史回测研究
-- 支持首页 `/`：先看项目介绍与新手引导，再进入研究终端
-- 支持高强度动效背景（Canvas 粒子 + 流线 + 光晕）与毛玻璃视觉层
-- 支持动效开关与低动态自动降级（prefers-reduced-motion）
-- 支持品牌化首页：大主视觉、强 CTA、三步上手和动态研究场景
-- 支持 `/terminal` 四页化终端：开始研究、研究结论、回测页、历史页独立展示
-- 支持按浏览器隔离的长期记忆：首次打开自动生成本地 `client_id`，不同浏览器彼此分开
-- 支持账户版长期记忆：登录后偏好优先写入账户档案，并可把当前浏览器记忆绑定到账户
-- 支持长期偏好自动学习：本次问题里明确写出的资金、风险、期限、风格和偏好行业，会自动写回长期记忆
-- 支持少重复追问：后续自然语言研究会优先复用已保存的长期偏好，只补空缺，不覆盖本次明确输入
-- 支持结论依据与谨慎提示摘要：不仅给答案，也说明为什么这样判断、哪里需要谨慎
-- 支持本地知识库 RAG：每次研究会把新闻摘要、SEC、评分、宏观和数据来源写入 SQLite 知识库
-- 支持结论一致性校验：报告生成后会检查优先标的、评分排序、风险、数据降级、证据时效和时间范围是否一致
-- 支持历史审计摘要：历史页可直接看到本次研究用了哪些数据、哪里降级了、最终优先看什么
-- 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
-- 支持“补一句继续研究”：当核心条件不足时，用户可直接补一句信息继续当前任务
-- 支持 3 条固定标准演示问题，便于稳定演示中文、英文和历史回测场景
-- 支持回测 V2：历史建议回放（replay）与历史表现参考（reference），并可配置交易成本、滑点、分红、简化税费和再平衡口径
-- 支持生产治理基础能力：`/healthz`、`/readyz`、结构化日志、管理员审计事件和 GitHub Actions CI
-- 支持数据刷新任务记录：股票池、宏观和全量刷新可手动触发，并保留最近任务状态
-- 支持 Playwright 端到端 smoke test：覆盖 Terminal 四个主路由
-- 支持任务进度条与“撤回任务”能力（cancelled 状态）
-- 支持 Terminal 非阻断式 3 步新手引导（按需展开查看）
-- 支持用户前台 `/terminal` 与开发者后台 `/debug`
-- 支持 Run / Step / Artifact / Event 级别追踪
-- 支持正式研究报告、图表摘要与报告导出，其中 PDF 由后端 Playwright/Chromium 生成真实 `.pdf` 文件
-- 支持多数据源主源 / 备用源 / 本地缓存
-- 支持同公司多代码防错（如 GOOG/GOOGL）：默认去重，用户明确点名时保留多类别
-- 支持逐票卡片中的可点击新闻链接与 SEC 披露链接
-- 支持回测“结果解释卡”和“本次回测口径”，说明为何跑赢或跑输基准，以及收益计算的保守假设
+1. `README.md`：项目总览和演示口径。
+2. `docs/architecture.md`：模块职责和调用关系。
+3. `CONTEXT.md`：当前开发进度和最近关键决定。
+4. `docs/deployment/railway_deploy.md`：Railway 部署说明。
 
-## 计划文档入口（2026-04-18）
+## 项目解决什么问题
 
-- 周末冲刺计划（48小时）：[`docs/plans/weekend_terminal_sprint_plan.md`](docs/plans/weekend_terminal_sprint_plan.md)
-- 周末冲刺计划 PDF：[`docs/plans/weekend_terminal_sprint_plan.pdf`](docs/plans/weekend_terminal_sprint_plan.pdf)
-- 10周成熟化路线图：[`docs/plans/10week_mature_agent_roadmap.md`](docs/plans/10week_mature_agent_roadmap.md)
-- 10周成熟化路线图 PDF：[`docs/plans/10week_mature_agent_roadmap.pdf`](docs/plans/10week_mature_agent_roadmap.pdf)
+普通投资聊天机器人通常只会给观点，但很难说明“为什么这样判断”。这个项目重点解决四个问题：
 
-## 技术栈
+- 用户目标如何被理解：资金、风险、期限、风格和偏好会被提取并保存。
+- 数据从哪里来：价格、新闻、SEC、宏观、评分和缓存都有记录。
+- 结论是否可信：报告生成后会检查评分、风险、证据时效和数据降级。
+- 结果如何交付：用户可以查看网页报告、回测结果，并下载真正的 PDF。
 
-### 前端
+## 当前可演示功能
 
-- React
-- TypeScript
-- Vite
-- Tailwind CSS v4
-- shadcn/ui（核心交互组件）
-- 原生 CSS（主题与布局补充）
+- 双语输入：支持中文和英文投资问题。
+- 四页终端：`开始研究`、`研究结论`、`回测页`、`历史页`。
+- 可控多智能体流程：Intake、Planner、Data、Evidence、Report、Validator 六个角色。
+- Agent Trace：每个角色的状态、耗时、输入摘要、输出摘要、警告和证据数量会被记录。
+- 本地知识库 RAG：研究时把新闻摘要、SEC、评分、宏观和数据来源写入 SQLite FTS5。
+- 结论校验：检查 top pick、评分排序、风险提示、数据降级和历史时间范围是否一致。
+- 回测 V2：支持 replay/reference，包含交易成本、滑点、分红模式、简化税费和再平衡说明。
+- 长期记忆：未登录时按浏览器 `client_id` 隔离；登录后支持账户级偏好。
+- 真 PDF 导出：后端用 Playwright/Chromium 生成 `.pdf`，不是浏览器打印 HTML。
+- 生产基础：`/healthz`、`/readyz`、结构化日志、管理员审计事件和 GitHub Actions CI。
 
-### 后端
+## 演示路线
 
-- Python
-- FastAPI
-- Pydantic
-- Uvicorn
+建议展示时按这个顺序走：
 
-### 数据与存储
+1. 打开首页 `/`，说明这是一个投研 Agent 产品入口。
+2. 进入 `/terminal`，输入自然语言投资问题。
+3. 展示任务进度条，说明系统正在按阶段完成研究。
+4. 自动跳转到 `/terminal/conclusion`，展示结论摘要、证据、评分表、逐票卡和完整 memo。
+5. 点击导出 PDF，展示系统生成的正式报告文件。
+6. 进入 `/terminal/backtest`，展示组合收益、SPY 对比和回测口径。
+7. 进入 `/terminal/archive`，展示历史报告和审计摘要。
+8. 最后打开 `/debug`，说明背后有可追踪的 agent trace 和 artifact。
 
-- SQLite
-- SQLite FTS5
-- pandas
+推荐演示问题：
 
-### LLM
+```text
+我有 50000 美元，想找适合长期持有的低风险分红股。请优先比较 JNJ、PG、KO，并给我一份正式的投资研究结论，包括估值、ROE、自由现金流、主要风险和执行建议。
+```
 
-- 火山引擎 Ark Python SDK
-- 默认走 Coding Plan 路线：`/api/coding/v3`
-- DeepSeek 备用源：火山请求失败时自动回退到 OpenAI 兼容接口
-
-## 数据源
-
-### 股票池 / Universe
-
-- Alpaca `/v2/assets`：主股票池来源
-- Wikipedia S&P 500：当前可用备用源
-- 本地 CSV：最终兜底种子
-
-### 市场与研究数据
-
-- Alpaca Bars（`data.alpaca.markets/v2/stocks/bars`）：价格主源（实时与回测）
-- yfinance：价格与技术面第一备用源、宏观代理、公开持仓代理
-- SEC EDGAR：公司事实、披露与审计核查
-- Yahoo Finance RSS：新闻主源
-- Alpha Vantage：价格 / 技术面第二备用源（免费额度受限）
-- Finnhub：新闻备用源
-- FRED：宏观备用源
-- 本地缓存（6小时）：价格链路最后兜底
+```text
+I have about $50,000 and want long-term growth with controlled risk. Compare Microsoft, Meta and Alphabet, then give me a formal investment memo with valuation, quality, risks and staged entry advice.
+```
 
 ## 页面说明
 
 ### `/`
 
-面向演示和首次访问用户的首页，主要展示：
-
-- 品牌主视觉与产品价值
-- 三步上手引导
-- 中英切换
-- 动效开关（可手动关闭高强度动画）
-- 进入终端与示例入口
-- 动态研究场景（更像产品入口，不再只是跳转页）
+首页。用于介绍产品、展示视觉入口、语言切换、动效开关和进入终端的 CTA。
 
 ### `/terminal`
 
-面向普通用户的研究前台，主要展示：
+用户前台。现在拆成四页：
 
-- 四页化终端结构：
-  - `/terminal`：开始研究
-  - `/terminal/conclusion`：研究结论
-  - `/terminal/backtest`：回测页
-  - `/terminal/archive`：历史页
-- 第一页只保留提问入口、进度条、撤回任务、示例问题和补一句继续研究
-- 高级设置默认折叠（实时 / 历史模式、日期、max results、allocation mode、live data、自定义仓位）
-- 新手引导改为非阻断式帮助区，不再遮挡首屏
-- 研究完成后自动跳到“研究结论”页
-- 结论页首屏摘要（结论、风险一句话、下一步动作、优先标的、匹配度）
-- 结论页保留用户可读的依据摘要与谨慎提示
-- 原始投资需求卡片（完整显示本次研究绑定的用户问题）
-- 信息不足时的“继续研究”卡片（补一句后直接续跑）
-- 更清楚的高对比进度区（当前阶段、进度条、状态说明）
-- 阶段化视觉反馈（排队/运行/完成/失败）
-- 正式研究报告（含图表与执行建议）
-- 独立回测页（组合 vs SPY、单股切换、时间序列表）
-- 独立历史页（最近报告、打开报告、打开回测）
-- 长期记忆继续在后端保存和自动学习，但不再占用终端前台
+- `/terminal`：开始研究，只保留提问入口、进度和必要操作。
+- `/terminal/conclusion`：研究结论，展示摘要、证据、评分表、逐票卡、风险和完整报告。
+- `/terminal/backtest`：回测页，展示组合收益、基准对比、逐票贡献和本次回测口径。
+- `/terminal/archive`：历史页，查看过去报告并重新打开结论或回测。
 
 ### `/debug`
 
-面向开发与调试的工作台，主要展示五个标签页：
+开发者后台。用于展示阶段、agent trace、artifact 和原始 JSON。普通用户前台不会展示这些内部细节。
 
-- 概览（运行状态、研究模式、as_of_date、warning flags、模型路由）
-- 阶段（阶段时间线）
-- 智能体（六个 agent 的交接状态、耗时、证据数量、警告和失败原因）
-- 产物（中间产物明细）
-- 原始 JSON（事件与快照原文）
+## 系统架构
 
-说明：`/debug` 仍保留，但默认不在 Terminal 顶部导航中展示，演示时聚焦用户前台。
+```mermaid
+flowchart TB
+    User["普通用户"] --> Landing["/ 首页"]
+    User --> Terminal["/terminal 四页终端"]
+    Dev["开发者 / 答辩展示"] --> Debug["/debug 调试台"]
 
-## 对外展示方式
+    Landing --> API["FastAPI API 层"]
+    Terminal --> API
+    Debug --> API
 
-当前最推荐的展示方式是：
+    API --> RunService["RunService\n创建 run / 权限 / 历史 / SSE"]
+    RunService --> WorkflowRunner["WorkflowRunner\n调度 workflow"]
+    WorkflowRunner --> AgentWorkflow["FinancialAgentWorkflow"]
+    WorkflowRunner --> StructuredWorkflow["StructuredAnalysisWorkflow"]
 
-- 用 Railway 按 Docker 单服务部署
-- 部署后直接获得一个公网网址
-- 别人只需要访问 `/` 或 `/terminal`，不需要分别启动前后端
+    AgentWorkflow --> Coordinator["AgentCoordinator\n可控多角色流程"]
+    Coordinator --> Intake["IntakeAgent\n理解问题与记忆"]
+    Coordinator --> Planner["PlannerAgent\n研究计划"]
+    Coordinator --> DataAgent["DataAgent\n数据收集"]
+    Coordinator --> EvidenceAgent["EvidenceAgent\nRAG 与引用"]
+    Coordinator --> ReportAgent["ReportAgent\n报告生成"]
+    Coordinator --> ValidatorAgent["ValidatorAgent\n结论校验"]
 
-项目已经内置：
+    DataAgent --> Analysis["AnalysisService"]
+    Analysis --> Toolkit["MarketToolKit"]
+    Toolkit --> Sources["Alpaca / yfinance / SEC / News / FRED"]
 
-- Docker 构建
-- 前端随容器一起打包
-- 启动时自动读取 `PORT`
-- 健康检查地址：`/healthz`
-- 就绪检查地址：`/readyz`
+    EvidenceAgent --> RagService["KnowledgeRagService"]
+    RagService --> KnowledgeDB["SQLite FTS5 Knowledge DB"]
+    ReportAgent --> ReportService["ReportService"]
+    ValidatorAgent --> Validation["ReportValidationService"]
 
-详细步骤见：
+    API --> Backtest["BacktestService"]
+    API --> PdfExport["PdfExportService"]
+    PdfExport --> Chromium["Playwright Chromium"]
 
-- [`docs/deployment/railway_deploy.md`](docs/deployment/railway_deploy.md)
-- [`docs/plans/2026-04-22-production-hardening-roadmap.md`](docs/plans/2026-04-22-production-hardening-roadmap.md)
+    RunService --> RunDB["Run SQLite\nruns / steps / artifacts / events"]
+    Backtest --> RunDB
+    PdfExport --> RunDB
+    Analysis --> MarketDB["Market SQLite Cache"]
+```
+
+## 核心数据流
+
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant Terminal as /terminal
+    participant API as FastAPI
+    participant Run as RunService
+    participant Workflow as WorkflowRunner
+    participant Coord as AgentCoordinator
+    participant Analysis as AnalysisService
+    participant Rag as KnowledgeRagService
+    participant Report as ReportService
+    participant DB as SQLite
+    participant PDF as PdfExportService
+
+    User->>Terminal: Ask investment question
+    Terminal->>API: POST /api/runs
+    API->>Run: Create run and input artifact
+    Run->>Workflow: Schedule financial_agent workflow
+    Workflow->>Coord: Execute controlled agent pipeline
+    Coord->>Coord: Intake + Planner
+    Coord->>Analysis: DataAgent requests market research package
+    Analysis-->>Coord: Candidates, scores, news, SEC, macro
+    Coord->>Rag: EvidenceAgent ingests and retrieves evidence
+    Rag-->>Coord: retrieved_evidence + citation_map
+    Coord->>Report: ReportAgent generates memo
+    Coord->>Report: ValidatorAgent validates conclusion
+    Coord->>DB: Save research_plan, agent_trace, result
+    DB-->>Terminal: SSE progress + final result
+    Terminal->>API: GET /api/v1/runs/{run_id}/export/pdf
+    API->>PDF: Build print HTML and render PDF
+    PDF-->>Terminal: application/pdf download
+```
+
+## 技术栈
+
+前端：
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui
+- Playwright E2E
+
+后端：
+
+- Python
+- FastAPI
+- Pydantic
+- Uvicorn
+- pandas
+
+数据与存储：
+
+- SQLite for runs, events, artifacts, backtests, users and audit logs
+- SQLite FTS5 for local RAG knowledge base
+- Local cache for market data fallback
+
+LLM 与数据源：
+
+- Volcengine Ark as primary LLM provider
+- DeepSeek as fallback LLM provider
+- Alpaca, yfinance, SEC EDGAR, Yahoo RSS, Alpha Vantage, Finnhub, FRED
+
+PDF：
+
+- Backend Playwright/Chromium renderer
+- API endpoint: `GET /api/v1/runs/{run_id}/export/pdf`
 
 ## 目录结构
 
 ```text
 Financial-agent/
-├── app/                     # 正式后端代码
-│   ├── api/                 # FastAPI 路由
-│   ├── agent_runtime/       # 自然语言 Agent 运行时
-│   ├── analysis_runtime/    # 结构化筛选与实时数据聚合
-│   ├── common/              # 通用 payload / executor
-│   ├── core/                # 配置、认证、运行时装配
-│   ├── domain/              # 共享契约与数据模型
-│   ├── integrations/        # 第三方集成，例如 LLM client
+├── app/                     # FastAPI 后端
+│   ├── api/                 # API 路由
+│   ├── agent_runtime/       # Agent 模型、记忆和运行时
+│   ├── analysis_runtime/    # 股票筛选和数据聚合
+│   ├── core/                # 配置、认证、应用运行时
+│   ├── domain/              # 共享数据模型
+│   ├── integrations/        # LLM 客户端
 │   ├── repositories/        # SQLite 仓储
 │   ├── services/            # 核心业务服务
 │   ├── tools/               # 外部数据抓取器
 │   └── workflows/           # 工作流编排
-├── web/                     # 正式前端代码
-│   ├── src/components/      # 页面组件
-│   ├── src/hooks/           # 状态与数据 hook
+├── web/                     # React 前端
+│   ├── src/components/      # UI 组件
+│   ├── src/hooks/           # 状态管理 hook
 │   ├── src/lib/             # API、i18n、格式化、导出
-│   ├── e2e/                 # Playwright 端到端测试
-│   └── src/views/           # /terminal 与 /debug 入口页面
+│   ├── src/views/           # 页面入口
+│   └── e2e/                 # 浏览器端到端测试
 ├── data/
-│   ├── seed/                # 种子数据
-│   └── runtime/             # SQLite 与运行期缓存（已忽略）
-├── legacy/                  # 历史兼容代码与旧静态资源
-├── tests/                   # 单元测试
-├── .github/workflows/       # CI 自动验证
-├── scripts/                 # 启动或辅助脚本
-├── main.py                  # 根入口，兼容 `python main.py`
+│   ├── seed/                # 种子股票池
+│   └── runtime/             # 本地数据库和缓存，不提交
+├── docs/                    # 部署和开发计划文档
+│   ├── architecture.md      # 模块职责和调用关系
+│   ├── archive/             # 已归档的旧总结文档
+│   ├── deployment/          # Railway 部署说明
+│   └── plans/               # 开发路线图和阶段计划
+├── scripts/                 # 辅助脚本，例如 PDF 渲染
+├── tests/                   # 后端测试
+├── tmp/                     # 本地临时产物，已被 Git 忽略
+├── Dockerfile               # Railway/Docker 单服务部署
+├── main.py                  # 本地启动入口
+├── CONTEXT.md               # 当前开发上下文
 └── README.md
 ```
 
-## 系统架构图
+## 本地运行
 
-```mermaid
-flowchart LR
-    U["用户 / User"] --> T["/terminal"]
-    D["开发者 / Developer"] --> G["/debug"]
-    T --> API["FastAPI API Layer"]
-    G --> API
-
-    API --> RUN["Run Service"]
-    RUN --> COORD["Agent Coordinator"]
-    COORD --> INTAKE["Intake Agent"]
-    COORD --> PLAN["Planner Agent"]
-    COORD --> DATAAGENT["Data Agent"]
-    COORD --> EVIDENCE["Evidence Agent"]
-    COORD --> REPORTAGENT["Report Agent"]
-    COORD --> VALIDATOR["Validator Agent"]
-    RUN --> ANALYSIS["Analysis Service"]
-    DATAAGENT --> ANALYSIS
-    EVIDENCE --> REPORT["Report Service"]
-    REPORTAGENT --> REPORT
-    VALIDATOR --> REPORT
-    ANALYSIS --> TOOLKIT["Market Toolkit"]
-
-    TOOLKIT --> FETCH["External Data Fetchers"]
-    FETCH --> YF["yfinance"]
-    FETCH --> SEC["SEC EDGAR"]
-    FETCH --> RSS["Yahoo RSS"]
-    FETCH --> AV["Alpha Vantage"]
-    FETCH --> FH["Finnhub"]
-    FETCH --> FRED["FRED"]
-
-    RUN --> RUNDB["Run SQLite"]
-    ANALYSIS --> MARKETDB["Market SQLite"]
-```
-
-## Data Flow
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant Terminal as Terminal
-    participant API as FastAPI
-    participant Run as Run Service
-    participant Coord as Agent Coordinator
-    participant Agents as Role Agents
-    participant Analysis as Analysis Service
-    participant Data as Data Providers
-    participant Report as Report Service
-
-    User->>Terminal: 输入投资目标
-    Terminal->>API: POST /api/runs
-    API->>Run: 创建 run
-    Run->>Coord: 启动可控多智能体流程
-    Coord->>Agents: Intake + Planner
-    Agents-->>Coord: research_plan + agent_trace
-    Coord->>Analysis: DataAgent 请求结构化筛选
-    Analysis->>Data: 拉取价格/新闻/审计/宏观
-    Data-->>Analysis: 返回多源数据
-    Analysis-->>Coord: 返回候选股与研究包
-    Coord->>Report: EvidenceAgent 接入 RAG 证据
-    Coord->>Report: ReportAgent 生成正式报告
-    Coord->>Report: ValidatorAgent 校验结论
-    Report-->>Run: 返回 memo / fallback report
-    Run->>API: 可选触发 backtest(replay/reference)
-    API-->>Terminal: 返回回测摘要与收益曲线
-    Run-->>Terminal: SSE 事件 + 最终结果
-```
-
-## 回测口径（V1.5）
-
-- `replay`（历史建议回放）：适用于历史模式，按“报告后下一个交易日开盘”买入，回放到今天或指定结束日
-- `reference`（历史表现参考）：适用于实时模式，按用户选择的历史起点买入，计算到今天的参考收益
-- 默认启用保守口径：交易成本 10 bps，滑点 5 bps
-- 分红默认不假装纳入；只有数据源本身提供总回报价格时才视为包含
-- 当前默认不再平衡，按买入并持有解释结果
-- 回测输出：组合收益、SPY 基准收益、超额收益、最大回撤、逐票贡献、收益曲线
-
-## Run 控制（新增）
-
-- `POST /api/runs/{run_id}/cancel`：撤回正在执行的任务
-- run 状态新增：`cancelled`
-- SSE 事件新增：`run.cancelled`
-
-## 偏好与历史摘要接口
-
-- `GET /api/v1/profile/preferences`：读取当前浏览器的长期偏好
-- `PATCH /api/v1/profile/preferences`：手动更新当前浏览器的长期偏好
-- `DELETE /api/v1/profile/preferences`：清空当前浏览器的长期偏好
-- `GET /api/v1/runs/history`：读取历史研究列表
-- `GET /api/v1/runs/{run_id}/audit-summary`：读取某次研究的简版审计摘要
-
-说明：
-
-- 普通请求会自动带上 `X-Client-Id`
-- 后端会按这个浏览器标识隔离长期记忆
-- 事件流仍按 `run_id` 跟踪，不额外改 SSE 协议
-
-## 快速开始
-
-### 1. 安装依赖
-
-后端：
+建议使用项目虚拟环境：
 
 ```powershell
-python -m pip install -r requirements.txt
+cd "E:\Msc project\Financial-agent"
+.\.venv\Scripts\activate
 ```
 
-前端：
+安装后端依赖：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+安装前端依赖并构建：
 
 ```powershell
 npm install
+npx playwright install chromium
+npm run build
 ```
 
-### 2. 配置环境变量
+启动：
 
-系统会在启动时自动读取项目根目录的 `.env` 文件，也支持直接使用系统环境变量。
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
 
-最少需要设置火山 API Key：
+打开：
+
+- `http://127.0.0.1:8001/`
+- `http://127.0.0.1:8001/terminal`
+- `http://127.0.0.1:8001/debug`
+- `http://127.0.0.1:8001/healthz`
+
+## 环境变量
+
+最少需要配置 LLM key：
 
 ```powershell
 $env:ARK_API_KEY="your-key"
 ```
 
-如果你还想启用备用数据源，可以继续设置：
-
-```powershell
-$env:ALPHA_VANTAGE_API_KEY="your-alpha-key"
-$env:FINNHUB_API_KEY="your-finnhub-key"
-$env:FRED_API_KEY="your-fred-key"
-```
-
-### 3. 启动项目
-
-```powershell
-python main.py
-```
-
-然后打开：
-
-- `http://127.0.0.1:8001/`
-- `http://127.0.0.1:8001/terminal`
-- `http://127.0.0.1:8001/terminal/backtest`
-- `http://127.0.0.1:8001/terminal/archive`
-- `http://127.0.0.1:8001/debug`
-- `http://127.0.0.1:8001/healthz`
-
-## 部署方法与命令
-
-### Docker 本地启动
-
-```powershell
-docker compose up --build
-```
-
-启动后默认访问：
-
-- `http://127.0.0.1:8001/`
-- `http://127.0.0.1:8001/healthz`
-
-### Railway 公网部署
-
-推荐做法：
-
-1. 把最新代码推到 GitHub
-2. 在 Railway 连接这个仓库
-3. 让 Railway 按根目录 `Dockerfile` 构建
-4. 在 Railway 面板填写环境变量
-5. 首次部署后先检查 `/healthz`
-
-详细步骤见：
-
-- [`docs/deployment/railway_deploy.md`](docs/deployment/railway_deploy.md)
-
-## 环境变量说明
+常用变量：
 
 | 变量名 | 作用 |
 | --- | --- |
 | `ARK_API_KEY` / `VOLCENGINE_ARK_API_KEY` | 火山 Ark API Key |
-| `ARK_MODEL` / `VOLCENGINE_ARK_MODEL` | 模型名 |
-| `ARK_BASE_URL` / `VOLCENGINE_ARK_BASE_URL` | 模型路由地址 |
+| `ARK_MODEL` / `VOLCENGINE_ARK_MODEL` | 火山模型名 |
+| `ARK_BASE_URL` / `VOLCENGINE_ARK_BASE_URL` | 火山接口地址 |
 | `DEEPSEEK_API_KEY` | DeepSeek 备用模型 API Key |
-| `DEEPSEEK_MODEL` | DeepSeek 备用模型名，默认 `deepseek-chat` |
-| `DEEPSEEK_BASE_URL` | DeepSeek OpenAI 兼容接口地址，默认 `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | DeepSeek 模型名，默认 `deepseek-chat` |
+| `ALPACA_API_KEY_ID` | Alpaca 股票池和行情 key |
+| `ALPACA_API_SECRET_KEY` | Alpaca secret |
+| `FINNHUB_API_KEY` | Finnhub 新闻备用源 |
 | `ALPHA_VANTAGE_API_KEY` | Alpha Vantage 备用源 |
-| `FINNHUB_API_KEY` | Finnhub 备用源 |
-| `FRED_API_KEY` | FRED 备用源 |
-| `MARKET_PROXY_MODE` | yfinance 路由模式：`direct` / `proxy` / `auto` |
-| `MARKET_PROXY_URL` | `proxy/auto` 模式下 yfinance 使用的代理地址（为空时自动尝试系统代理） |
-| `MARKET_NO_PROXY_HOSTS` | yfinance 直连时强制绕过代理的域名列表 |
-| `ALPACA_API_KEY_ID` | Alpaca 股票池主源 |
-| `ALPACA_API_SECRET_KEY` | Alpaca Secret |
+| `FRED_API_KEY` | FRED 宏观备用源 |
 | `FINANCIAL_AGENT_DB_PATH` | run 数据库路径 |
 | `FINANCIAL_AGENT_MARKET_DB_PATH` | market 数据库路径 |
-| `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH` | 本地知识库数据库路径 |
-| `FINANCIAL_AGENT_UNIVERSE_CSV` | CSV 种子路径 |
+| `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH` | RAG 知识库路径 |
+| `FINANCIAL_AGENT_ENABLE_AUTH` | 是否启用账户登录 |
+| `FINANCIAL_AGENT_SESSION_SECRET` | 会话签名密钥 |
+| `FINANCIAL_AGENT_PDF_EXPORT_TIMEOUT_SECONDS` | PDF 导出超时时间 |
 
-## Railway 部署提醒
+完整示例见 `.env.example`。
 
-- Docker 构建时需要把 `data/seed/sp500_supabase_ready.csv` 一起打进镜像，否则服务启动时会缺少股票池种子文件。
-- 项目现在还会在应用目录里保留一份备用种子文件；即使 Railway 误把 `/app/data` 整体覆盖掉，服务也不会因为缺少股票池种子而直接启动失败。
-- 如果你在 Railway 上挂持久化卷，请挂到 `/app/data/runtime`，不要直接挂到 `/app/data`，否则会把镜像内自带的 `data/seed` 一起覆盖掉。
-- 推荐变量写法：
-  - `FINANCIAL_AGENT_DB_PATH=/app/data/runtime/financial_agent_runs.sqlite3`
-  - `FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/runtime/financial_agent_market.sqlite3`
-  - `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH=/app/data/runtime/financial_agent_knowledge.sqlite3`
+## 部署
 
-## 代理场景配置示例
+推荐部署方式是 Railway + Docker 单服务：
 
-如果你开了系统代理，建议用 `auto`（默认），并让系统代理自动接管：
+1. 把最新代码推到 GitHub。
+2. 在 Railway 选择 `Deploy from GitHub repo`。
+3. 让 Railway 使用根目录 `Dockerfile` 构建。
+4. 在 Railway 面板配置环境变量。
+5. 部署后检查 `/healthz` 和 `/readyz`。
 
-```powershell
-$env:MARKET_PROXY_MODE="auto"
-# 可不填 MARKET_PROXY_URL，系统会尝试读取 HTTP_PROXY / HTTPS_PROXY
+Railway 持久化卷建议挂到：
+
+```text
+/app/data/runtime
 ```
 
-如果你确认代理可用，想让 yfinance 强制走代理：
+推荐数据库路径：
 
-```powershell
-$env:MARKET_PROXY_MODE="proxy"
-$env:MARKET_PROXY_URL="http://127.0.0.1:7890"
+```text
+FINANCIAL_AGENT_DB_PATH=/app/data/runtime/financial_agent_runs.sqlite3
+FINANCIAL_AGENT_MARKET_DB_PATH=/app/data/runtime/financial_agent_market.sqlite3
+FINANCIAL_AGENT_KNOWLEDGE_DB_PATH=/app/data/runtime/financial_agent_knowledge.sqlite3
 ```
 
-如果你想先直连，失败后再试一次代理：
+详细说明见 `docs/deployment/railway_deploy.md`。
 
-```powershell
-$env:MARKET_PROXY_MODE="auto"
-$env:MARKET_PROXY_URL="http://127.0.0.1:7890"
-```
+## 测试
 
-## 测试方法与常用命令
-
-后端语法检查：
-
-```powershell
-.\.venv\Scripts\python.exe -m py_compile app\main.py app\agent_runtime\controlled_agents.py app\services\agent_coordinator.py app\services\analysis_service.py app\services\agent_service.py app\services\backtest_service.py app\services\toolkit.py app\tools\fetchers.py
-```
-
-单元测试：
+后端测试：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
@@ -461,41 +346,47 @@ $env:MARKET_PROXY_URL="http://127.0.0.1:7890"
 npm run build
 ```
 
-端到端 smoke test：
+浏览器端到端测试：
 
 ```powershell
 npm run test:e2e
 ```
 
-PDF 导出依赖：
+PDF 引擎依赖：
 
 ```powershell
 npx playwright install chromium
 ```
 
+## 当前状态
+
+已完成：
+
+- 品牌首页和四页终端。
+- 可控多角色 agent 流程。
+- 本地知识库 RAG。
+- 结论一致性校验。
+- 账户级长期记忆。
+- 回测 V2。
+- 后端真实 PDF 导出。
+- GitHub Actions CI。
+- Railway 单服务部署准备。
+
+仍有限制：
+
+- 当前不是完全自治 agent 辩论系统，而是可控多角色流程。
+- RAG 使用本地 SQLite FTS5，不是外部向量数据库。
+- 历史新闻和 smart money 仍可能降级。
+- 回测已经加入保守口径，但仍不是专业交易系统级别。
+- 账户系统是本地邮箱密码，还没有 OAuth 和完整多租户后台。
+- 免费数据源可能限流，系统会用备用源和缓存缓解，但不能完全避免。
+
 ## 安全说明
 
-- private 仓库不等于安全仓库
-- 任何进入 git 历史的密钥，都应视为已泄露
-- `.env.example` 只能保留占位符，不能保留真实值
-- SQLite、导出文件、浏览器自动化快照都不应该提交到仓库
-
-## 当前局限
-
-- 当前 RAG 采用本地 SQLite FTS5，不接外部向量数据库
-- 当前多智能体是“可控多角色流程”，不是完全自治 agent 辩论系统
-- 账户体系已支持本地登录和账户记忆，但还没有第三方 OAuth 和完整多租户后台
-- Smart Money 目前仍然是公开持仓代理，不是真正的机构级资金流
-- 免费数据源容易遇到限流，系统目前通过备用源与本地缓存缓解，但无法完全避免
-- Alpaca 全美股票池已接好结构，但需要用户自行配置 key / secret
-- 当前仍是单仓库、单服务架构，适合研究型项目，不是完整生产平台
-
-## 路线图
-
-- 完善 Alpaca 股票池同步与本地 `security_master`
-- 继续补强 Smart Money 的低频备用链
-- 继续优化 `/terminal` 的产品表达与可视化
-- 补更多自动化刷新与数据更新任务
+- 不要把真实 API key 写进仓库。
+- `.env.example` 只能放占位符。
+- SQLite 数据库、缓存、导出文件和浏览器测试输出不应提交。
+- 这个项目输出的是研究辅助信息，不构成投资建议。
 
 ## 搜索记录
 
@@ -503,30 +394,3 @@ npx playwright install chromium
 - 2026-04-20：检索了 Railway、Render 和 Cloudflare Tunnel 的官方资料。结论：当前项目最适合用 Railway 按 Docker 单服务部署；Cloudflare Quick Tunnel 不适合作为主展示方案，因为不支持 SSE。
 - 2026-04-21：本轮按既定开发计划实现本地 SQLite FTS5 知识库 RAG，没有新增外部方案检索。
 - 2026-04-21：本轮按既定架构计划实现可控多智能体流程，没有新增外部方案检索。
-
-## 已完成与待办
-
-已完成：
-- 品牌首页升级（主视觉、强入口、三步引导、动态研究场景）
-- `/terminal` 四页化升级（开始研究、研究结论、回测页、历史页）
-- 提问入口前置、结论独立成页、自动跳转与更轻的首屏
-- 浏览器级长期记忆（自动学习、后端保存、前台不直接展示）
-- 后端持久化偏好（SQLite）与对应读取/更新接口
-- 历史审计摘要接口与历史页摘要侧栏
-- 结论依据摘要、谨慎提示与更短的澄清追问
-- `needs_clarification` 状态下的“补一句继续研究”流程
-- 3 条固定标准演示问题（中文稳健型 / 英文成长型 / 历史回测型）
-- `/terminal` 双模式：实时研究 + 历史回测研究
-- 回测接口与前端联动（replay / reference）
-- 报告区图表化与导出（后端真 PDF / HTML / Markdown / JSON）
-- `/debug` 保留开发者链路可观测能力
-- Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
-- 本地知识库 RAG 与报告后结论校验层
-- 可控多智能体流程（六个角色 agent、研究计划、agent 交接记录）
-- RAG 证据时效 / 来源可靠性标记、增强版结论校验和 debug agent trace 可视化
-- 回测 V1.5 保守口径说明（交易成本、滑点、分红、再平衡）
-
-待办：
-- 把“需要补充信息”的追问做成更自然的连续研究体验
-- 增加更稳定的历史新闻与历史 smart money 可回放数据源
-- 增加分红再投资、税务口径等更真实的回测参数
