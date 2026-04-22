@@ -16,6 +16,7 @@ from app.services.investment_memo import (
     validate_report_output,
 )
 from app.services.rag_service import KnowledgeRagService
+from app.services.report_outputs import attach_dual_report_outputs
 
 
 class ReportService:
@@ -254,4 +255,9 @@ class ReportService:
             base_url=base_url,
         )
         self.validate_report_bundle(bundle, language_code=intent.system_context.language)
+        attach_dual_report_outputs(
+            bundle=bundle,
+            query=query,
+            language_code=intent.system_context.language,
+        )
         return bundle

@@ -137,6 +137,9 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
     assert response["research_plan"]["agent_architecture"] == "controlled_multi_agent"
     assert response["report_briefing"]["meta"]["retrieved_evidence"][0]["citation_key"] == "E1"
     assert response["report_briefing"]["meta"]["validation_checks"][0]["status"] == "pass"
+    assert "report_outputs" in response
+    assert response["report_outputs"]["investment"]["markdown"] == response["final_report"]
+    assert "Agent Workflow" in response["report_outputs"]["development"]["markdown"]
 
     agent_names = [item["agent_name"] for item in response["agent_trace"]]
     assert agent_names == [
@@ -173,6 +176,7 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
     assert ("derived", "research_plan") in artifact_names
     assert ("derived", "agent_trace") in artifact_names
     assert ("derived", "memory_resolution") in artifact_names
+    assert ("report", "outputs") in artifact_names
 
 
 @pytest.mark.asyncio

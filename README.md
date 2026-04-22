@@ -1,7 +1,7 @@
 # Financial Agent
 
 面向美股研究场景的双语 Financial Research Agent。  
-它把“用户自然语言需求 -> 股票筛选 -> 多源数据聚合 -> 风险校验 -> 投资报告输出”串成一条完整链路，同时保留开发者调试视图，方便继续迭代。
+它把“用户自然语言需求 -> 股票筛选 -> 多源数据聚合 -> 风险校验 -> 双报告输出”串成一条完整链路，同时保留开发者调试视图，方便继续迭代。
 
 ## 这个项目解决什么问题
 
@@ -48,6 +48,7 @@
 - 支持用户前台 `/terminal` 与开发者后台 `/debug`
 - 支持 Run / Step / Artifact / Event 级别追踪
 - 支持正式研究报告、图表摘要与报告导出，其中 PDF 由后端 Playwright/Chromium 生成真实 `.pdf` 文件
+- 支持一次研究生成两份报告：投资报告回答“买什么、为什么、怎么执行”，开发报告回答“Agent、RAG、校验和回测如何支撑结论”
 - 支持多数据源主源 / 备用源 / 本地缓存
 - 支持同公司多代码防错（如 GOOG/GOOGL）：默认去重，用户明确点名时保留多类别
 - 支持逐票卡片中的可点击新闻链接与 SEC 披露链接
@@ -134,7 +135,8 @@
 - 信息不足时的“继续研究”卡片（补一句后直接续跑）
 - 更清楚的高对比进度区（当前阶段、进度条、状态说明）
 - 阶段化视觉反馈（排队/运行/完成/失败）
-- 正式研究报告（含图表与执行建议）
+- 双标签研究报告：默认展示投资报告，另有开发报告说明 Agent、RAG、校验和回测支撑链路
+- 投资报告固定包含推荐组合仓位、候选评分、组合 vs 基准回测、风险贡献四类图表区域
 - 独立回测页（组合 vs SPY、单股切换、时间序列表）
 - 独立历史页（最近报告、打开报告、打开回测）
 - 长期记忆继续在后端保存和自动学习，但不再占用终端前台
@@ -239,6 +241,8 @@ flowchart LR
     EVIDENCE --> REPORT["Report Service"]
     REPORTAGENT --> REPORT
     VALIDATOR --> REPORT
+    REPORT --> OUTPUTS["Dual Report Outputs"]
+    OUTPUTS --> PDF["PDF Export Service"]
     ANALYSIS --> TOOLKIT["Market Toolkit"]
     TOOLKIT --> REGISTRY["Tool Registry"]
 
@@ -281,7 +285,8 @@ sequenceDiagram
     Coord->>Report: EvidenceAgent 接入 RAG 证据
     Coord->>Report: ReportAgent 生成正式报告
     Coord->>Report: ValidatorAgent 校验结论
-    Report-->>Run: 返回 memo / fallback report
+    Coord->>Report: 生成投资报告 + 开发报告
+    Report-->>Run: 返回 report_outputs + final_report 兼容字段
     Run->>API: 可选触发 backtest(replay/reference)
     API-->>Terminal: 返回回测摘要与收益曲线
     Run-->>Terminal: SSE 事件 + 最终结果
@@ -544,7 +549,7 @@ npx playwright install chromium
 - 3 条固定标准示例问题（中文稳健型 / 英文成长型 / 历史回测型）
 - `/terminal` 双模式：实时研究 + 历史回测研究
 - 回测接口与前端联动（replay / reference）
-- 报告区图表化与导出（后端真 PDF / HTML / Markdown / JSON）
+- 双报告输出与导出（投资报告 + 开发报告，后端真 PDF / HTML / Markdown / JSON）
 - `/debug` 保留开发者链路可观测能力
 - Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
 - 本地知识库 RAG 与报告后结论校验层

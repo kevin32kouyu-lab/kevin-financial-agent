@@ -18,6 +18,7 @@ from app.agent_runtime.controlled_agents import (
 )
 from app.agent_runtime.memory import build_preference_snapshot
 from app.domain.contracts import AgentRunRequest, utc_now_iso
+from app.services.report_outputs import attach_dual_report_outputs
 
 
 AsyncHook = Callable[..., Any] | None
@@ -305,6 +306,17 @@ class AgentCoordinator:
         validation = self.validator_agent.run(bundle=report.bundle, language_code=intake.parsed_intent.system_context.language)
         self._finish_trace(validation.trace, started_at=validation_started_at, started_perf=validation_started)
         response["report_briefing"] = validation.bundle["report_briefing"]
+        await self._append_trace(hooks, response, validation.trace)
+        report_outputs = attach_dual_report_outputs(
+            bundle=validation.bundle,
+            query=intake.normalized_query,
+            language_code=intake.parsed_intent.system_context.language,
+            agent_trace=response["agent_trace"],
+            research_plan=response.get("research_plan"),
+            backtest=None,
+        )
+        response["report_outputs"] = report_outputs
+        response["final_report"] = validation.bundle["final_report"]
         response["preference_snapshot"] = build_preference_snapshot(
             intake.parsed_intent,
             query=intake.normalized_query,
@@ -312,9 +324,10 @@ class AgentCoordinator:
             applied_fields=response["memory_applied_fields"],
         )
         await self._publish_artifact(hooks, "report", "briefing", response["report_briefing"])
+        await self._publish_artifact(hooks, "report", "outputs", response["report_outputs"])
+        await self._publish_artifact(hooks, "report", "final_report", response["final_report"])
         await self._publish_artifact(hooks, "derived", "validation_checks", validation.validation_meta.get("validation_checks", []))
         await self._publish_artifact(hooks, "derived", "preference_snapshot", response["preference_snapshot"])
-        await self._append_trace(hooks, response, validation.trace)
         await self._append_stage(
             hooks,
             response,
