@@ -1,4 +1,6 @@
 import {
+  startTransition,
+  useEffect,
   useEffectEvent,
   useState,
 } from "react";
@@ -165,7 +167,7 @@ export function useBacktestManagement(
     const researchMode = String(researchContext?.research_mode || "realtime");
 
     if (researchMode === "historical") {
-      if (backtestDetail && backtestDetail.mode === "replay") {
+      if (backtestDetail && String(backtestDetail.meta?.backtest_kind || "") === "replay") {
         // Don't reload if already in replay mode
         return;
       }

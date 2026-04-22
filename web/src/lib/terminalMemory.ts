@@ -1,4 +1,4 @@
-/** 终端轻量记忆与标准演示问题。 */
+/** 终端轻量记忆与标准示例问题。 */
 import type { AgentMemoryContext, Locale, TerminalMode } from "./types";
 
 const MEMORY_STORAGE_KEY = "financial-agent-intent-memory-v1";
@@ -10,7 +10,7 @@ export interface StoredIntentMemory extends AgentMemoryContext {
   savedAt: string;
 }
 
-export interface DemoScenario {
+export interface SampleScenario {
   id: string;
   label: string;
   query: string;
@@ -112,17 +112,17 @@ export function buildMemoryFromParsedIntent(parsedIntent: unknown, locale: Local
     !memory.risk_tolerance &&
     !memory.investment_horizon &&
     !memory.investment_style &&
-    !memory.preferred_sectors.length &&
-    !memory.preferred_industries.length &&
-    !memory.explicit_tickers.length
+    !(memory.preferred_sectors || []).length &&
+    !(memory.preferred_industries || []).length &&
+    !(memory.explicit_tickers || []).length
   ) {
     return null;
   }
   return normalizeMemory(memory);
 }
 
-/** 返回 3 条适合演示的标准问题。 */
-export function getDemoScenarios(locale: Locale): DemoScenario[] {
+/** 返回 3 条适合快速试用的标准问题。 */
+export function getSampleScenarios(locale: Locale): SampleScenario[] {
   return [
     {
       id: "steady-income",

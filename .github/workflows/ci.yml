@@ -26,17 +26,11 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Run backend tests
-        run: python -m pytest -q
-
       - name: Install frontend dependencies
         run: npm ci
-
-      - name: Build frontend
-        run: npm run build
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run E2E smoke tests
-        run: npm run test:e2e
+      - name: Run unified verification
+        run: python scripts/verify.py

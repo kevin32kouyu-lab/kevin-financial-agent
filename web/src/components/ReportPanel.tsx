@@ -304,28 +304,31 @@ function renderReportMarkdown(text: string) {
         </ul>
       );
     }
-    return (
-      <div key={index} className="report-table-wrap">
-        <table className="report-table">
-          <thead>
-            <tr>
-              {block.rows[0].map((cell, cellIndex) => (
-                <th key={cellIndex}>{cell}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.slice(1).map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell}</td>
+    if (block.type === "table") {
+      return (
+        <div key={index} className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                {block.rows[0].map((cell: string, cellIndex: number) => (
+                  <th key={cellIndex}>{cell}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+            </thead>
+            <tbody>
+              {block.rows.slice(1).map((row: string[], rowIndex: number) => (
+                <tr key={rowIndex}>
+                  {row.map((cell: string, cellIndex: number) => (
+                    <td key={cellIndex}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    return null;
   });
 }
 
@@ -774,8 +777,8 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       <div id="report-overview" className="executive-grid anchor-target">
         <article className="executive-card">
           <p className="eyebrow">{locale === "zh" ? "执行结论" : "Executive verdict"}</p>
-          <h3>{toText(executive?.presentation_call || executive?.primary_call, copy.report.empty)}</h3>
-          <p>{toText(executive?.presentation_action_summary || executive?.action_summary, copy.report.empty)}</p>
+          <h3>{toText(executive?.display_call || executive?.primary_call, copy.report.empty)}</h3>
+          <p>{toText(executive?.display_action_summary || executive?.action_summary, copy.report.empty)}</p>
           <div className="chip-row">
             {watchlist.map((item) => (
               <span key={item} className="chip positive">{item}</span>

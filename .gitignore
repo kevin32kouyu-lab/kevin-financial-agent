@@ -55,7 +55,6 @@ read.md
 *.temp
 .cache/
 tmp_*
-tmp_ppt_export/
 _demo_live/
 
 # 系统文件

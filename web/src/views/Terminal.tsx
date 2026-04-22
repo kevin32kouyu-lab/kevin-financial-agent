@@ -1,5 +1,5 @@
 /** 用户研究终端：提供四页化的正式研究前台。 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
@@ -11,32 +11,14 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 import { useResearchConsole } from "../hooks";
+import { buildTerminalHref, type TerminalPage, useTerminalNavigation } from "../hooks/useTerminalNavigation";
+import type { UserPreferenceSummary } from "../lib/types";
 
 type GenericRecord = Record<string, unknown>;
-type TerminalPage = "ask" | "conclusion" | "backtest" | "archive";
 
-/** 根据路由判断当前终端页。 */
-function getTerminalPage(pathname: string): TerminalPage {
-  if (pathname.startsWith("/terminal/conclusion")) return "conclusion";
-  if (pathname.startsWith("/terminal/backtest")) return "backtest";
-  if (pathname.startsWith("/terminal/archive")) return "archive";
-  return "ask";
-}
-
-/** 生成终端子页地址，并保留当前 run。 */
-function buildTerminalHref(page: TerminalPage, runId?: string | null): string {
-  const base =
-    page === "conclusion"
-      ? "/terminal/conclusion"
-      : page === "backtest"
-        ? "/terminal/backtest"
-        : page === "archive"
-          ? "/terminal/archive"
-          : "/terminal";
-  if (!runId) return base;
-  const params = new URLSearchParams();
-  params.set("run", runId);
-  return `${base}?${params.toString()}`;
+/** 拦截普通点击，保留新标签页等浏览器默认行为。 */
+function shouldUseClientNavigation(event: MouseEvent<HTMLAnchorElement>) {
+  return !(event.defaultPrevented || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey || event.button !== 0);
 }
 
 /** 根据运行状态估算页面进度。 */
@@ -142,12 +124,6 @@ function resolveUiStage(status: string | undefined, stepCount: number, locale: "
   return locale === "zh" ? "等待开始" : "Waiting to start";
 }
 
-/** 读取地址中的 run 参数。 */
-function getRouteRunId(): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("run");
-}
-
 /** 生成首屏摘要。 */
 function buildDecisionSummary(
   result: Record<string, unknown> | null,
@@ -181,7 +157,7 @@ function buildDecisionSummary(
 
   const riskFromRegister = asRecord(riskRegister[0]);
   return {
-    conclusion: toText(executive?.presentation_call || executive?.primary_call, copy.terminal.decisionWaiting),
+    conclusion: toText(executive?.display_call || executive?.primary_call, copy.terminal.decisionWaiting),
     conclusionNote:
       toText(validationSummary?.headline || evidenceSummary?.headline, "") ||
       (locale === "zh"
@@ -191,7 +167,7 @@ function buildDecisionSummary(
       macro?.risk_headline || riskFromRegister?.summary || riskFromRegister?.category,
       copy.terminal.riskWaiting,
     ),
-    nextAction: toText(executive?.presentation_action_summary || executive?.action_summary, copy.terminal.nextActionWaiting),
+    nextAction: toText(executive?.display_action_summary || executive?.action_summary, copy.terminal.nextActionWaiting),
     topPick: toText(executive?.top_pick, "N/A"),
     fitScore: toText(executive?.mandate_fit_score, "N/A"),
     stance: toText(executive?.market_stance || macro?.regime, locale === "zh" ? "待更新" : "Pending"),
@@ -239,10 +215,12 @@ function TerminalRouteTabs({
   locale,
   activePage,
   activeRunId,
+  onNavigate,
 }: {
   locale: "zh" | "en";
   activePage: TerminalPage;
   activeRunId: string | null;
+  onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   const items = [
     {
@@ -269,6 +247,11 @@ function TerminalRouteTabs({
         <a
           key={item.key}
           href={buildTerminalHref(item.key, activeRunId)}
+          onClick={(event) => {
+            if (!shouldUseClientNavigation(event)) return;
+            event.preventDefault();
+            onNavigate(item.key, activeRunId);
+          }}
           className={item.key === activePage ? "terminal-route-tab active" : "terminal-route-tab"}
         >
           {item.label}
@@ -289,6 +272,7 @@ function ConclusionSummary({
   uiStage,
   statusCopy,
   runUpdatedAt,
+  onNavigate,
 }: {
   locale: "zh" | "en";
   decisionSummary: ReturnType<typeof buildDecisionSummary>;
@@ -299,6 +283,7 @@ function ConclusionSummary({
   uiStage: string;
   statusCopy: string;
   runUpdatedAt: string;
+  onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   return (
     <section className="terminal-page-grid">
@@ -319,12 +304,26 @@ function ConclusionSummary({
           </div>
           <div className="terminal-summary-actions">
             <Button variant="secondary" size="sm" asChild>
-              <a href={buildTerminalHref("backtest", activeRunId)}>
+              <a
+                href={buildTerminalHref("backtest", activeRunId)}
+                onClick={(event) => {
+                  if (!shouldUseClientNavigation(event)) return;
+                  event.preventDefault();
+                  onNavigate("backtest", activeRunId);
+                }}
+              >
                 {locale === "zh" ? "查看回测页" : "Open backtest"}
               </a>
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <a href={buildTerminalHref("archive", activeRunId)}>
+              <a
+                href={buildTerminalHref("archive", activeRunId)}
+                onClick={(event) => {
+                  if (!shouldUseClientNavigation(event)) return;
+                  event.preventDefault();
+                  onNavigate("archive", activeRunId);
+                }}
+              >
                 {locale === "zh" ? "查看历史页" : "Open archive"}
               </a>
             </Button>
@@ -404,7 +403,13 @@ function ConclusionSummary({
 }
 
 /** 渲染结论页没有绑定报告时的空状态。 */
-function ConclusionEmptyState({ locale }: { locale: "zh" | "en" }) {
+function ConclusionEmptyState({
+  locale,
+  onNavigate,
+}: {
+  locale: "zh" | "en";
+  onNavigate: (page: TerminalPage, runId?: string | null) => void;
+}) {
   return (
     <section className="terminal-route-stack">
       <article className="panel-surface terminal-route-header terminal-empty-panel">
@@ -421,10 +426,28 @@ function ConclusionEmptyState({ locale }: { locale: "zh" | "en" }) {
         </div>
         <div className="terminal-summary-actions">
           <Button variant="secondary" size="sm" asChild>
-            <a href={buildTerminalHref("ask")}>{locale === "zh" ? "去开始研究" : "Go to start research"}</a>
+            <a
+              href={buildTerminalHref("ask")}
+              onClick={(event) => {
+                if (!shouldUseClientNavigation(event)) return;
+                event.preventDefault();
+                onNavigate("ask", null);
+              }}
+            >
+              {locale === "zh" ? "去开始研究" : "Go to start research"}
+            </a>
           </Button>
           <Button variant="secondary" size="sm" asChild>
-            <a href={buildTerminalHref("archive")}>{locale === "zh" ? "打开历史页" : "Open archive"}</a>
+            <a
+              href={buildTerminalHref("archive")}
+              onClick={(event) => {
+                if (!shouldUseClientNavigation(event)) return;
+                event.preventDefault();
+                onNavigate("archive", null);
+              }}
+            >
+              {locale === "zh" ? "打开历史页" : "Open archive"}
+            </a>
           </Button>
         </div>
       </article>
@@ -450,7 +473,7 @@ function ClarificationContinueCard({
   setClarificationAnswer: (value: string) => void;
   onContinue: () => void;
   creatingRun: boolean;
-  profilePreferences: Record<string, unknown> | null;
+  profilePreferences: UserPreferenceSummary | null;
 }) {
   const preferenceValues =
     profilePreferences && typeof profilePreferences.values === "object"
@@ -532,6 +555,7 @@ function ArchivePage({
   activeRunId,
   runDetail,
   auditSummary,
+  onNavigate,
 }: {
   locale: "zh" | "en";
   historyLoading: boolean;
@@ -544,6 +568,7 @@ function ArchivePage({
   activeRunId: string | null;
   runDetail: ReturnType<typeof useResearchConsole>["runDetail"];
   auditSummary: ReturnType<typeof useResearchConsole>["auditSummary"];
+  onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   const result = runDetail?.result || null;
   const boundQuery = extractBoundQuery(result, "", locale);
@@ -582,12 +607,26 @@ function ArchivePage({
                 </div>
                 <div className="button-row compact terminal-archive-actions">
                   <Button variant="secondary" size="sm" asChild>
-                    <a href={buildTerminalHref("conclusion", item.id)}>
+                    <a
+                      href={buildTerminalHref("conclusion", item.id)}
+                      onClick={(event) => {
+                        if (!shouldUseClientNavigation(event)) return;
+                        event.preventDefault();
+                        onNavigate("conclusion", item.id);
+                      }}
+                    >
                       {locale === "zh" ? "打开报告" : "Open report"}
                     </a>
                   </Button>
                   <Button variant="secondary" size="sm" asChild>
-                    <a href={buildTerminalHref("backtest", item.id)}>
+                    <a
+                      href={buildTerminalHref("backtest", item.id)}
+                      onClick={(event) => {
+                        if (!shouldUseClientNavigation(event)) return;
+                        event.preventDefault();
+                        onNavigate("backtest", item.id);
+                      }}
+                    >
                       {locale === "zh" ? "打开回测" : "Open backtest"}
                     </a>
                   </Button>
@@ -741,7 +780,6 @@ function BacktestPage({
 
 /** 终端主组件。 */
 export function TerminalView() {
-  const terminalPage = typeof window === "undefined" ? "ask" : getTerminalPage(window.location.pathname);
   const {
     locale,
     setLocale,
@@ -766,7 +804,7 @@ export function TerminalView() {
     backtestCreating,
     statusText,
     errorText,
-    demoScenarios,
+    sampleScenarios,
     creatingRun,
     cancelingRun,
     historyLoading,
@@ -775,9 +813,11 @@ export function TerminalView() {
     createAgentRun,
     cancelActiveRun,
     openRun,
+    loadBacktest,
     runBacktest,
-    applyDemoScenario,
+    applySampleScenario,
   } = useResearchConsole("agent");
+  const { terminalPage, routeRunId, navigateTerminal, replaceTerminalRun } = useTerminalNavigation(activeRunId);
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
   const [motionLevel, setMotionLevel] = useState<"high" | "low">(() => (readMotionEnabled() ? "high" : "low"));
   const [, setUiFeedbackState] = useState<
@@ -820,23 +860,21 @@ export function TerminalView() {
 
   useEffect(() => {
     if (historyLoading || initialRunResolved) return;
-    const preferredRunId = getRouteRunId();
     setInitialRunResolved(true);
-    if (preferredRunId) {
-      void openRun(preferredRunId);
+    if (routeRunId) {
+      void openRun(routeRunId);
     }
-  }, [historyLoading, initialRunResolved, openRun]);
+  }, [historyLoading, initialRunResolved, openRun, routeRunId]);
 
   useEffect(() => {
-    if (!initialRunResolved || typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (activeRunId) {
-      url.searchParams.set("run", activeRunId);
-    } else if (!url.searchParams.get("run")) {
-      url.search = "";
-    }
-    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
-  }, [activeRunId, initialRunResolved]);
+    if (!initialRunResolved) return;
+    replaceTerminalRun(activeRunId);
+  }, [activeRunId, initialRunResolved, replaceTerminalRun]);
+
+  useEffect(() => {
+    if (!initialRunResolved || !routeRunId || routeRunId === activeRunId || runLoading) return;
+    void openRun(routeRunId);
+  }, [activeRunId, initialRunResolved, openRun, routeRunId, runLoading]);
 
   useEffect(() => {
     if (runDetail?.run.status !== "needs_clarification") {
@@ -855,10 +893,15 @@ export function TerminalView() {
       (previousStatus === "queued" || previousStatus === "running")
     ) {
       setAgentForm({ query: "" });
-      window.location.assign(buildTerminalHref("conclusion", activeRunId));
+      navigateTerminal("conclusion", activeRunId);
     }
     previousRunStatusRef.current = currentStatus;
-  }, [terminalPage, activeRunId, runDetail?.run.status, setAgentForm]);
+  }, [terminalPage, activeRunId, runDetail?.run.status, setAgentForm, navigateTerminal]);
+
+  useEffect(() => {
+    if (terminalPage !== "backtest" || !activeRunId || runDetail?.run.status !== "completed") return;
+    void loadBacktest(activeRunId);
+  }, [terminalPage, activeRunId, runDetail?.run.status, loadBacktest]);
 
   const progress = computeProgress(runDetail?.run.status, runDetail?.steps.length || 0, runDetail?.run.mode);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
@@ -974,7 +1017,12 @@ export function TerminalView() {
         </div>
       </header>
 
-      <TerminalRouteTabs locale={locale} activePage={terminalPage} activeRunId={activeRunId} />
+      <TerminalRouteTabs
+        locale={locale}
+        activePage={terminalPage}
+        activeRunId={activeRunId}
+        onNavigate={navigateTerminal}
+      />
 
       {terminalPage === "ask" ? (
         <>
@@ -1005,13 +1053,13 @@ export function TerminalView() {
 
               <div className="terminal-example-block">
                 <div className="terminal-example-caption">{locale === "zh" ? "示例问题" : "Example prompts"}</div>
-                <div className="terminal-demo-strip">
-                  {demoScenarios.map((scenario) => (
+                <div className="terminal-sample-strip">
+                  {sampleScenarios.map((scenario) => (
                     <button
                       key={scenario.id}
                       type="button"
-                      className="terminal-demo-chip"
-                      onClick={() => applyDemoScenario(scenario.id)}
+                      className="terminal-sample-chip"
+                      onClick={() => applySampleScenario(scenario.id)}
                     >
                       {scenario.label}
                     </button>
@@ -1259,6 +1307,7 @@ export function TerminalView() {
                 uiStage={uiStage}
                 statusCopy={statusCopy}
                 runUpdatedAt={runUpdatedAt}
+                onNavigate={navigateTerminal}
               />
 
               {errorText ? (
@@ -1282,7 +1331,7 @@ export function TerminalView() {
             </>
           )
         ) : (
-          <ConclusionEmptyState locale={locale} />
+          <ConclusionEmptyState locale={locale} onNavigate={navigateTerminal} />
         )
       ) : null}
 
@@ -1312,6 +1361,7 @@ export function TerminalView() {
           activeRunId={activeRunId}
           runDetail={runDetail}
           auditSummary={auditSummary}
+          onNavigate={navigateTerminal}
         />
       ) : null}
     </div>

@@ -4204,13 +4204,13 @@ body::before {
   line-height: 1.7;
 }
 
-.terminal-demo-strip {
+.terminal-sample-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.terminal-demo-chip {
+.terminal-sample-chip {
   border: 1px solid rgba(151, 197, 255, 0.18);
   background: rgba(9, 21, 36, 0.76);
   color: #dbe9f7;
@@ -4220,7 +4220,7 @@ body::before {
   transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
 }
 
-.terminal-demo-chip:hover {
+.terminal-sample-chip:hover {
   transform: translateY(-1px);
   border-color: rgba(125, 211, 196, 0.36);
   background: rgba(14, 31, 49, 0.88);
