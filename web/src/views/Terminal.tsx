@@ -1275,6 +1275,7 @@ export function TerminalView() {
                   result={result}
                   dataStatus={dataStatus}
                   backtest={backtestDetail}
+                  runId={activeRunId}
                   variant="terminal"
                 />
               </div>

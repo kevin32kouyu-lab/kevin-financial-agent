@@ -13,7 +13,7 @@ import yfinance as yf
 from fastapi import HTTPException
 
 from app.core.config import AppSettings
-from app.domain.contracts import BacktestCreateRequest
+from app.domain.contracts import BacktestAssumptions, BacktestCreateRequest
 from app.repositories.sqlite_run_repository import SqliteRunRepository
 from app.tools.fetchers import fetch_alpaca_daily_bars, fetch_longbridge_daily_bars
 from app.tools.fetchers.base import _load_cached_snapshot, _store_cached_snapshot
@@ -194,7 +194,7 @@ class BacktestService:
             if benchmark_frame is not None
             else None
         )
-        backtest_assumptions = self._build_backtest_assumptions()
+        backtest_assumptions = self._build_backtest_assumptions(payload.assumptions)
 
         portfolio_positions = self._materialize_portfolio_positions(
             positions_seed=positions_seed,
@@ -203,17 +203,26 @@ class BacktestService:
             price_frames=price_frames,
             assumptions=backtest_assumptions,
         )
-        points, benchmark_final_value = self._build_backtest_points(
+        points, benchmark_final_value, rebalance_events, dividend_summary = self._build_backtest_points(
             positions=portfolio_positions,
             price_frames=price_frames,
             benchmark_frame=benchmark_frame,
             common_dates=common_dates,
             capital_amount=capital_amount,
             benchmark_entry_price=benchmark_entry_price,
+            assumptions=backtest_assumptions,
         )
 
         final_point = points[-1]
-        final_value = final_point["portfolio_value"]
+        pre_tax_final_value = final_point["portfolio_value"]
+        tax_summary = self._build_tax_summary(
+            final_value=pre_tax_final_value,
+            capital_amount=capital_amount,
+            assumptions=backtest_assumptions,
+        )
+        final_value = tax_summary["after_tax_final_value"]
+        final_point["portfolio_value"] = round(final_value, 2)
+        final_point["portfolio_return_pct"] = round((final_value / capital_amount - 1) * 100, 2)
         metrics = {
             "initial_capital": round(capital_amount, 2),
             "final_value": round(final_value, 2),
@@ -265,6 +274,10 @@ class BacktestService:
             "allocation_rule": "allocation_plan_or_equal_weight",
             "return_basis": backtest_assumptions["return_basis"],
             "assumptions": backtest_assumptions,
+            "dividend_coverage": dividend_summary,
+            "tax_summary": tax_summary,
+            "rebalance_events": rebalance_events,
+            "data_limitations": self._build_backtest_data_limitations(backtest_assumptions, dividend_summary),
             "currency": currency,
             "attribution_summary": attribution_summary,
             "requested_count": requested_count,
@@ -944,17 +957,28 @@ class BacktestService:
         return positions
 
     @staticmethod
-    def _build_backtest_assumptions() -> dict[str, Any]:
-        """生成回测 V1.5 的默认保守口径。"""
-        return {
-            "transaction_cost_bps": 10,
-            "slippage_bps": 5,
-            "dividend_treatment": "excluded_unless_source_provides_total_return",
-            "dividend_included": False,
-            "rebalance": "none_buy_and_hold",
-            "benchmark_costs_applied": False,
-            "return_basis": "price_return_after_entry_costs_vs_benchmark_price_return",
-        }
+    def _build_backtest_assumptions(overrides: BacktestAssumptions | dict[str, Any] | None = None) -> dict[str, Any]:
+        """生成回测 V2 的保守口径。"""
+        if isinstance(overrides, BacktestAssumptions):
+            resolved = overrides
+        elif isinstance(overrides, dict):
+            resolved = BacktestAssumptions.model_validate(overrides)
+        else:
+            resolved = BacktestAssumptions()
+        payload = resolved.model_dump()
+        payload["dividend_treatment"] = (
+            "excluded_unless_source_provides_total_return"
+            if resolved.dividend_mode == "none"
+            else f"{resolved.dividend_mode}_when_source_provides_cash_dividends"
+        )
+        payload["dividend_included"] = resolved.dividend_mode != "none"
+        payload["benchmark_costs_applied"] = False
+        payload["return_basis"] = (
+            "price_return_after_costs"
+            if resolved.dividend_mode == "none" and resolved.tax_mode == "none"
+            else "total_return_attempt_after_costs_with_declared_limitations"
+        )
+        return payload
 
     def _build_backtest_points(
         self,
@@ -965,7 +989,21 @@ class BacktestService:
         common_dates: list[date],
         capital_amount: float,
         benchmark_entry_price: float | None,
-    ) -> tuple[list[dict[str, Any]], float]:
+        assumptions: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], float, list[dict[str, Any]], dict[str, Any]]:
+        assumptions = assumptions or {}
+        dividend_mode = str(assumptions.get("dividend_mode") or "none")
+        rebalance = str(assumptions.get("rebalance") or "none")
+        transaction_cost_bps = max(float(assumptions.get("transaction_cost_bps") or 0.0), 0.0)
+        slippage_bps = max(float(assumptions.get("slippage_bps") or 0.0), 0.0)
+        cash_by_ticker = {position.ticker: 0.0 for position in positions}
+        shares_by_ticker = {position.ticker: position.shares for position in positions}
+        target_weights = {position.ticker: position.weight / 100 for position in positions}
+        dividend_total = 0.0
+        dividend_rows = 0
+        rebalance_events: list[dict[str, Any]] = []
+        last_rebalance_bucket: str | None = None
+
         benchmark_shares = (
             capital_amount / benchmark_entry_price
             if benchmark_frame is not None and benchmark_entry_price is not None and benchmark_entry_price > 0
@@ -974,10 +1012,49 @@ class BacktestService:
         points: list[dict[str, Any]] = []
         for point_date in common_dates:
             point_ts = pd.Timestamp(point_date)
+            for position in positions:
+                frame = price_frames[position.ticker]
+                dividend = float(frame.loc[point_ts, "Dividend"]) if "Dividend" in frame.columns and point_ts in frame.index else 0.0
+                if dividend_mode != "none" and dividend > 0:
+                    dividend_cash = dividend * shares_by_ticker[position.ticker]
+                    dividend_total += dividend_cash
+                    dividend_rows += 1
+                    if dividend_mode == "reinvest":
+                        close_price = float(frame.loc[point_ts, "Close"])
+                        if close_price > 0:
+                            shares_by_ticker[position.ticker] += dividend_cash / close_price
+                    else:
+                        cash_by_ticker[position.ticker] += dividend_cash
             portfolio_value = sum(
-                position.shares * float(price_frames[position.ticker].loc[point_ts, "Close"])
+                shares_by_ticker[position.ticker] * float(price_frames[position.ticker].loc[point_ts, "Close"])
+                + cash_by_ticker[position.ticker]
                 for position in positions
             )
+            bucket = self._rebalance_bucket(point_date, rebalance)
+            if bucket and bucket != last_rebalance_bucket:
+                total_before = portfolio_value
+                cost_total = 0.0
+                for position in positions:
+                    close_price = float(price_frames[position.ticker].loc[point_ts, "Close"])
+                    target_value = total_before * target_weights[position.ticker]
+                    current_value = shares_by_ticker[position.ticker] * close_price + cash_by_ticker[position.ticker]
+                    trade_value = abs(target_value - current_value)
+                    cost_total += trade_value * ((transaction_cost_bps + slippage_bps) / 10000)
+                    cash_by_ticker[position.ticker] = 0.0
+                    shares_by_ticker[position.ticker] = max((target_value - cost_total * target_weights[position.ticker]) / close_price, 0.0)
+                portfolio_value = sum(
+                    shares_by_ticker[position.ticker] * float(price_frames[position.ticker].loc[point_ts, "Close"])
+                    + cash_by_ticker[position.ticker]
+                    for position in positions
+                )
+                rebalance_events.append(
+                    {
+                        "date": point_date.isoformat(),
+                        "frequency": rebalance,
+                        "estimated_cost": round(cost_total, 2),
+                    }
+                )
+                last_rebalance_bucket = bucket
             if benchmark_frame is not None and benchmark_shares > 0:
                 benchmark_value = benchmark_shares * float(benchmark_frame.loc[point_ts, "Close"])
             else:
@@ -991,7 +1068,54 @@ class BacktestService:
                     "benchmark_return_pct": round((benchmark_value / capital_amount - 1) * 100, 2),
                 }
             )
-        return points, points[-1]["benchmark_value"]
+        dividend_summary = {
+            "dividend_mode": dividend_mode,
+            "dividend_included": dividend_mode != "none" and dividend_rows > 0,
+            "dividend_cash": round(dividend_total, 2),
+            "dividend_events": dividend_rows,
+            "coverage": "available" if dividend_rows else ("not_requested" if dividend_mode == "none" else "unavailable"),
+        }
+        return points, points[-1]["benchmark_value"], rebalance_events, dividend_summary
+
+    @staticmethod
+    def _rebalance_bucket(point_date: date, rebalance: str) -> str | None:
+        """计算当前日期是否触发再平衡桶。"""
+        if rebalance == "monthly":
+            return f"{point_date.year}-{point_date.month:02d}"
+        if rebalance == "quarterly":
+            quarter = (point_date.month - 1) // 3 + 1
+            return f"{point_date.year}-Q{quarter}"
+        return None
+
+    @staticmethod
+    def _build_tax_summary(*, final_value: float, capital_amount: float, assumptions: dict[str, Any]) -> dict[str, Any]:
+        """按简化税费模型计算最终税费。"""
+        tax_mode = str(assumptions.get("tax_mode") or "none")
+        tax_rate_pct = max(float(assumptions.get("tax_rate_pct") or 0.0), 0.0)
+        taxable_gain = max(final_value - capital_amount, 0.0)
+        tax_amount = taxable_gain * tax_rate_pct / 100 if tax_mode == "flat_rate" else 0.0
+        return {
+            "tax_mode": tax_mode,
+            "tax_rate_pct": tax_rate_pct,
+            "tax_applied": tax_amount > 0,
+            "taxable_gain": round(taxable_gain, 2),
+            "tax_amount": round(tax_amount, 2),
+            "after_tax_final_value": round(final_value - tax_amount, 2),
+        }
+
+    @staticmethod
+    def _build_backtest_data_limitations(assumptions: dict[str, Any], dividend_summary: dict[str, Any]) -> list[str]:
+        """生成回测数据限制说明。"""
+        limitations: list[str] = []
+        if assumptions.get("dividend_mode") != "none" and not dividend_summary.get("dividend_included"):
+            limitations.append("Dividend data was requested but unavailable for at least this result set.")
+        if assumptions.get("tax_mode") == "flat_rate":
+            limitations.append("Tax is a simplified flat-rate drag, not jurisdiction-specific tax advice.")
+        if assumptions.get("rebalance") in {"monthly", "quarterly"}:
+            limitations.append("Rebalancing uses closing prices on available common trading dates.")
+        if not limitations:
+            limitations.append("Result remains a research-grade backtest, not broker-executed performance.")
+        return limitations
 
     def _build_position_payloads(
         self,

@@ -132,10 +132,44 @@ class SqliteRunRepository:
                     values_json TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    disabled INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actor_user_id TEXT,
+                    actor_role TEXT,
+                    action TEXT NOT NULL,
+                    target_type TEXT,
+                    target_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_status_created_at ON runs(status, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_run_events_run_id_id ON run_events(run_id, id);
                 CREATE INDEX IF NOT EXISTS idx_run_steps_run_id_position ON run_steps(run_id, position);
                 CREATE INDEX IF NOT EXISTS idx_backtests_source_run_updated_at ON backtests(source_run_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_sessions_user_id_expires_at ON sessions(user_id, expires_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_audit_events_actor_created_at ON audit_events(actor_user_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_audit_events_action_created_at ON audit_events(action, created_at DESC);
                 """
             )
 
@@ -388,6 +422,62 @@ class SqliteRunRepository:
             for row in rows
         ]
 
+    @staticmethod
+    def _run_visible_to(row: sqlite3.Row, *, user_id: str | None, client_id: str | None, is_admin: bool) -> bool:
+        if is_admin:
+            return True
+        metadata = SqliteRunRepository._load_json(row["metadata_json"]) or {}
+        owner_user_id = str(metadata.get("user_id") or "").strip()
+        owner_client_id = str(metadata.get("client_id") or "").strip()
+        if owner_user_id:
+            return bool(user_id and owner_user_id == user_id)
+        if owner_client_id:
+            return bool(client_id and owner_client_id == client_id)
+        return user_id is None
+
+    def list_runs_for_actor(
+        self,
+        *,
+        limit: int = 20,
+        mode: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        user_id: str | None = None,
+        client_id: str | None = None,
+        is_admin: bool = False,
+    ) -> list[RunSummary]:
+        """按账户或浏览器身份过滤历史 run。"""
+        where_clause, parameters = self._build_run_where_clause(mode=mode, status=status, search=search)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM runs {where_clause} ORDER BY created_at DESC LIMIT ?",
+                [*parameters, max(limit * 5, limit)],
+            ).fetchall()
+        visible = [
+            row
+            for row in rows
+            if self._run_visible_to(row, user_id=user_id, client_id=client_id, is_admin=is_admin)
+        ][:limit]
+        return [
+            RunSummary(
+                id=row["id"],
+                mode=row["mode"],
+                workflow_key=row["workflow_key"] or row["mode"],
+                status=row["status"],
+                title=row["title"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                started_at=row["started_at"],
+                finished_at=row["finished_at"],
+                parent_run_id=row["parent_run_id"],
+                error_message=row["error_message"],
+                report_mode=row["report_mode"],
+                attempt_count=row["attempt_count"] or 0,
+                metadata=self._load_json(row["metadata_json"]) or {},
+            )
+            for row in visible
+        ]
+
     def list_resumable_runs(self) -> list[RunSummary]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -622,6 +712,136 @@ class SqliteRunRepository:
             "memory_applied_fields": self._load_json(row["memory_applied_fields_json"]) or [],
             "values": self._load_json(row["values_json"]) or {},
         }
+
+    def create_user(self, *, user_id: str, email: str, password_hash: str, role: str = "user") -> dict[str, Any]:
+        timestamp = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, email.lower().strip(), password_hash, role, timestamp, timestamp),
+            )
+        return {"id": user_id, "email": email.lower().strip(), "role": role, "created_at": timestamp}
+
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?",
+                (email.lower().strip(),),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def create_session(self, *, token_hash: str, user_id: str, expires_at: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (token_hash, user_id, utc_now_iso(), expires_at),
+            )
+
+    def get_session_user(self, token_hash: str, *, now: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT users.*
+                FROM sessions
+                JOIN users ON users.id = sessions.user_id
+                WHERE sessions.token_hash = ?
+                  AND sessions.revoked_at IS NULL
+                  AND sessions.expires_at > ?
+                  AND users.disabled = 0
+                """,
+                (token_hash, now),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def revoke_session(self, token_hash: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?",
+                (utc_now_iso(), token_hash),
+            )
+
+    def add_audit_event(
+        self,
+        *,
+        action: str,
+        actor_user_id: str | None = None,
+        actor_role: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO audit_events (
+                    actor_user_id, actor_role, action, target_type, target_id,
+                    metadata_json, ip_address, user_agent, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    actor_user_id,
+                    actor_role,
+                    action,
+                    target_type,
+                    target_id,
+                    self._dump_json(metadata or {}),
+                    ip_address,
+                    user_agent,
+                    utc_now_iso(),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_audit_events(
+        self,
+        *,
+        actor_user_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM audit_events"
+        params: list[Any] = []
+        if actor_user_id:
+            query += " WHERE actor_user_id = ?"
+            params.append(actor_user_id)
+        query += " ORDER BY id ASC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "actor_user_id": row["actor_user_id"],
+                "actor_role": row["actor_role"],
+                "action": row["action"],
+                "target_type": row["target_type"],
+                "target_id": row["target_id"],
+                "metadata": self._load_json(row["metadata_json"]) or {},
+                "ip_address": row["ip_address"],
+                "user_agent": row["user_agent"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def upsert_user_preferences(
         self,

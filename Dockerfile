@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN npm install && npm run build
+RUN npm install && npx playwright install --with-deps chromium && npm run build
 
 ENV HOST=0.0.0.0
 ENV PORT=8001

@@ -14,8 +14,10 @@
 
 - 使用根目录 `Dockerfile` 构建
 - 容器内自动构建前端
+- 容器内安装 Playwright Chromium，用于后端生成真实 PDF
 - 启动时自动读取 `PORT`
 - 提供健康检查地址：`/healthz`
+- 提供就绪检查地址：`/readyz`
 
 因此在 Railway 上，直接按 Docker Web Service 部署即可。
 
@@ -68,6 +70,17 @@ Railway 会自动识别根目录 `Dockerfile`。
 - `MARKET_PROXY_MODE`
 - `MARKET_PROXY_URL`
 
+如需账户、监控和后台刷新，再填写：
+
+- `FINANCIAL_AGENT_ENABLE_AUTH=true`
+- `FINANCIAL_AGENT_SESSION_SECRET`
+- `SENTRY_DSN`
+- `LOG_LEVEL=INFO`
+- `FINANCIAL_AGENT_ENABLE_REFRESH_JOBS=true`
+- `FINANCIAL_AGENT_UNIVERSE_REFRESH_INTERVAL_HOURS=24`
+- `FINANCIAL_AGENT_MACRO_REFRESH_INTERVAL_HOURS=6`
+- `FINANCIAL_AGENT_PDF_EXPORT_TIMEOUT_SECONDS=45`
+
 ### 4. 配置数据存储
 
 如果你希望保留：
@@ -98,10 +111,12 @@ FINANCIAL_AGENT_KNOWLEDGE_DB_PATH=/app/data/runtime/financial_agent_knowledge.sq
 部署成功后，依次检查：
 
 - `/healthz` 是否返回 `ok`
+- `/readyz` 是否返回 `ready`
 - `/` 首页是否正常打开
 - `/terminal` 是否可进入
 - 是否能生成 1 条中文研究
 - 是否能生成 1 条英文研究
+- 研究结论页是否能下载真实 `.pdf` 文件
 - 历史模式是否能进入回测页
 
 ## 建议的验收顺序

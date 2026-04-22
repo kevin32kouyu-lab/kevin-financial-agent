@@ -24,6 +24,7 @@ htmlcov/
 
 # 前端依赖与构建产物
 node_modules/
+.npm-cache/
 web/dist/
 
 # 运行时数据与导出

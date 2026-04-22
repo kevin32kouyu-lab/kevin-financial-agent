@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -121,6 +121,34 @@ class PreferenceUpdateRequest(BaseModel):
     source_query: str | None = None
 
 
+class AuthUser(BaseModel):
+    id: str
+    email: str
+    role: Literal["user", "admin"] = "user"
+    created_at: str
+
+
+class AuthRegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+    role: Literal["user", "admin"] = "user"
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+
+
+class AuthSessionResponse(BaseModel):
+    user: AuthUser
+    session_token: str
+    expires_at: str
+
+
+class LinkClientMemoryRequest(BaseModel):
+    client_id: str
+
+
 class RunAuditSummary(BaseModel):
     run_id: str
     title: str
@@ -139,11 +167,21 @@ class RunAuditSummary(BaseModel):
     follow_up_question: str | None = None
 
 
+class BacktestAssumptions(BaseModel):
+    transaction_cost_bps: float = Field(default=10, ge=0, le=500)
+    slippage_bps: float = Field(default=5, ge=0, le=500)
+    dividend_mode: Literal["none", "cash", "reinvest"] = "none"
+    tax_mode: Literal["none", "flat_rate"] = "none"
+    tax_rate_pct: float = Field(default=0, ge=0, le=60)
+    rebalance: Literal["none", "monthly", "quarterly"] = "none"
+
+
 class BacktestCreateRequest(BaseModel):
     mode: Literal["replay", "reference"] = "replay"
     source_run_id: str
     entry_date: date | None = None
     end_date: date | None = None
+    assumptions: BacktestAssumptions | None = None
 
 
 class BacktestPoint(BaseModel):
@@ -218,7 +256,7 @@ class BacktestListResponse(BaseModel):
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 __all__ = [
@@ -248,7 +286,13 @@ __all__ = [
     "RunSummary",
     "UserPreferenceSummary",
     "PreferenceUpdateRequest",
+    "AuthUser",
+    "AuthRegisterRequest",
+    "AuthLoginRequest",
+    "AuthSessionResponse",
+    "LinkClientMemoryRequest",
     "RunAuditSummary",
+    "BacktestAssumptions",
     "ArtifactRecord",
     "utc_now_iso",
 ]

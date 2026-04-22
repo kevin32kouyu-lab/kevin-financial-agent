@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.auth import get_api_key, get_client_id
+from app.core.auth import get_api_key, get_client_id, get_current_user
 from app.core.runtime import get_runtime
 from app.domain.contracts import RunCreateRequest
 
@@ -33,14 +33,21 @@ async def list_runs(
     search: str | None = None,
 ) -> dict:
     runtime = get_runtime(request.app)
-    return runtime.run_service.list_run_summaries(limit=limit, mode=mode, status=status, search=search)
+    return runtime.run_service.list_run_summaries(
+        limit=limit,
+        mode=mode,
+        status=status,
+        search=search,
+        user=get_current_user(request),
+        client_id=get_client_id(request),
+    )
 
 
 @router.post("")
 async def create_run(request: Request, payload: RunCreateRequest) -> dict:
     runtime = get_runtime(request.app)
     client_id = get_client_id(request)
-    return await runtime.run_service.create_run(payload, client_id=client_id)
+    return await runtime.run_service.create_run(payload, client_id=client_id, user=get_current_user(request))
 
 
 @router.delete("")
@@ -57,30 +64,31 @@ async def delete_runs(
 @router.get("/{run_id}")
 async def get_run_detail(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
-    return runtime.run_service.get_run_detail_or_404(run_id)
+    return runtime.run_service.get_run_detail_or_404(run_id, user=get_current_user(request), client_id=get_client_id(request))
 
 
 @router.get("/{run_id}/artifacts")
 async def get_run_artifacts(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
-    return runtime.run_service.get_run_artifacts_or_404(run_id)
+    return runtime.run_service.get_run_artifacts_or_404(run_id, user=get_current_user(request), client_id=get_client_id(request))
 
 
 @router.post("/{run_id}/retry")
 async def retry_run(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
-    return await runtime.run_service.retry_run_or_404(run_id)
+    return await runtime.run_service.retry_run_or_404(run_id, user=get_current_user(request), client_id=get_client_id(request))
 
 
 @router.post("/{run_id}/cancel")
 async def cancel_run(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
-    return await runtime.run_service.cancel_run_or_404(run_id)
+    return await runtime.run_service.cancel_run_or_404(run_id, user=get_current_user(request), client_id=get_client_id(request))
 
 
 @router.get("/{run_id}/events")
 async def stream_run_events(request: Request, run_id: str) -> StreamingResponse:
     runtime = get_runtime(request.app)
+    runtime.run_service.assert_run_visible(run_id, user=get_current_user(request), client_id=get_client_id(request))
     run = runtime.run_service.get_run_or_404(run_id)
 
     header_value = request.headers.get("last-event-id")

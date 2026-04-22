@@ -14,6 +14,7 @@ interface ReportPanelProps {
   result: Record<string, unknown> | null;
   dataStatus: DataStatus | null;
   backtest?: BacktestDetail | null;
+  runId?: string;
   variant?: "terminal" | "debug";
 }
 
@@ -456,7 +457,7 @@ function StructuredSnapshot({ locale, copy, result }: { locale: Locale; copy: Lo
   );
 }
 
-export function ReportPanel({ locale, copy, result, dataStatus, backtest = null, variant = "debug" }: ReportPanelProps) {
+export function ReportPanel({ locale, copy, result, dataStatus, backtest = null, runId, variant = "debug" }: ReportPanelProps) {
   const [activeMetricHelpId, setActiveMetricHelpId] = useState<string | null>(null);
   const metricHelpRootRef = useRef<HTMLDivElement | null>(null);
 
@@ -568,7 +569,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
           <div className="button-row compact">
             {variant === "terminal" ? (
               <>
-                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest)}>
+                <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "pdf", backtest, runId)}>
                   {locale === "zh" ? "导出 PDF" : "Export PDF"}
                 </button>
                 <button type="button" className="secondary-button compact-action" onClick={() => exportReport(result, locale, "html", backtest)}>

@@ -8,11 +8,11 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import agent_router, backtests_router, debug_router, history_router, profile_router, runs_router, tools_router
+from app.api import admin_router, agent_router, auth_router, backtests_router, debug_router, history_router, profile_router, runs_router, tools_router
 from app.core.config import AppSettings
 from app.core.exceptions import FinancialAgentError
 from app.core.logging import setup_logging
-from app.core.runtime import build_runtime
+from app.core.runtime import build_runtime, get_runtime
 
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routers(app: FastAPI) -> None:
-    for router in (agent_router, backtests_router, history_router, profile_router, runs_router, debug_router, tools_router):
+    for router in (auth_router, admin_router, agent_router, backtests_router, history_router, profile_router, runs_router, debug_router, tools_router):
         app.include_router(router)
 
 
@@ -61,6 +61,19 @@ def _register_page_routes(app: FastAPI, settings: AppSettings) -> None:
                 "status": "ok",
                 "app": settings.app_name,
                 "version": settings.app_version,
+                "frontend_available": settings.frontend_available,
+            },
+        )
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        runtime = get_runtime(app)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "database": str(runtime.settings.db_path),
+                "market_database": str(runtime.settings.market_db_path),
                 "frontend_available": settings.frontend_available,
             },
         )
@@ -99,7 +112,7 @@ def create_app() -> FastAPI:
     runtime = build_runtime(settings)
 
     # Setup logging
-    setup_logging(level=logging.INFO)
+    setup_logging(level=getattr(logging, settings.log_level, logging.INFO))
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
 
     @asynccontextmanager

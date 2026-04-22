@@ -48,6 +48,14 @@ class AppSettings:
     web_dist_dir: Path = ROOT_DIR / "web" / "dist"
     api_key: str | None = None
     api_key_header: str = "X-API-Key"
+    enable_account_auth: bool = False
+    session_secret: str = "dev-session-secret-change-me"
+    sentry_dsn: str | None = None
+    log_level: str = "INFO"
+    enable_refresh_jobs: bool = False
+    universe_refresh_interval_hours: int = 24
+    macro_refresh_interval_hours: int = 6
+    pdf_export_timeout_seconds: int = 45
 
     alpha_vantage_api_key: str | None = None
     finnhub_api_key: str | None = None
@@ -94,6 +102,23 @@ class AppSettings:
 
         api_key = os.getenv("API_KEY", "").strip() or None
         api_key_header = os.getenv("API_KEY_HEADER", "X-API-Key").strip() or "X-API-Key"
+        enable_account_auth = os.getenv("FINANCIAL_AGENT_ENABLE_AUTH", "false").strip().lower() in {"1", "true", "yes", "on"}
+        session_secret = os.getenv("FINANCIAL_AGENT_SESSION_SECRET", "dev-session-secret-change-me").strip() or "dev-session-secret-change-me"
+        sentry_dsn = os.getenv("SENTRY_DSN", "").strip() or None
+        log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
+        enable_refresh_jobs = os.getenv("FINANCIAL_AGENT_ENABLE_REFRESH_JOBS", "false").strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            universe_refresh_interval_hours = max(int(os.getenv("FINANCIAL_AGENT_UNIVERSE_REFRESH_INTERVAL_HOURS", "24")), 1)
+        except ValueError:
+            universe_refresh_interval_hours = 24
+        try:
+            macro_refresh_interval_hours = max(int(os.getenv("FINANCIAL_AGENT_MACRO_REFRESH_INTERVAL_HOURS", "6")), 1)
+        except ValueError:
+            macro_refresh_interval_hours = 6
+        try:
+            pdf_export_timeout_seconds = max(int(os.getenv("FINANCIAL_AGENT_PDF_EXPORT_TIMEOUT_SECONDS", "45")), 5)
+        except ValueError:
+            pdf_export_timeout_seconds = 45
 
         alpha_vantage_api_key = (
             os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
@@ -159,6 +184,14 @@ class AppSettings:
             csv_universe_path=csv_universe_path,
             api_key=api_key,
             api_key_header=api_key_header,
+            enable_account_auth=enable_account_auth,
+            session_secret=session_secret,
+            sentry_dsn=sentry_dsn,
+            log_level=log_level,
+            enable_refresh_jobs=enable_refresh_jobs,
+            universe_refresh_interval_hours=universe_refresh_interval_hours,
+            macro_refresh_interval_hours=macro_refresh_interval_hours,
+            pdf_export_timeout_seconds=pdf_export_timeout_seconds,
             alpha_vantage_api_key=alpha_vantage_api_key,
             finnhub_api_key=finnhub_api_key,
             alpaca_api_key=alpaca_api_key,

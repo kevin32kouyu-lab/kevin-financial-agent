@@ -3,6 +3,9 @@ export type RunStatus = "queued" | "running" | "completed" | "failed" | "needs_c
 export type Locale = "zh" | "en";
 export type TerminalMode = "realtime" | "historical";
 export type BacktestMode = "replay" | "reference";
+export type DividendMode = "none" | "cash" | "reinvest";
+export type TaxMode = "none" | "flat_rate";
+export type RebalanceMode = "none" | "monthly" | "quarterly";
 export type AllocationMode = "score_weighted" | "equal_weight" | "custom_weight";
 
 export interface AgentMemoryContext {
@@ -21,6 +24,40 @@ export interface BacktestCreateRequest {
   source_run_id: string;
   entry_date?: string | null;
   end_date?: string | null;
+  assumptions?: {
+    transaction_cost_bps?: number;
+    slippage_bps?: number;
+    dividend_mode?: DividendMode;
+    tax_mode?: TaxMode;
+    tax_rate_pct?: number;
+    rebalance?: RebalanceMode;
+  } | null;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: "user" | "admin";
+  created_at: string;
+}
+
+export interface AuthSessionResponse {
+  user: AuthUser;
+  session_token: string;
+  expires_at: string;
+}
+
+export interface AuditEventRecord {
+  id: number;
+  actor_user_id?: string | null;
+  actor_role?: string | null;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata: Record<string, unknown>;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  created_at: string;
 }
 
 export interface BacktestMetrics {
@@ -141,6 +178,19 @@ export interface DataStatus {
     universe_source?: string | null;
     macro_source?: string | null;
   };
+}
+
+export interface DataRefreshJobsResponse {
+  items: Array<{
+    id: number;
+    dataset: string;
+    source: string;
+    status: string;
+    row_count: number;
+    message?: string | null;
+    started_at: string;
+    finished_at: string;
+  }>;
 }
 
 export interface RunCreateRequest {

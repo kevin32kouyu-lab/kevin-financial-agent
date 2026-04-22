@@ -1,5 +1,6 @@
 /** 报告导出：保证导出内容与页面看到的结论、依据和回测尽量一致。 */
 import { repairText } from "./format";
+import { getClientId } from "./clientIdentity";
 import type { BacktestDetail, Locale } from "./types";
 
 type GenericRecord = Record<string, unknown>;
@@ -45,6 +46,10 @@ function timestampStamp(): string {
 
 function downloadBlob(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
+  downloadBlobObject(filename, blob);
+}
+
+function downloadBlobObject(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -53,6 +58,35 @@ function downloadBlob(filename: string, content: string, mime: string) {
   link.click();
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const match = /filename="([^"]+)"/i.exec(header) || /filename=([^;]+)/i.exec(header);
+  return match?.[1]?.trim() || fallback;
+}
+
+async function downloadPdfFromBackend(runId: string, fallbackName: string) {
+  const clientId = getClientId();
+  const response = await fetch(`/api/v1/runs/${encodeURIComponent(runId)}/export/pdf`, {
+    headers: {
+      ...(clientId ? { "X-Client-Id": clientId } : {}),
+    },
+  });
+  if (!response.ok) {
+    let detail = response.statusText || "PDF export failed";
+    try {
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? body.detail : detail;
+    } catch {
+      const text = await response.text();
+      detail = text || detail;
+    }
+    throw new Error(detail);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(response.headers.get("Content-Disposition"), `${fallbackName}.pdf`);
+  downloadBlobObject(filename, blob);
 }
 
 function buildBulletLines(value: unknown): string[] {
@@ -382,28 +416,12 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
 </html>`;
 }
 
-function openPrintPreview(filename: string, html: string) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!printWindow) {
-    downloadBlob(`${filename}.html`, html, "text/html;charset=utf-8");
-    return;
-  }
-
-  const printableHtml = html.replace(
-    "</body>",
-    `<script>window.addEventListener("load", () => window.setTimeout(() => window.print(), 180));</script></body>`,
-  );
-  printWindow.document.open();
-  printWindow.document.write(printableHtml);
-  printWindow.document.close();
-  printWindow.focus();
-}
-
 export function exportReport(
   result: Record<string, unknown>,
   locale: Locale,
   format: ReportExportFormat,
   backtest?: BacktestDetail | null,
+  runId?: string,
 ) {
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
@@ -419,7 +437,13 @@ export function exportReport(
     return;
   }
   if (format === "pdf") {
-    openPrintPreview(baseName, html);
+    if (!runId) {
+      window.alert(locale === "zh" ? "当前报告缺少 run id，无法生成后端 PDF。" : "This report is missing a run id, so the backend PDF cannot be generated.");
+      return;
+    }
+    void downloadPdfFromBackend(runId, baseName).catch((error) => {
+      window.alert(error instanceof Error ? error.message : locale === "zh" ? "PDF 导出失败。" : "PDF export failed.");
+    });
     return;
   }
   downloadBlob(

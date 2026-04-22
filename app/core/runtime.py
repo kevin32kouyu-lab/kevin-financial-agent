@@ -9,9 +9,11 @@ from app.repositories.sqlite_knowledge_repository import SqliteKnowledgeReposito
 from app.repositories.sqlite_run_repository import SqliteRunRepository
 from app.services.agent_coordinator import AgentCoordinator
 from app.services.analysis_service import AnalysisService
+from app.services.auth_service import AuthService
 from app.services.backtest_service import BacktestService
 from app.services.rag_service import KnowledgeRagService
 from app.services.market_data_service import MarketDataService
+from app.services.pdf_export_service import PdfExportService
 from app.services.profile_service import ProfileService
 from app.services.report_service import ReportService
 from app.services.run_audit_service import RunAuditService
@@ -31,9 +33,11 @@ class ApplicationRuntime:
     analysis_service: AnalysisService
     report_service: ReportService
     agent_service: AgentCoordinator
+    auth_service: AuthService
     profile_service: ProfileService
     run_audit_service: RunAuditService
     backtest_service: BacktestService
+    pdf_export_service: PdfExportService
     rag_service: KnowledgeRagService
     workflow_runner: WorkflowRunner
     run_service: RunService
@@ -42,10 +46,12 @@ class ApplicationRuntime:
         self.repository.init_schema()
         self.knowledge_repository.init_schema()
         self.market_data_service.startup()
+        self.market_data_service.start_refresh_scheduler()
         await self.workflow_runner.start()
 
     async def shutdown(self) -> None:
         await self.workflow_runner.stop()
+        self.market_data_service.stop_refresh_scheduler()
 
 
 def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
@@ -58,9 +64,11 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
     analysis_service = AnalysisService(toolkit=toolkit, market_data_service=market_data_service)
     report_service = ReportService(rag_service=rag_service)
     agent_service = AgentCoordinator(analysis_service, report_service)
+    auth_service = AuthService(repository, resolved_settings)
     profile_service = ProfileService(repository=repository)
     run_audit_service = RunAuditService()
     backtest_service = BacktestService(repository=repository, settings=resolved_settings)
+    pdf_export_service = PdfExportService(settings=resolved_settings)
     workflows = {
         "structured": StructuredAnalysisWorkflow(analysis_service),
         "agent": FinancialAgentWorkflow(agent_service, profile_service=profile_service),
@@ -76,9 +84,11 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
         analysis_service=analysis_service,
         report_service=report_service,
         agent_service=agent_service,
+        auth_service=auth_service,
         profile_service=profile_service,
         run_audit_service=run_audit_service,
         backtest_service=backtest_service,
+        pdf_export_service=pdf_export_service,
         rag_service=rag_service,
         workflow_runner=workflow_runner,
         run_service=run_service,

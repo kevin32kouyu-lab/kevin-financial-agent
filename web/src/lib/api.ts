@@ -2,7 +2,9 @@ import type {
   BacktestCreateRequest,
   BacktestDetail,
   BacktestListResponse,
+  AuthSessionResponse,
   DataStatus,
+  DataRefreshJobsResponse,
   DeleteRunsResponse,
   HistoryFilters,
   PreferenceUpdateRequest,
@@ -179,6 +181,37 @@ export function clearProfilePreferences() {
   });
 }
 
+export function registerAccount(payload: { email: string; password: string; role?: "user" | "admin" }) {
+  return requestJson<AuthSessionResponse>("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function loginAccount(payload: { email: string; password: string }) {
+  return requestJson<AuthSessionResponse>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function logoutAccount() {
+  return requestJson<{ ok: boolean }>("/api/v1/auth/logout", {
+    method: "POST",
+  });
+}
+
+export function getCurrentAccount() {
+  return requestJson<{ user: AuthSessionResponse["user"] | null }>("/api/v1/auth/me");
+}
+
+export function linkClientMemory() {
+  return requestJson<UserPreferenceSummary>("/api/v1/profile/link-client-memory", {
+    method: "POST",
+    body: JSON.stringify({ client_id: getClientId() }),
+  });
+}
+
 export function getDataStatus() {
   return requestJson<DataStatus>("/api/v1/data/status");
 }
@@ -187,6 +220,28 @@ export function refreshDataStatus() {
   return requestJson<DataStatus>("/api/v1/data/refresh", {
     method: "POST",
   });
+}
+
+export function refreshUniverse() {
+  return requestJson<DataStatus>("/api/v1/data/refresh/universe", {
+    method: "POST",
+  });
+}
+
+export function refreshMacro() {
+  return requestJson<Record<string, unknown>>("/api/v1/data/refresh/macro", {
+    method: "POST",
+  });
+}
+
+export function refreshAllData() {
+  return requestJson<DataStatus>("/api/v1/data/refresh/all", {
+    method: "POST",
+  });
+}
+
+export function listDataRefreshJobs(limit = 20) {
+  return requestJson<DataRefreshJobsResponse>(`/api/v1/data/jobs?limit=${limit}`);
 }
 
 export function listBacktests(sourceRunId: string, limit = 5) {

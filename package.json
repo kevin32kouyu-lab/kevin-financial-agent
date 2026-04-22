@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --config vite.config.mjs",
     "build": "vite build --config vite.config.mjs",
-    "preview": "vite preview --config vite.config.mjs"
+    "preview": "vite preview --config vite.config.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
@@ -25,5 +26,8 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
     "vite": "^8.0.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }

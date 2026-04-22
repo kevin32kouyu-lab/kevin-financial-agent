@@ -127,20 +127,28 @@ export function BacktestPanel({
     ? (backtest?.meta?.attribution_summary as Array<unknown>).map((item) => String(item || "")).filter(Boolean)
     : [];
   const assumptions = asRecord(backtest?.meta?.assumptions);
+  const dividendCoverage = asRecord(backtest?.meta?.dividend_coverage);
+  const taxSummary = asRecord(backtest?.meta?.tax_summary);
+  const dataLimitations = Array.isArray(backtest?.meta?.data_limitations)
+    ? (backtest?.meta?.data_limitations as Array<unknown>).map((item) => String(item || "")).filter(Boolean)
+    : [];
   const transactionCostBps = numberValue(assumptions?.transaction_cost_bps);
   const slippageBps = numberValue(assumptions?.slippage_bps);
-  const dividendIncluded = assumptions?.dividend_included === true;
+  const dividendIncluded = dividendCoverage?.dividend_included === true || assumptions?.dividend_included === true;
   const assumptionRows = assumptions
     ? [
         locale === "zh"
           ? `交易成本：${transactionCostBps ?? 0} bps，滑点：${slippageBps ?? 0} bps。`
           : `Transaction cost: ${transactionCostBps ?? 0} bps, slippage: ${slippageBps ?? 0} bps.`,
         locale === "zh"
-          ? `分红：${dividendIncluded ? "已纳入" : "未纳入，除非数据源本身提供总回报价格"}。`
-          : `Dividends: ${dividendIncluded ? "included" : "not included unless the source provides total-return prices"}.`,
+          ? `分红：${dividendIncluded ? "已纳入" : "未纳入"}；模式：${String(assumptions.dividend_mode || "none")}。`
+          : `Dividends: ${dividendIncluded ? "included" : "not included"}; mode: ${String(assumptions.dividend_mode || "none")}.`,
         locale === "zh"
-          ? `再平衡：${String(assumptions.rebalance || "none_buy_and_hold")}。`
-          : `Rebalance: ${String(assumptions.rebalance || "none_buy_and_hold")}.`,
+          ? `税费：${String(assumptions.tax_mode || "none")}，税额估算 ${String(taxSummary?.tax_amount ?? 0)}。`
+          : `Tax: ${String(assumptions.tax_mode || "none")}, estimated tax ${String(taxSummary?.tax_amount ?? 0)}.`,
+        locale === "zh"
+          ? `再平衡：${String(assumptions.rebalance || "none")}。`
+          : `Rebalance: ${String(assumptions.rebalance || "none")}.`,
       ]
     : [];
   const rangeLabels = {
@@ -326,6 +334,13 @@ export function BacktestPanel({
               {assumptionRows.map((item, index) => (
                 <p key={`${item}-${index}`}>{item}</p>
               ))}
+              {dataLimitations.length ? (
+                <ul className="compact-list">
+                  {dataLimitations.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
 

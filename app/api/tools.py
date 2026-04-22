@@ -43,6 +43,30 @@ async def refresh_data_status(request: Request) -> dict:
     return await asyncio.to_thread(runtime.market_data_service.refresh_core_datasets)
 
 
+@router.post("/api/v1/data/refresh/universe")
+async def refresh_universe(request: Request) -> dict:
+    runtime = get_runtime(request.app)
+    return await asyncio.to_thread(runtime.market_data_service.refresh_universe)
+
+
+@router.post("/api/v1/data/refresh/macro")
+async def refresh_macro(request: Request) -> dict:
+    runtime = get_runtime(request.app)
+    return await asyncio.to_thread(runtime.market_data_service.refresh_macro_snapshot)
+
+
+@router.post("/api/v1/data/refresh/all")
+async def refresh_all(request: Request) -> dict:
+    runtime = get_runtime(request.app)
+    return await asyncio.to_thread(runtime.market_data_service.refresh_core_datasets)
+
+
+@router.get("/api/v1/data/jobs")
+async def list_refresh_jobs(request: Request, limit: int = 20) -> dict:
+    runtime = get_runtime(request.app)
+    return runtime.market_data_service.list_refresh_jobs(limit=limit)
+
+
 @router.post("/api/v1/fetch_stock_prices")
 async def fetch_stock_prices(request: Request) -> dict:
     payload = await parse_legacy_payload(request)

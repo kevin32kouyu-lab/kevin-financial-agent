@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
+import threading
+import time
 from typing import Any
 
 import pandas as pd
@@ -67,10 +69,41 @@ class MarketDataService:
     def __init__(self, settings: AppSettings):
         self.settings = settings
         self.repository = SqliteMarketRepository(settings.market_db_path)
+        self._scheduler_stop = threading.Event()
+        self._scheduler_thread: threading.Thread | None = None
 
     def startup(self) -> None:
         self.repository.init_schema()
         self.ensure_seeded()
+
+    def start_refresh_scheduler(self) -> None:
+        """按配置启动轻量后台刷新任务。"""
+        if not self.settings.enable_refresh_jobs or self._scheduler_thread:
+            return
+        self._scheduler_stop.clear()
+        self._scheduler_thread = threading.Thread(target=self._refresh_loop, name="financial-agent-refresh", daemon=True)
+        self._scheduler_thread.start()
+
+    def stop_refresh_scheduler(self) -> None:
+        """停止后台刷新任务。"""
+        if not self._scheduler_thread:
+            return
+        self._scheduler_stop.set()
+        self._scheduler_thread.join(timeout=2)
+        self._scheduler_thread = None
+
+    def _refresh_loop(self) -> None:
+        """简单定时刷新，Railway 可通过环境变量关闭。"""
+        last_universe = 0.0
+        last_macro = 0.0
+        while not self._scheduler_stop.wait(30):
+            now = time.monotonic()
+            if now - last_universe >= self.settings.universe_refresh_interval_hours * 3600:
+                self.refresh_universe()
+                last_universe = now
+            if now - last_macro >= self.settings.macro_refresh_interval_hours * 3600:
+                self.refresh_macro_snapshot()
+                last_macro = now
 
     def ensure_seeded(self) -> None:
         if self.repository.universe_count() > 0:
@@ -78,12 +111,15 @@ class MarketDataService:
         self.refresh_from_seed()
 
     def refresh_from_seed(self) -> dict[str, Any]:
+        started_at = utc_now_iso()
         refreshed_at = utc_now_iso()
         frame = self._load_seed_frame()
         self.repository.replace_universe(frame, source="csv_seed", refreshed_at=refreshed_at)
+        self.record_refresh_job(dataset="security_master", source="csv_seed", row_count=len(frame.index), started_at=started_at)
         return self.get_status()
 
     def refresh_universe(self) -> dict[str, Any]:
+        started_at = utc_now_iso()
         refreshed_at = utc_now_iso()
         try:
             live_frame = self._load_alpaca_universe_frame()
@@ -99,11 +135,13 @@ class MarketDataService:
                 source = "csv_seed_fallback"
 
         self.repository.replace_universe(frame, source=source, refreshed_at=refreshed_at)
+        self.record_refresh_job(dataset="security_master", source=source, row_count=len(frame.index), started_at=started_at)
         status = self.get_status()
         status["refresh_source"] = source
         return status
 
     def refresh_macro_snapshot(self) -> dict[str, Any]:
+        started_at = utc_now_iso()
         refreshed_at = utc_now_iso()
         payload = fetch_macro_regime(self.settings)
         source = str(payload.get("Source") or "unknown")
@@ -113,6 +151,7 @@ class MarketDataService:
             source=source,
             refreshed_at=refreshed_at,
         )
+        self.record_refresh_job(dataset="macro", source=source, row_count=1, started_at=started_at)
         return self.repository.get_macro_snapshot_status()
 
     def refresh_core_datasets(self) -> dict[str, Any]:
@@ -124,6 +163,31 @@ class MarketDataService:
             "macro_source": macro_status.get("source"),
         }
         return status
+
+    def record_refresh_job(
+        self,
+        *,
+        dataset: str,
+        source: str,
+        row_count: int,
+        status: str = "completed",
+        message: str | None = None,
+        started_at: str | None = None,
+    ) -> dict[str, Any]:
+        """记录一次数据刷新任务。"""
+        return self.repository.add_refresh_job(
+            dataset=dataset,
+            source=source,
+            status=status,
+            row_count=row_count,
+            message=message,
+            started_at=started_at or utc_now_iso(),
+            finished_at=utc_now_iso(),
+        )
+
+    def list_refresh_jobs(self, *, limit: int = 20) -> dict[str, Any]:
+        """列出最近的数据刷新任务。"""
+        return {"items": self.repository.list_refresh_jobs(limit=limit)}
 
     def persist_live_package(self, live_package: dict[str, Any]) -> None:
         refreshed_at = utc_now_iso()

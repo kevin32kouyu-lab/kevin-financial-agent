@@ -2,7 +2,51 @@
 
 import logging
 import sys
+import json
 from pathlib import Path
+from datetime import UTC, datetime
+
+
+class JsonFormatter(logging.Formatter):
+    """把日志输出成 JSON，便于 Railway 和监控系统解析。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        for key, value in record.__dict__.items():
+            if key.startswith("_") or key in {
+                "args",
+                "asctime",
+                "created",
+                "exc_info",
+                "exc_text",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "msg",
+                "name",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "thread",
+                "threadName",
+            }:
+                continue
+            payload[key] = value
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def setup_logging(
@@ -17,14 +61,11 @@ def setup_logging(
         log_file: Optional path to log file
         log_format: Optional custom log format
     """
-    # Default format: timestamp - logger name - level - message
+    formatter: logging.Formatter
     if log_format is None:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-    formatter = logging.Formatter(
-        fmt=log_format,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+        formatter = JsonFormatter()
+    else:
+        formatter = logging.Formatter(fmt=log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
     # Configure handlers
     handlers = []

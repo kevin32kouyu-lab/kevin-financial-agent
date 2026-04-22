@@ -94,8 +94,22 @@ class SqliteMarketRepository:
                     refreshed_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS data_refresh_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    row_count INTEGER NOT NULL DEFAULT 0,
+                    message TEXT,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_refresh_log_dataset_refreshed_at
                 ON data_refresh_log(dataset, refreshed_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_refresh_jobs_dataset_finished_at
+                ON data_refresh_jobs(dataset, finished_at DESC);
 
                 CREATE INDEX IF NOT EXISTS idx_sec_filings_ticker_filed_at
                 ON sec_filings(ticker, filed_at DESC);
@@ -230,6 +244,64 @@ class SqliteMarketRepository:
             """,
             (dataset, source, row_count, refreshed_at),
         )
+
+    def add_refresh_job(
+        self,
+        *,
+        dataset: str,
+        source: str,
+        status: str,
+        row_count: int,
+        started_at: str,
+        finished_at: str,
+        message: str | None = None,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO data_refresh_jobs (
+                    dataset, source, status, row_count, message, started_at, finished_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (dataset, source, status, row_count, message, started_at, finished_at),
+            )
+            job_id = int(cursor.lastrowid)
+        return {
+            "id": job_id,
+            "dataset": dataset,
+            "source": source,
+            "status": status,
+            "row_count": row_count,
+            "message": message,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+
+    def list_refresh_jobs(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM data_refresh_jobs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "dataset": row["dataset"],
+                "source": row["source"],
+                "status": row["status"],
+                "row_count": row["row_count"],
+                "message": row["message"],
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+            }
+            for row in rows
+        ]
 
     def upsert_macro_snapshot(
         self,

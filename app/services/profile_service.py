@@ -32,17 +32,33 @@ class ProfileService:
             values={},
         )
 
-    def get_preferences(self, profile_id: str = "default") -> UserPreferenceSummary | None:
+    @staticmethod
+    def user_profile_id(user_id: str | None) -> str | None:
+        """把账户 ID 转成偏好档案 ID。"""
+        return f"user:{user_id}" if user_id else None
+
+    def _resolve_profile_id(self, profile_id: str = "default", user_id: str | None = None) -> str:
+        """登录用户优先使用账户档案，未登录沿用浏览器档案。"""
+        return self.user_profile_id(user_id) or profile_id
+
+    def get_preferences(self, profile_id: str = "default", user_id: str | None = None) -> UserPreferenceSummary | None:
         """读取当前偏好。"""
-        payload = self.repository.get_user_preferences(profile_id)
+        resolved_profile_id = self._resolve_profile_id(profile_id, user_id)
+        payload = self.repository.get_user_preferences(resolved_profile_id)
         if payload is None:
-            return self._empty_summary(profile_id)
+            return self._empty_summary(resolved_profile_id)
         return UserPreferenceSummary.model_validate(payload)
 
-    def update_preferences(self, payload: PreferenceUpdateRequest, profile_id: str = "default") -> UserPreferenceSummary:
+    def update_preferences(
+        self,
+        payload: PreferenceUpdateRequest,
+        profile_id: str = "default",
+        user_id: str | None = None,
+    ) -> UserPreferenceSummary:
         """手动更新偏好。"""
+        resolved_profile_id = self._resolve_profile_id(profile_id, user_id)
         stored = self.repository.upsert_user_preferences(
-            profile_id=profile_id,
+            profile_id=resolved_profile_id,
             values={
                 "capital_amount": payload.capital_amount,
                 "currency": payload.currency,
@@ -65,10 +81,12 @@ class ProfileService:
         run_id: str,
         snapshot: dict[str, Any],
         profile_id: str = "default",
+        user_id: str | None = None,
     ) -> UserPreferenceSummary:
         """把运行结果里的偏好快照持久化。"""
+        resolved_profile_id = self._resolve_profile_id(profile_id, user_id)
         stored = self.repository.upsert_user_preferences(
-            profile_id=profile_id,
+            profile_id=resolved_profile_id,
             values=snapshot.get("values") or {},
             source_run_id=run_id,
             source_query=str(snapshot.get("query") or "").strip() or None,
@@ -78,15 +96,33 @@ class ProfileService:
         )
         return UserPreferenceSummary.model_validate(stored)
 
-    def clear_preferences(self, profile_id: str = "default") -> UserPreferenceSummary:
+    def clear_preferences(self, profile_id: str = "default", user_id: str | None = None) -> UserPreferenceSummary:
         """清空当前档案的长期偏好。"""
+        resolved_profile_id = self._resolve_profile_id(profile_id, user_id)
         stored = self.repository.upsert_user_preferences(
-            profile_id=profile_id,
+            profile_id=resolved_profile_id,
             values={},
             source_run_id=None,
             source_query=None,
             research_mode=None,
             locale="zh",
             memory_applied_fields=[],
+        )
+        return UserPreferenceSummary.model_validate(stored)
+
+    def link_client_memory_to_user(self, *, client_id: str, user_id: str) -> UserPreferenceSummary:
+        """把浏览器档案复制到账户档案。"""
+        source = self.repository.get_user_preferences(client_id)
+        target_profile_id = self.user_profile_id(user_id) or client_id
+        if source is None:
+            return self.get_preferences(profile_id=client_id, user_id=user_id)
+        stored = self.repository.upsert_user_preferences(
+            profile_id=target_profile_id,
+            values=source.get("values") or {},
+            source_run_id=source.get("source_run_id"),
+            source_query=source.get("source_query"),
+            research_mode=source.get("research_mode"),
+            locale=source.get("locale") or "zh",
+            memory_applied_fields=source.get("memory_applied_fields") or [],
         )
         return UserPreferenceSummary.model_validate(stored)

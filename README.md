@@ -28,6 +28,7 @@
 - 支持品牌化首页：大主视觉、强 CTA、三步上手和动态研究场景
 - 支持 `/terminal` 四页化终端：开始研究、研究结论、回测页、历史页独立展示
 - 支持按浏览器隔离的长期记忆：首次打开自动生成本地 `client_id`，不同浏览器彼此分开
+- 支持账户版长期记忆：登录后偏好优先写入账户档案，并可把当前浏览器记忆绑定到账户
 - 支持长期偏好自动学习：本次问题里明确写出的资金、风险、期限、风格和偏好行业，会自动写回长期记忆
 - 支持少重复追问：后续自然语言研究会优先复用已保存的长期偏好，只补空缺，不覆盖本次明确输入
 - 支持结论依据与谨慎提示摘要：不仅给答案，也说明为什么这样判断、哪里需要谨慎
@@ -37,12 +38,15 @@
 - 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
 - 支持“补一句继续研究”：当核心条件不足时，用户可直接补一句信息继续当前任务
 - 支持 3 条固定标准演示问题，便于稳定演示中文、英文和历史回测场景
-- 支持回测 V1.5：历史建议回放（replay）与历史表现参考（reference），并默认展示交易成本、滑点、分红和再平衡口径
+- 支持回测 V2：历史建议回放（replay）与历史表现参考（reference），并可配置交易成本、滑点、分红、简化税费和再平衡口径
+- 支持生产治理基础能力：`/healthz`、`/readyz`、结构化日志、管理员审计事件和 GitHub Actions CI
+- 支持数据刷新任务记录：股票池、宏观和全量刷新可手动触发，并保留最近任务状态
+- 支持 Playwright 端到端 smoke test：覆盖 Terminal 四个主路由
 - 支持任务进度条与“撤回任务”能力（cancelled 状态）
 - 支持 Terminal 非阻断式 3 步新手引导（按需展开查看）
 - 支持用户前台 `/terminal` 与开发者后台 `/debug`
 - 支持 Run / Step / Artifact / Event 级别追踪
-- 支持正式研究报告、图表摘要与报告导出
+- 支持正式研究报告、图表摘要与报告导出，其中 PDF 由后端 Playwright/Chromium 生成真实 `.pdf` 文件
 - 支持多数据源主源 / 备用源 / 本地缓存
 - 支持同公司多代码防错（如 GOOG/GOOGL）：默认去重，用户明确点名时保留多类别
 - 支持逐票卡片中的可点击新闻链接与 SEC 披露链接
@@ -167,10 +171,12 @@
 - 前端随容器一起打包
 - 启动时自动读取 `PORT`
 - 健康检查地址：`/healthz`
+- 就绪检查地址：`/readyz`
 
 详细步骤见：
 
 - [`docs/deployment/railway_deploy.md`](docs/deployment/railway_deploy.md)
+- [`docs/plans/2026-04-22-production-hardening-roadmap.md`](docs/plans/2026-04-22-production-hardening-roadmap.md)
 
 ## 目录结构
 
@@ -192,12 +198,14 @@ Financial-agent/
 │   ├── src/components/      # 页面组件
 │   ├── src/hooks/           # 状态与数据 hook
 │   ├── src/lib/             # API、i18n、格式化、导出
+│   ├── e2e/                 # Playwright 端到端测试
 │   └── src/views/           # /terminal 与 /debug 入口页面
 ├── data/
 │   ├── seed/                # 种子数据
 │   └── runtime/             # SQLite 与运行期缓存（已忽略）
 ├── legacy/                  # 历史兼容代码与旧静态资源
 ├── tests/                   # 单元测试
+├── .github/workflows/       # CI 自动验证
 ├── scripts/                 # 启动或辅助脚本
 ├── main.py                  # 根入口，兼容 `python main.py`
 └── README.md
@@ -453,6 +461,18 @@ $env:MARKET_PROXY_URL="http://127.0.0.1:7890"
 npm run build
 ```
 
+端到端 smoke test：
+
+```powershell
+npm run test:e2e
+```
+
+PDF 导出依赖：
+
+```powershell
+npx playwright install chromium
+```
+
 ## 安全说明
 
 - private 仓库不等于安全仓库
@@ -464,7 +484,7 @@ npm run build
 
 - 当前 RAG 采用本地 SQLite FTS5，不接外部向量数据库
 - 当前多智能体是“可控多角色流程”，不是完全自治 agent 辩论系统
-- 长期记忆当前按浏览器隔离，还不是跨设备同步的正式账户体系
+- 账户体系已支持本地登录和账户记忆，但还没有第三方 OAuth 和完整多租户后台
 - Smart Money 目前仍然是公开持仓代理，不是真正的机构级资金流
 - 免费数据源容易遇到限流，系统目前通过备用源与本地缓存缓解，但无法完全避免
 - Alpaca 全美股票池已接好结构，但需要用户自行配置 key / secret
@@ -498,7 +518,7 @@ npm run build
 - 3 条固定标准演示问题（中文稳健型 / 英文成长型 / 历史回测型）
 - `/terminal` 双模式：实时研究 + 历史回测研究
 - 回测接口与前端联动（replay / reference）
-- 报告区图表化与导出（PDF/HTML/Markdown/JSON）
+- 报告区图表化与导出（后端真 PDF / HTML / Markdown / JSON）
 - `/debug` 保留开发者链路可观测能力
 - Docker 单服务部署准备（动态 PORT + `/healthz` + Railway 部署文档）
 - 本地知识库 RAG 与报告后结论校验层
