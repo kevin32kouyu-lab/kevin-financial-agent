@@ -1,6 +1,7 @@
 /** 报告导出：保证导出内容与页面看到的结论、依据和回测尽量一致。 */
 import { repairText } from "./format";
 import { getClientId } from "./clientIdentity";
+import { getEffectiveInvestmentCharts, getReportOutput as getReportOutputByKind } from "./reportOutputs";
 import type { BacktestDetail, Locale } from "./types";
 
 type GenericRecord = Record<string, unknown>;
@@ -94,13 +95,8 @@ function buildBulletLines(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => repairText(item, "")).filter(Boolean) : [];
 }
 
-function getReportOutput(result: Record<string, unknown>, kind: ReportKind): GenericRecord | null {
-  const reportOutputs = asRecord(result.report_outputs);
-  return asRecord(reportOutputs?.[kind]);
-}
-
 function getOutputMarkdown(result: Record<string, unknown>, kind: ReportKind): string {
-  return repairText(getReportOutput(result, kind)?.markdown, "");
+  return repairText(getReportOutputByKind(result, kind)?.markdown, "");
 }
 
 function markdownToHtml(markdown: string): string {
@@ -165,9 +161,31 @@ function buildBacktestSummary(backtest: BacktestDetail | null | undefined, local
   ];
 }
 
+function buildEffectiveChartNotes(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null): string[] {
+  const charts = getEffectiveInvestmentCharts(result, backtest);
+  const backtestChart = asRecord(charts?.portfolio_vs_benchmark_backtest);
+  const backtestSummary = asRecord(backtestChart?.summary);
+  const metrics = asRecord(backtestSummary?.metrics);
+  if (!backtestChart || repairText(backtestChart.status, "") === "missing" || !metrics) {
+    return [];
+  }
+  return [
+    locale === "zh" ? "## 报告图表摘要" : "## Report chart notes",
+    locale === "zh"
+      ? "- 组合 vs 基准回测图已按当前已加载回测结果更新。"
+      : "- The portfolio vs benchmark chart has been refreshed with the currently loaded backtest.",
+    `- ${locale === "zh" ? "组合收益" : "Portfolio return"}: ${repairText(metrics.total_return_pct, "N/A")}%`,
+    `- ${locale === "zh" ? "基准收益" : "Benchmark return"}: ${repairText(metrics.benchmark_return_pct, "N/A")}%`,
+    "",
+  ];
+}
+
 function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
   const outputMarkdown = getOutputMarkdown(result, kind);
-  if (outputMarkdown) return outputMarkdown;
+  if (outputMarkdown) {
+    const appended = kind === "investment" ? [...buildEffectiveChartNotes(result, locale, backtest), ...buildBacktestSummary(backtest, locale)] : [];
+    return appended.length ? [outputMarkdown, "", ...appended].join("\n") : outputMarkdown;
+  }
   const finalReport = repairText(result.final_report, "");
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
@@ -256,6 +274,7 @@ function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, ba
 function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
   const outputMarkdown = getOutputMarkdown(result, kind);
   if (outputMarkdown) {
+    const renderedMarkdown = buildReportMarkdown(result, locale, backtest, kind);
     const title = kind === "development"
       ? locale === "zh" ? "开发报告" : "Development Report"
       : locale === "zh" ? "投资报告" : "Investment Report";
@@ -273,7 +292,7 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
     p, li { line-height: 1.75; }
   </style>
 </head>
-<body><main><article>${markdownToHtml(outputMarkdown)}</article></main></body>
+<body><main><article>${markdownToHtml(renderedMarkdown)}</article></main></body>
 </html>`;
   }
   const reportBriefing = asRecord(result.report_briefing);

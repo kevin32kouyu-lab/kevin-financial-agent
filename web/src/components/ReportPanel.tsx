@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatDateTime, formatJson, formatScore, repairText } from "../lib/format";
 import { exportReport, type ReportKind } from "../lib/reportExport";
+import { getEffectiveInvestmentCharts, getReportOutput as getReportOutputByKind, readDevelopmentDiagnostic } from "../lib/reportOutputs";
 import type { BacktestDetail, DataStatus, Locale } from "../lib/types";
 import type { LocalePack } from "../lib/i18n";
 import { ResearchCharts } from "./ResearchCharts";
@@ -332,11 +333,6 @@ function renderReportMarkdown(text: string) {
   });
 }
 
-function getReportOutput(result: GenericRecord, kind: ReportKind): GenericRecord | null {
-  const outputs = asRecord(result.report_outputs);
-  return asRecord(outputs?.[kind]);
-}
-
 function chartValue(item: GenericRecord, keys: string[]): number | null {
   for (const key of keys) {
     const value = toNumber(item[key]);
@@ -353,6 +349,71 @@ function chartLabel(item: GenericRecord, keys: string[]): string {
   return "N/A";
 }
 
+function buildLinePath(values: number[], width: number, height: number, padding = 20): string {
+  if (!values.length) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = Math.max(max - min, 1);
+  return values
+    .map((value, index) => {
+      const x = padding + (index / Math.max(values.length - 1, 1)) * (width - padding * 2);
+      const y = height - padding - ((value - min) / spread) * (height - padding * 2);
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function BacktestChartCard({ locale, title, chart }: { locale: Locale; title: string; chart: GenericRecord | null }) {
+  const points = asArray(chart?.points)
+    .map((item) => ({
+      portfolio: toNumber(item.portfolio_value ?? item.portfolio_return_pct),
+      benchmark: toNumber(item.benchmark_value ?? item.benchmark_return_pct),
+    }))
+    .filter((item) => item.portfolio !== null && item.benchmark !== null) as Array<{ portfolio: number; benchmark: number }>;
+  const summary = asRecord(chart?.summary);
+  const metrics = asRecord(summary?.metrics);
+
+  if (toText(chart?.status, "") === "missing" || !points.length) {
+    return (
+      <article className="chart-card output-chart-card">
+        <div>
+          <p className="eyebrow">{locale === "zh" ? "报告图表" : "Report chart"}</p>
+          <h3>{title}</h3>
+        </div>
+        <p className="section-note">{toText(chart?.message, locale === "zh" ? "数据不足，未生成该图表。" : "Data is insufficient; this chart was not generated.")}</p>
+      </article>
+    );
+  }
+
+  const chartWidth = 320;
+  const chartHeight = 180;
+  const portfolioPath = buildLinePath(points.map((item) => item.portfolio), chartWidth, chartHeight);
+  const benchmarkPath = buildLinePath(points.map((item) => item.benchmark), chartWidth, chartHeight);
+
+  return (
+    <article className="chart-card output-chart-card">
+      <div>
+        <p className="eyebrow">{locale === "zh" ? "报告图表" : "Report chart"}</p>
+        <h3>{title}</h3>
+      </div>
+      <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="chart" role="img" aria-label={title}>
+        <rect x="0" y="0" width={chartWidth} height={chartHeight} rx="18" fill="rgba(15, 23, 42, 0.04)" />
+        <path d={portfolioPath} fill="none" stroke="#17645e" strokeWidth="3.5" strokeLinecap="round" />
+        <path d={benchmarkPath} fill="none" stroke="#a05d25" strokeWidth="3" strokeDasharray="8 6" strokeLinecap="round" />
+      </svg>
+      <div className="chip-row">
+        <span className="chip positive">{locale === "zh" ? "组合" : "Portfolio"}</span>
+        <span className="chip neutral">{locale === "zh" ? "基准" : "Benchmark"}</span>
+      </div>
+      {metrics ? (
+        <p className="section-note">
+          {locale === "zh" ? "组合" : "Portfolio"} {toText(metrics.total_return_pct, "N/A")}% · {locale === "zh" ? "基准" : "Benchmark"} {toText(metrics.benchmark_return_pct, "N/A")}%
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: GenericRecord | null }) {
   const sections = [
     {
@@ -361,6 +422,7 @@ function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: Generi
       valueKeys: ["weight", "weight_pct", "allocation"],
       labelKeys: ["ticker", "name"],
       suffix: "%",
+      type: "bar",
     },
     {
       key: "candidate_score_comparison",
@@ -368,13 +430,15 @@ function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: Generi
       valueKeys: ["composite", "composite_score", "score"],
       labelKeys: ["ticker", "name"],
       suffix: "",
+      type: "bar",
     },
     {
       key: "portfolio_vs_benchmark_backtest",
       title: locale === "zh" ? "组合 vs 基准回测" : "Portfolio vs Benchmark Backtest",
-      valueKeys: ["portfolio_return_pct", "total_return_pct", "value"],
-      labelKeys: ["name", "label", "ticker"],
-      suffix: "%",
+      valueKeys: [] as string[],
+      labelKeys: [] as string[],
+      suffix: "",
+      type: "backtest",
     },
     {
       key: "risk_contribution",
@@ -382,6 +446,7 @@ function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: Generi
       valueKeys: ["value", "risk", "risk_score", "weight"],
       labelKeys: ["name", "category", "ticker"],
       suffix: "%",
+      type: "bar",
     },
   ];
 
@@ -389,6 +454,9 @@ function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: Generi
     <div className="research-chart-grid output-chart-grid">
       {sections.map((section) => {
         const chart = asRecord(charts?.[section.key]);
+        if (section.type === "backtest") {
+          return <BacktestChartCard key={section.key} locale={locale} title={section.title} chart={chart} />;
+        }
         const items = asArray(chart?.items);
         const isMissing = toText(chart?.status, "") === "missing" || !items.length;
         const maxValue = Math.max(1, ...items.map((item) => chartValue(item, section.valueKeys) || 0));
@@ -457,19 +525,19 @@ function DevelopmentReportView({
       <div className="summary-grid four-up">
         <div className="mini-card">
           <h3>{locale === "zh" ? "Agent 数量" : "Agent count"}</h3>
-          <strong>{toText(diagnostics?.agent_count, String(agentTrace.length || 0))}</strong>
+          <strong>{toText(readDevelopmentDiagnostic(diagnostics, "agent_count"), String(agentTrace.length || 0))}</strong>
         </div>
         <div className="mini-card">
           <h3>{locale === "zh" ? "RAG 证据" : "RAG evidence"}</h3>
-          <strong>{toText(diagnostics?.rag_evidence_count, "0")}</strong>
+          <strong>{toText(readDevelopmentDiagnostic(diagnostics, "evidence_count"), "0")}</strong>
         </div>
         <div className="mini-card">
           <h3>{locale === "zh" ? "校验提醒" : "Validation warnings"}</h3>
-          <strong>{toText(diagnostics?.validation_warning_count, "0")}</strong>
+          <strong>{toText(readDevelopmentDiagnostic(diagnostics, "validation_check_count"), "0")}</strong>
         </div>
         <div className="mini-card">
           <h3>{locale === "zh" ? "回测状态" : "Backtest status"}</h3>
-          <strong>{toText(diagnostics?.backtest_status, backtest ? "available" : "missing")}</strong>
+          <strong>{toText(readDevelopmentDiagnostic(diagnostics, "backtest_status"), backtest ? "available" : "missing")}</strong>
         </div>
       </div>
 
@@ -674,10 +742,10 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
   const meta = asRecord(reportBriefing.meta);
   const executive = asRecord(reportBriefing.executive);
   const macro = asRecord(reportBriefing.macro);
-  const investmentOutput = getReportOutput(result, "investment");
-  const developmentOutput = getReportOutput(result, "development");
+  const investmentOutput = getReportOutputByKind(result, "investment");
+  const developmentOutput = getReportOutputByKind(result, "development");
   const hasDevelopmentOutput = Boolean(repairText(developmentOutput?.markdown, ""));
-  const investmentCharts = asRecord(investmentOutput?.charts);
+  const investmentCharts = getEffectiveInvestmentCharts(result, backtest);
   const parsedIntent = asRecord(result.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);
   const researchContext = asRecord(result.research_context);

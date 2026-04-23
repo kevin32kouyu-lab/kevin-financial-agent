@@ -30,8 +30,9 @@ def _sample_report_result() -> dict:
                 "markdown": "# Agentic Research Development Report\n\n## Agent Workflow\n\nEvidenceAgent retrieved evidence.",
                 "diagnostics": {
                     "agent_count": 2,
-                    "rag_evidence_count": 1,
-                    "validation_warning_count": 0,
+                    "evidence_count": 1,
+                    "validation_check_count": 0,
+                    "backtest_status": "missing",
                 },
             },
         },
@@ -106,6 +107,8 @@ def test_pdf_export_development_kind_uses_development_report():
     assert "Agent Workflow" in html
     assert "EvidenceAgent retrieved evidence" in html
     assert "Development diagnostics" in html
+    assert "Evidence Count" in html
+    assert "Validation Check Count" in html
 
 
 @pytest.mark.asyncio

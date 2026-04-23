@@ -324,9 +324,8 @@ def _build_development_report_html(
     generated_at = _text(meta.get("generated_at") or result.get("updated_at"), "")
     backtest_summary = _build_development_backtest_summary(backtest_payload)
     diagnostics_rows = "".join(
-        f"<tr><th>{_esc(key.replace('_', ' ').title())}</th><td>{_esc(value)}</td></tr>"
-        for key, value in diagnostics.items()
-        if key in {"agent_count", "rag_evidence_count", "validation_warning_count", "backtest_status"}
+        f"<tr><th>{_esc(label)}</th><td>{_esc(value)}</td></tr>"
+        for label, value in _development_diagnostic_rows(diagnostics)
     )
     return f"""<!doctype html>
 <html lang="en">
@@ -450,6 +449,16 @@ def _build_development_backtest_summary(backtest: Any) -> str:
         f"dividend {_esc(assumptions.get('dividend_mode'))}, "
         f"rebalance {_esc(assumptions.get('rebalance'))}.</p>"
     )
+
+
+def _development_diagnostic_rows(diagnostics: dict[str, Any]) -> list[tuple[str, Any]]:
+    """统一开发报告诊断字段，优先读取新字段并兼容历史别名。"""
+    return [
+        ("Agent Count", diagnostics.get("agent_count")),
+        ("Evidence Count", diagnostics.get("evidence_count", diagnostics.get("rag_evidence_count"))),
+        ("Validation Check Count", diagnostics.get("validation_check_count", diagnostics.get("validation_warning_count"))),
+        ("Backtest Status", diagnostics.get("backtest_status")),
+    ]
 
 
 def _build_investment_chart_block(charts: dict[str, Any], backtest: Any) -> str:

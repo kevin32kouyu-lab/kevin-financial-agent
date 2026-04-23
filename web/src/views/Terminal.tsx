@@ -4,12 +4,23 @@ import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
 import { ReportPanel } from "../components/ReportPanel";
+import { AccountPanel } from "../components/terminal/AccountPanel";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
+import { isFollowedRun, readFollowedRuns, toggleFollowedRun, type FollowedRunEntry } from "../lib/followedRuns";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
+import {
+  appendPromptChip,
+  buildPromptChips,
+  buildResearchEntryModes,
+  buildResearchPreview,
+  buildTrustSummary,
+  type ResearchEntryMode,
+  type TrustSummary,
+} from "../lib/terminalExperience";
 import { useResearchConsole } from "../hooks";
 import { buildTerminalHref, type TerminalPage, useTerminalNavigation } from "../hooks/useTerminalNavigation";
 import type { UserPreferenceSummary } from "../lib/types";
@@ -265,6 +276,7 @@ function TerminalRouteTabs({
 function ConclusionSummary({
   locale,
   decisionSummary,
+  trustSummary,
   activeRunId,
   queryText,
   contextChips,
@@ -272,10 +284,13 @@ function ConclusionSummary({
   uiStage,
   statusCopy,
   runUpdatedAt,
+  isFollowed,
+  onToggleFollow,
   onNavigate,
 }: {
   locale: "zh" | "en";
   decisionSummary: ReturnType<typeof buildDecisionSummary>;
+  trustSummary: TrustSummary;
   activeRunId: string | null;
   queryText: string;
   contextChips: string[];
@@ -283,6 +298,8 @@ function ConclusionSummary({
   uiStage: string;
   statusCopy: string;
   runUpdatedAt: string;
+  isFollowed: boolean;
+  onToggleFollow: () => void;
   onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   return (
@@ -327,6 +344,9 @@ function ConclusionSummary({
                 {locale === "zh" ? "查看历史页" : "Open archive"}
               </a>
             </Button>
+            <Button variant="secondary" size="sm" type="button" onClick={onToggleFollow}>
+              {locale === "zh" ? (isFollowed ? "取消跟踪" : "持续跟踪") : isFollowed ? "Unfollow thesis" : "Track this thesis"}
+            </Button>
           </div>
         </div>
 
@@ -354,9 +374,74 @@ function ConclusionSummary({
             <strong>{decisionSummary.fitScore}</strong>
           </article>
           <article className="mini-card">
-            <span className="mini-label">{locale === "zh" ? "市场姿态" : "Market stance"}</span>
-            <strong>{decisionSummary.stance}</strong>
+            <span className="mini-label">{locale === "zh" ? "可信度" : "Confidence"}</span>
+            <strong>{trustSummary.confidenceLevel}</strong>
           </article>
+        </div>
+
+        <div className="terminal-holdings-strip">
+          <div className="section-head tight">
+            <div>
+              <p className="eyebrow">{locale === "zh" ? "推荐持仓" : "Recommended holdings"}</p>
+              <h2>{locale === "zh" ? "这次建议怎么配" : "How the recommendation is sized"}</h2>
+            </div>
+          </div>
+          {trustSummary.holdings.length ? (
+            <div className="terminal-holdings-list">
+              {trustSummary.holdings.map((item) => (
+                <article key={item.ticker} className="mini-card terminal-holding-card">
+                  <span className="mini-label">{item.verdict}</span>
+                  <strong>{item.ticker}</strong>
+                  <p>{item.weight !== null ? `${item.weight.toFixed(1)}%` : locale === "zh" ? "待定" : "Pending"}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "推荐持仓" : "Recommended holdings"}</span>
+              <strong>{decisionSummary.topPick}</strong>
+              <p>{locale === "zh" ? "当前结果暂未生成明确仓位，先从优先标的开始看。" : "No explicit weights yet; start from the top pick."}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="terminal-proof-band">
+          <div className="section-head tight">
+            <div>
+              <p className="eyebrow">{locale === "zh" ? "可信度摘要" : "Why this is credible"}</p>
+              <h2>{locale === "zh" ? "为什么可以先信这份结论" : "Why this is credible"}</h2>
+            </div>
+          </div>
+          <div className="terminal-proof-grid">
+            <article className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "证据条数" : "Evidence items"}</span>
+              <strong>{trustSummary.evidenceCount}</strong>
+              <p>{locale === "zh" ? `覆盖 ${trustSummary.candidateCount} 个候选。` : `${trustSummary.candidateCount} candidates checked.`}</p>
+            </article>
+            <article className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "最新依据日期" : "Latest evidence"}</span>
+              <strong>{trustSummary.latestEvidenceDate}</strong>
+              <p>{decisionSummary.stance}</p>
+            </article>
+            <article className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "结论校验" : "Validation"}</span>
+              <strong>{trustSummary.validationLabel}</strong>
+              <p>
+                {trustSummary.degradedModules.length
+                  ? locale === "zh"
+                    ? `${trustSummary.degradedModules.length} 个模块降级。`
+                    : `${trustSummary.degradedModules.length} degraded modules.`
+                  : locale === "zh"
+                    ? "当前未看到明显降级。"
+                    : "No major degraded coverage."}
+              </p>
+            </article>
+            <article className="mini-card">
+              <span className="mini-label">{locale === "zh" ? "回测状态" : "Backtest"}</span>
+              <strong>{trustSummary.backtestLabel}</strong>
+              <p>{locale === "zh" ? "需要时可直接切到回测页复核。" : "Open the backtest page when you need a replay check."}</p>
+            </article>
+          </div>
         </div>
       </article>
 
@@ -555,6 +640,8 @@ function ArchivePage({
   activeRunId,
   runDetail,
   auditSummary,
+  followedRuns,
+  onContinueFromRun,
   onNavigate,
 }: {
   locale: "zh" | "en";
@@ -568,6 +655,8 @@ function ArchivePage({
   activeRunId: string | null;
   runDetail: ReturnType<typeof useResearchConsole>["runDetail"];
   auditSummary: ReturnType<typeof useResearchConsole>["auditSummary"];
+  followedRuns: FollowedRunEntry[];
+  onContinueFromRun: (runId: string) => Promise<boolean>;
   onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   const result = runDetail?.result || null;
@@ -582,8 +671,8 @@ function ArchivePage({
             <h1>{locale === "zh" ? "最近研究记录" : "Recent research runs"}</h1>
             <p className="lead-copy">
               {locale === "zh"
-                ? "这里集中查看过去的研究任务，并直接打开对应的正式报告或回测页。"
-                : "Review previous runs here and jump directly into the report or backtest page."}
+                ? "这里既能回看旧报告，也能把上一份研究直接带回提问页继续跟进。"
+                : "Review earlier runs here and carry any thesis back into the ask page for a follow-up."}
             </p>
           </div>
         </div>
@@ -630,6 +719,18 @@ function ArchivePage({
                       {locale === "zh" ? "打开回测" : "Open backtest"}
                     </a>
                   </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      void onContinueFromRun(item.id).then((ok) => {
+                        if (ok) onNavigate("ask", null);
+                      });
+                    }}
+                  >
+                    {locale === "zh" ? "继续跟进" : "Continue follow-up"}
+                  </Button>
                 </div>
               </article>
             ))}
@@ -672,6 +773,19 @@ function ArchivePage({
               <span className="mini-label">{locale === "zh" ? "可信度" : "Confidence"}</span>
               <strong>{toText(auditSummary?.confidence_level, "N/A")}</strong>
             </div>
+            <div className="button-row">
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!activeRunId) return;
+                  void onContinueFromRun(activeRunId).then((ok) => {
+                    if (ok) onNavigate("ask", null);
+                  });
+                }}
+              >
+                {locale === "zh" ? "继续跟进这条研究" : "Continue follow-up"}
+              </Button>
+            </div>
             {asStringArray(auditSummary?.validation_flags).length ? (
               <div className="mini-card">
                 <span className="mini-label">{locale === "zh" ? "校验提示" : "Validation flags"}</span>
@@ -698,6 +812,27 @@ function ArchivePage({
             {locale === "zh" ? "先从左侧选择一条历史记录，这里会显示它的摘要。" : "Select a run from the left to preview its summary here."}
           </div>
         )}
+
+        <div className="mini-card">
+          <span className="mini-label">{locale === "zh" ? "持续跟踪列表" : "Tracked theses"}</span>
+          {followedRuns.length ? (
+            <div className="terminal-follow-list">
+              {followedRuns.slice(0, 4).map((item) => (
+                <button
+                  key={item.runId}
+                  type="button"
+                  className="terminal-follow-pill"
+                  onClick={() => onNavigate("conclusion", item.runId)}
+                >
+                  <strong>{item.topPick || formatRunTitle(item.title, locale)}</strong>
+                  <span>{item.updatedAt ? formatDateTime(item.updatedAt, locale) : item.query}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p>{locale === "zh" ? "你持续跟踪的研究会出现在这里。" : "Tracked theses will appear here."}</p>
+          )}
+        </div>
       </aside>
       </section>
     </section>
@@ -807,14 +942,23 @@ export function TerminalView() {
     sampleScenarios,
     creatingRun,
     cancelingRun,
+    currentAccount,
+    accountLoading,
+    authSubmitting,
+    accountNotice,
     historyLoading,
     runLoading,
     setAgentForm,
+    loginWithAccount,
+    registerWithAccount,
+    logoutCurrentAccount,
+    syncBrowserMemoryToAccount,
     createAgentRun,
     cancelActiveRun,
     openRun,
     loadBacktest,
     runBacktest,
+    continueFromRun,
     applySampleScenario,
   } = useResearchConsole("agent");
   const { terminalPage, routeRunId, navigateTerminal, replaceTerminalRun } = useTerminalNavigation(activeRunId);
@@ -825,6 +969,8 @@ export function TerminalView() {
   >("idle");
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [initialRunResolved, setInitialRunResolved] = useState(false);
+  const [followedRuns, setFollowedRuns] = useState<FollowedRunEntry[]>(() => readFollowedRuns());
+  const [researchEntryMode, setResearchEntryMode] = useState<ResearchEntryMode>("single");
   const previousRunStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -913,13 +1059,22 @@ export function TerminalView() {
   const followUpQuestion = toText(asRecord(result)?.follow_up_question, "");
   const missingFields = asStringArray(agentControl?.missing_critical_info).map((item) => readableField(locale, item));
   const decisionSummary = buildDecisionSummary(result, copy, locale);
+  const trustSummary = buildTrustSummary(result, backtestDetail, locale);
   const queryText = extractBoundQuery(result, agentForm.query, locale);
   const contextChips = buildContextChips(locale, terminalMode, asOfDate, referenceStartDate, runDetail?.run.status);
+  const researchEntryModes = useMemo(() => buildResearchEntryModes(locale), [locale]);
+  const activeEntryMode = useMemo(
+    () => researchEntryModes.find((item) => item.key === researchEntryMode) || researchEntryModes[0],
+    [researchEntryModes, researchEntryMode],
+  );
+  const promptChips = useMemo(() => buildPromptChips(locale, researchEntryMode), [locale, researchEntryMode]);
+  const researchPreview = useMemo(() => buildResearchPreview(locale, researchEntryMode), [locale, researchEntryMode]);
   const runUpdatedAt = runDetail
     ? formatDateTime(runDetail.run.updated_at, locale)
     : locale === "zh"
       ? "尚未开始"
       : "Not started";
+  const followed = isFollowedRun(followedRuns, activeRunId);
 
   const statusCopy = useMemo(() => {
     if (progress.textKey === "queued") return copy.terminal.queued;
@@ -991,6 +1146,18 @@ export function TerminalView() {
     void createAgentRun(nextQuery);
   }
 
+  function toggleCurrentRunFollow() {
+    if (!activeRunId || !runDetail) return;
+    const next = toggleFollowedRun(followedRuns, {
+      runId: activeRunId,
+      title: runDetail.run.title,
+      query: queryText,
+      topPick: decisionSummary.topPick === "N/A" ? "" : decisionSummary.topPick,
+      updatedAt: runDetail.run.updated_at,
+    });
+    setFollowedRuns(next);
+  }
+
   return (
     <div className="terminal-route-shell">
       <MotionBackdrop enabled={motionEnabled} level={motionLevel} className="terminal-motion" />
@@ -1014,6 +1181,17 @@ export function TerminalView() {
           <Button variant="secondary" size="sm" className="compact-action" onClick={toggleMotion}>
             {locale === "zh" ? `动效${motionEnabled ? "开启" : "关闭"}` : `Motion ${motionEnabled ? "On" : "Off"}`}
           </Button>
+          <AccountPanel
+            locale={locale}
+            currentAccount={currentAccount}
+            loading={accountLoading}
+            submitting={authSubmitting}
+            notice={accountNotice}
+            onLogin={loginWithAccount}
+            onRegister={registerWithAccount}
+            onLogout={logoutCurrentAccount}
+            onSyncMemory={syncBrowserMemoryToAccount}
+          />
         </div>
       </header>
 
@@ -1036,20 +1214,71 @@ export function TerminalView() {
                   </h1>
                   <p className="section-note terminal-ask-note">
                     {locale === "zh"
-                      ? "这一页只负责提问、查看进度和补充必要信息。系统理解、长期记忆和覆盖说明不再占用你的首屏。"
-                      : "This page focuses on asking, tracking progress, and supplying follow-up details only. System-side context stays out of the way."}
+                      ? "用一句自然语言开始，也可以先点几个结构化提示，把风险、期限和目标说得更清楚。"
+                      : "Start in natural language, or tap a few structured hints so the system knows your risk, horizon, and goal faster."}
                   </p>
                 </div>
+              </div>
+
+              <div className="terminal-entry-mode-band">
+                <div className="terminal-example-caption">{locale === "zh" ? "从哪种问题开始" : "Choose a starting point"}</div>
+                <div className="terminal-entry-mode-row">
+                  {researchEntryModes.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={item.key === researchEntryMode ? "terminal-entry-mode-pill active" : "terminal-entry-mode-pill"}
+                      onClick={() => setResearchEntryMode(item.key)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="section-note terminal-entry-mode-note">{activeEntryMode.body}</p>
               </div>
 
               <label className="field">
                 <span>{copy.control.fields.query}</span>
                 <textarea
                   value={agentForm.query}
-                  placeholder={copy.control.placeholders.query}
+                  placeholder={activeEntryMode.placeholder}
                   onChange={(event) => setAgentForm({ query: event.target.value })}
                 />
               </label>
+
+              <div className="terminal-chip-band">
+                <div className="terminal-example-caption">{locale === "zh" ? "快速补充条件" : "Add structured hints"}</div>
+                <div className="terminal-sample-strip">
+                  {promptChips.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      className="terminal-sample-chip"
+                      onClick={() => setAgentForm({ query: appendPromptChip(agentForm.query, chip.text) })}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="terminal-preview-panel">
+                <div className="section-head tight">
+                  <div>
+                    <p className="eyebrow">{locale === "zh" ? "研究预览" : "What the system will do"}</p>
+                    <h2>{locale === "zh" ? "系统会先做什么" : "What the system will do"}</h2>
+                  </div>
+                </div>
+                <div className="terminal-preview-grid">
+                  {researchPreview.map((item, index) => (
+                    <article key={item.title} className="mini-card terminal-preview-card">
+                      <span className="mini-label">{locale === "zh" ? `步骤 ${index + 1}` : `Step ${index + 1}`}</span>
+                      <h3>{item.title}</h3>
+                      <p>{item.body}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
 
               <div className="terminal-example-block">
                 <div className="terminal-example-caption">{locale === "zh" ? "示例问题" : "Example prompts"}</div>
@@ -1300,6 +1529,7 @@ export function TerminalView() {
               <ConclusionSummary
                 locale={locale}
                 decisionSummary={decisionSummary}
+                trustSummary={trustSummary}
                 activeRunId={activeRunId}
                 queryText={queryText}
                 contextChips={contextChips}
@@ -1307,6 +1537,8 @@ export function TerminalView() {
                 uiStage={uiStage}
                 statusCopy={statusCopy}
                 runUpdatedAt={runUpdatedAt}
+                isFollowed={followed}
+                onToggleFollow={toggleCurrentRunFollow}
                 onNavigate={navigateTerminal}
               />
 
@@ -1361,6 +1593,8 @@ export function TerminalView() {
           activeRunId={activeRunId}
           runDetail={runDetail}
           auditSummary={auditSummary}
+          followedRuns={followedRuns}
+          onContinueFromRun={continueFromRun}
           onNavigate={navigateTerminal}
         />
       ) : null}

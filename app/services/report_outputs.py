@@ -430,15 +430,7 @@ def _build_investment_charts(report_briefing: GenericRecord, backtest: Any = Non
         },
         "risk_contribution": {
             "status": "available" if risk_register else "missing",
-            "items": [
-                {
-                    "category": _text(item.get("category"), "Risk"),
-                    "ticker": _text(item.get("ticker"), "Portfolio"),
-                    "summary": _text(item.get("summary")),
-                    "severity": _text(item.get("severity"), "medium"),
-                }
-                for item in risk_register
-            ],
+            "items": _build_risk_contribution_items(risk_register),
         },
     }
 
@@ -456,18 +448,60 @@ def _build_development_diagnostics(
     evidence = _records(meta.get("retrieved_evidence"))
     checks = _records(meta.get("validation_checks"))
     backtest_payload = _record(_plain(backtest))
+    backtest_summary = _record(backtest_payload.get("summary"))
+    backtest_points = _records(backtest_payload.get("points"))
     assumptions = _record(_record(backtest_payload.get("meta")).get("assumptions"))
+    evidence_count = len(evidence)
+    validation_check_count = len(checks)
     return {
         "agent_count": len(agent_trace),
-        "evidence_count": len(evidence),
-        "validation_check_count": len(checks),
+        "evidence_count": evidence_count,
+        "validation_check_count": validation_check_count,
+        "rag_evidence_count": evidence_count,
+        "validation_warning_count": validation_check_count,
         "citation_section_count": len(_record(meta.get("citation_map"))),
         "research_plan_objective": research_plan.get("objective"),
-        "backtest_status": "available" if backtest_payload else "missing",
+        "backtest_status": "available" if backtest_summary or backtest_points else "missing",
         "backtest_assumptions": [f"{key}={value}" for key, value in assumptions.items()],
         "report_mode": bundle.get("report_mode"),
         "report_error": bundle.get("report_error"),
     }
+
+
+def _build_risk_contribution_items(risk_register: list[GenericRecord]) -> list[GenericRecord]:
+    """把风险登记整理成可渲染的数值图表数据。"""
+    aggregated: dict[str, GenericRecord] = {}
+    for item in risk_register:
+        label = _text(item.get("category"), "Risk")
+        ticker = _text(item.get("ticker"), "")
+        name = f"{label} / {ticker}" if ticker else label
+        value = _risk_value(item)
+        if name in aggregated:
+            aggregated[name]["value"] = max(_number(aggregated[name].get("value")), value)
+            continue
+        aggregated[name] = {
+            "name": name,
+            "category": label,
+            "ticker": ticker or "Portfolio",
+            "summary": _text(item.get("summary")),
+            "severity": _text(item.get("severity"), "medium"),
+            "value": value,
+        }
+    return list(aggregated.values())[:8]
+
+
+def _risk_value(item: GenericRecord) -> float:
+    """把风险登记中的显式数值或风险等级映射成稳定分值。"""
+    for key in ("value", "risk", "risk_score", "weight", "severity_score"):
+        number = _optional_number(item.get(key))
+        if number is not None and number > 0:
+            return number
+    severity = _text(item.get("severity"), "medium").lower()
+    if severity in {"high", "严重", "高"}:
+        return 85.0
+    if severity in {"low", "较低", "低"}:
+        return 35.0
+    return 60.0
 
 
 def _holding_deep_dive_lines(item: GenericRecord, language_code: str) -> list[str]:
@@ -560,6 +594,15 @@ def _number(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return number if number == number else 0.0
+
+
+def _optional_number(value: Any) -> float | None:
+    """安全读取可选数字，没有值时返回 None。"""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
 
 
 def _text(value: Any, fallback: str = "N/A") -> str:

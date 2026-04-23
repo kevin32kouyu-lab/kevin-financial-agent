@@ -14,6 +14,7 @@ import {
   clearRuns,
   createBacktest,
   createRun,
+  getCurrentAccount,
   getProfilePreferences,
   getRunAuditSummary,
   getBacktest,
@@ -21,17 +22,22 @@ import {
   getRunArtifacts,
   getRunDetail,
   getRuntimeConfig,
+  linkClientMemory,
   listBacktests,
   listRunHistory,
   listRuns,
+  loginAccount,
   openRunEventStream,
   refreshDataStatus,
+  registerAccount,
   retryRun,
+  logoutAccount,
   updateProfilePreferences,
 } from "../lib/api";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
 import { readLocale, syncDocumentLocale, writeLocale } from "../lib/locale";
+import { buildFollowUpQuery } from "../lib/terminalExperience";
 import {
   buildMemoryFromParsedIntent,
   clearIntentMemory,
@@ -43,6 +49,7 @@ import type {
   AgentMemoryContext,
   AgentFormState,
   ArtifactRecord,
+  AuthUser,
   BacktestDetail,
   BacktestMode,
   DataStatus,
@@ -250,6 +257,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileClearing, setProfileClearing] = useState(false);
+  const [currentAccount, setCurrentAccount] = useState<AuthUser | null>(null);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [accountNotice, setAccountNotice] = useState("");
 
   const [agentForm, setAgentFormState] = useState<AgentFormState>(DEFAULT_AGENT_FORM);
   const [structuredForm, setStructuredFormState] = useState<StructuredFormState>(DEFAULT_STRUCTURED_FORM);
@@ -314,23 +325,31 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   });
 
+  const applyAccountUser = useEffectEvent((user: AuthUser | null) => {
+    startTransition(() => setCurrentAccount(user));
+  });
+
   const loadTerminalMeta = useEffectEvent(async () => {
     setProfileLoading(true);
+    setAccountLoading(true);
     try {
-      const [runtimeResponse, dataResponse, preferenceResponse] = await Promise.all([
+      const [runtimeResponse, dataResponse, preferenceResponse, accountResponse] = await Promise.all([
         getRuntimeConfig(),
         getDataStatus(),
         getProfilePreferences(),
+        getCurrentAccount(),
       ]);
       startTransition(() => {
         setRuntime(runtimeResponse);
         setDataStatus(dataResponse);
       });
       applyProfileResponse(preferenceResponse);
+      applyAccountUser(accountResponse.user);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取终端环境失败。", "Failed to load terminal runtime."));
     } finally {
       setProfileLoading(false);
+      setAccountLoading(false);
     }
   });
 
@@ -867,6 +886,80 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
+  const loginWithAccount = async (email: string, password: string) => {
+    setAuthSubmitting(true);
+    setAccountNotice("");
+    try {
+      const response = await loginAccount({ email, password });
+      applyAccountUser(response.user);
+      applyProfileResponse(await getProfilePreferences());
+      setAccountNotice(locale === "zh" ? "已登录并同步账户偏好。" : "Signed in and synced account preferences.");
+      return true;
+    } catch (error) {
+      setAccountNotice(error instanceof Error ? error.message : t("登录失败。", "Sign-in failed."));
+      return false;
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const registerWithAccount = async (email: string, password: string) => {
+    setAuthSubmitting(true);
+    setAccountNotice("");
+    try {
+      const response = await registerAccount({ email, password });
+      applyAccountUser(response.user);
+      applyProfileResponse(await getProfilePreferences());
+      setAccountNotice(locale === "zh" ? "账户已创建并自动登录。" : "Account created and signed in.");
+      return true;
+    } catch (error) {
+      setAccountNotice(error instanceof Error ? error.message : t("注册失败。", "Registration failed."));
+      return false;
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const logoutCurrentAccount = async () => {
+    setAuthSubmitting(true);
+    setAccountNotice("");
+    try {
+      await logoutAccount();
+      applyAccountUser(null);
+      applyProfileResponse(await getProfilePreferences());
+      setAccountNotice(locale === "zh" ? "已退出账户。" : "Signed out.");
+      return true;
+    } catch (error) {
+      setAccountNotice(error instanceof Error ? error.message : t("退出失败。", "Sign-out failed."));
+      return false;
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const syncBrowserMemoryToAccount = async () => {
+    if (!currentAccount) {
+      setAccountNotice(locale === "zh" ? "请先登录账户。" : "Please sign in first.");
+      return false;
+    }
+    setAuthSubmitting(true);
+    setAccountNotice("");
+    try {
+      const response = await linkClientMemory() as UserPreferenceSummary & { error?: string };
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      applyProfileResponse(response);
+      setAccountNotice(locale === "zh" ? "浏览器记忆已同步到账户。" : "Memory synced.");
+      return true;
+    } catch (error) {
+      setAccountNotice(error instanceof Error ? error.message : t("记忆同步失败。", "Memory sync failed."));
+      return false;
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
   const clearHistoryItems = async () => {
     if (!window.confirm(copy.history.clearConfirm)) return;
     setHistoryMutating(true);
@@ -899,6 +992,34 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   };
 
+  const continueFromRun = async (runId: string) => {
+    const detail = await loadRunBundle(runId);
+    if (!detail) return false;
+    const resultRecord = (detail.result || {}) as Record<string, unknown>;
+    const topPick = String(
+      (
+        ((resultRecord.report_briefing as Record<string, unknown> | undefined)?.executive as Record<string, unknown> | undefined)
+          ?.top_pick
+      ) || "",
+    );
+    const baseQuery = String(resultRecord.query || "");
+    startTransition(() => {
+      setTerminalMode("realtime");
+      setActiveRunId(null);
+      setRunDetail(null);
+      setArtifacts([]);
+      setBacktestDetail(null);
+      setAuditSummary(null);
+      setEvents([]);
+      setAgentFormState((current) => ({
+        ...current,
+        query: buildFollowUpQuery(baseQuery, locale, topPick),
+      }));
+    });
+    setStatusText(locale === "zh" ? "已把上一份研究带回提问页。" : "Loaded the previous thesis back into the ask page.");
+    return true;
+  };
+
   return {
     locale,
     setLocale,
@@ -922,6 +1043,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     profileLoading,
     profileSaving,
     profileClearing,
+    currentAccount,
+    accountLoading,
+    authSubmitting,
+    accountNotice,
     auditSummary,
     agentForm,
     structuredForm,
@@ -963,6 +1088,10 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     saveProfileDraft,
     resetProfileDraft,
     clearStoredProfile,
+    loginWithAccount,
+    registerWithAccount,
+    logoutCurrentAccount,
+    syncBrowserMemoryToAccount,
     createAgentRun,
     createStructuredRun,
     retryActiveRun,
@@ -973,6 +1102,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     refreshHistory: () => loadHistory({ ...filters, search: deferredSearch }),
     loadBacktest,
     runBacktest,
+    continueFromRun,
     applySampleScenario,
     fillAgentSample: () => applySampleScenario(sampleScenarios[0]?.id || "steady-income"),
     fillStructuredSample: () =>

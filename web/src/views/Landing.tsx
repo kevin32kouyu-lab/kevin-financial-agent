@@ -11,82 +11,70 @@ import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 const LANDING_COPY = {
   zh: {
     brand: "ROSE Capital Research",
-    title: "金融研究 Agent",
-    subtitle: "让用户先看到判断，再决定要不要继续读完整条研究链路。",
-    description:
-      "把自然语言需求、股票筛选、多源数据、审计校验、回测结果和正式报告，整理成一套更适合展示、也更适合真实投研沟通的前台体验。",
-    ctaPrimary: "进入研究终端",
-    ctaSecondary: "查看终端示例",
-    heroLabel: "机构级研究前台",
+    title: "问一句，得到可验证的投资研究",
+    subtitle: "输入你的资金、风险和关注标的，系统会给出结论、风险、依据和可导出的正式报告。",
+    ctaPrimary: "开始研究",
+    ctaSecondary: "看示例",
+    heroLabel: "面向真实决策的研究入口",
     heroMetrics: [
       { label: "研究语言", value: "中英双语" },
-      { label: "研究路径", value: "研究 + 回测 + 导出" },
-      { label: "数据链路", value: "多源聚合" },
+      { label: "输出", value: "结论 + 回测 + PDF" },
+      { label: "能力", value: "Agent + RAG + 校验" },
     ],
-    introTitle: "这个首页现在要解决什么",
-    introBody:
-      "它不再只是一个跳转页，而是先帮助用户理解：这套系统适合什么场景、怎么开始、产出会是什么样子。",
     howTitle: "三步开始",
     steps: [
-      "输入资金规模、风险偏好、期限和关注标的",
-      "先看结论、风险一句话和下一步动作",
-      "再看候选池、回测曲线和正式报告导出",
+      "写下投资问题",
+      "先看结论与风险",
+      "再看回测与报告",
     ],
     valueCards: [
       {
-        title: "先交结论",
-        text: "首屏先给判断，不让用户先被过程信息拖住。",
+        title: "问一句",
+        text: "自然语言直接发起研究。",
       },
       {
-        title: "链路可解释",
-        text: "每个建议都能追溯到数据来源、时间点和执行上下文。",
+        title: "看结论",
+        text: "先看到建议，再决定要不要下钻。",
       },
       {
-        title: "同页可验证",
-        text: "研究、回测、导出都在同一条任务流里完成。",
+        title: "可验证",
+        text: "证据、校验和回测都能回看。",
       },
     ],
-    footer: "当前版本已按桌面研究场景优化，并保留基础移动端适配。",
     sceneTickets: ["需求已解析", "覆盖已同步", "风险已锁定", "回放已就绪"],
   },
   en: {
     brand: "ROSE Capital Research",
-    title: "Financial Research Agent",
-    subtitle: "Let users see the decision first, then decide whether to read the full research chain.",
-    description:
-      "Bring natural-language intent, screening, multi-source data, audit checks, backtest output, and export-ready reports into one frontend that feels easier to present and easier to trust.",
+    title: "Ask once, get verifiable investment research",
+    subtitle: "Share your capital, risk, and target names. The system returns a verdict, risk view, evidence trail, and export-ready report.",
     ctaPrimary: "Open Research Terminal",
-    ctaSecondary: "See Terminal Example",
-    heroLabel: "Institutional-grade research surface",
+    ctaSecondary: "See example",
+    heroLabel: "A research entry built for real decisions",
     heroMetrics: [
-      { label: "Research language", value: "Bilingual" },
-      { label: "Flow", value: "Research + Replay + Export" },
-      { label: "Data chain", value: "Multi-source" },
+      { label: "Language", value: "Bilingual" },
+      { label: "Output", value: "Verdict + Backtest + PDF" },
+      { label: "Engine", value: "Agent + RAG + Validation" },
     ],
-    introTitle: "What this homepage should do now",
-    introBody:
-      "This is no longer a simple jump page. It should first help users understand what the product is for, how to start, and what kind of result they will get.",
     howTitle: "Start in 3 Steps",
     steps: [
-      "Enter capital, risk preference, horizon, and target symbols",
-      "Read verdict, one-line risk view, and the next action first",
-      "Then review candidates, replay curves, and export the formal report",
+      "Ask your question",
+      "See verdict and risk",
+      "Review backtest and report",
     ],
     valueCards: [
       {
-        title: "Verdict first",
-        text: "The first screen gives the decision before the process detail takes over.",
+        title: "Ask once",
+        text: "Start research directly in natural language.",
       },
       {
-        title: "Traceable chain",
-        text: "Every recommendation can be traced to source, timing, and execution context.",
+        title: "See verdict",
+        text: "Read the answer first, then drill deeper if needed.",
       },
       {
-        title: "Verifiable in one flow",
-        text: "Research, replay, and export stay inside one task flow.",
+        title: "Verify before acting",
+        text: "Evidence, validation, and backtest stay within the same flow.",
       },
     ],
-    footer: "This version is tuned for desktop research workflows and keeps baseline mobile support.",
     sceneTickets: ["Mandate parsed", "Coverage synced", "Risk locked", "Replay ready"],
   },
 } as const;
@@ -163,7 +151,6 @@ export function LandingView() {
             </Badge>
             <h1 className="surface-appear" data-delay="2">{copy.title}</h1>
             <p className="landing-subtitle surface-appear" data-delay="3">{copy.subtitle}</p>
-            <p className="landing-description surface-appear" data-delay="4">{copy.description}</p>
             <div className="landing-actions surface-appear" data-delay="5">
               <Button size="lg" className="landing-primary-cta" asChild>
                 <a href="/terminal">
@@ -210,13 +197,9 @@ export function LandingView() {
         </section>
 
         <section className="landing-story-band surface-appear" data-delay="6">
-          <article className="landing-story-copy">
-            <p className="eyebrow">{copy.introTitle}</p>
-            <h2>{copy.introTitle}</h2>
-            <p>{copy.introBody}</p>
-          </article>
           <article className="landing-step-rail">
             <p className="eyebrow">{copy.howTitle}</p>
+            <h2>{copy.howTitle}</h2>
             <ol className="landing-step-list">
               {copy.steps.map((item, index) => (
                 <li key={item} className="landing-step-item">
@@ -227,6 +210,11 @@ export function LandingView() {
                 </li>
               ))}
             </ol>
+          </article>
+          <article className="landing-story-copy">
+            <p className="eyebrow">{copy.heroLabel}</p>
+            <h2>{copy.ctaPrimary}</h2>
+            <p>{copy.subtitle}</p>
           </article>
         </section>
 
@@ -246,8 +234,6 @@ export function LandingView() {
             );
           })}
         </section>
-
-        <p className="landing-footer-note">{copy.footer}</p>
       </main>
     </div>
   );

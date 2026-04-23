@@ -24,6 +24,10 @@ def test_dual_report_outputs_keep_final_report_compatible() -> None:
     assert "Agent Workflow" in outputs["development"]["markdown"]
     assert "EvidenceAgent" in outputs["development"]["markdown"]
     assert outputs["development"]["diagnostics"]["agent_count"] == 2
+    assert outputs["development"]["diagnostics"]["evidence_count"] == 1
+    assert outputs["development"]["diagnostics"]["validation_check_count"] == 1
+    assert outputs["development"]["diagnostics"]["rag_evidence_count"] == 1
+    assert outputs["development"]["diagnostics"]["validation_warning_count"] == 1
 
 
 def test_core_holdings_count_follows_risk_profile_and_single_stock_request() -> None:
@@ -61,7 +65,24 @@ def test_investment_chart_payloads_have_four_named_sections() -> None:
     assert charts["portfolio_allocation"]["items"]
     assert charts["candidate_score_comparison"]["items"]
     assert charts["risk_contribution"]["items"]
+    assert charts["risk_contribution"]["items"][0]["value"] > 0
     assert charts["portfolio_vs_benchmark_backtest"]["status"] == "missing"
+
+
+def test_backtest_chart_payload_preserves_points_and_summary() -> None:
+    """有回测时，投资报告图表要保留 points 与 summary 结构。"""
+    outputs = build_dual_report_outputs(
+        bundle=_sample_bundle(),
+        query="Find quality stocks.",
+        language_code="en",
+        backtest=_sample_backtest(),
+    )
+    backtest_chart = outputs["investment"]["charts"]["portfolio_vs_benchmark_backtest"]
+
+    assert backtest_chart["status"] == "available"
+    assert backtest_chart["summary"]["entry_date"] == "2026-01-16"
+    assert len(backtest_chart["points"]) == 2
+    assert backtest_chart["points"][0]["portfolio_value"] == 100.0
 
 
 def _sample_bundle() -> dict:
@@ -209,4 +230,31 @@ def _sample_research_plan() -> dict:
         "objective": "Find conservative quality compounders.",
         "data_requirements": ["prices", "news", "SEC filings"],
         "expected_outputs": ["investment_report", "validation_checks"],
+    }
+
+
+def _sample_backtest() -> dict:
+    """构造带 summary 和 points 的回测结果。"""
+    return {
+        "summary": {
+            "entry_date": "2026-01-16",
+            "end_date": "2026-04-22",
+            "metrics": {
+                "total_return_pct": 8.4,
+                "benchmark_return_pct": 5.1,
+                "excess_return_pct": 3.3,
+            },
+        },
+        "points": [
+            {"date": "2026-01-16", "portfolio_value": 100.0, "benchmark_value": 100.0},
+            {"date": "2026-04-22", "portfolio_value": 108.4, "benchmark_value": 105.1},
+        ],
+        "meta": {
+            "assumptions": {
+                "transaction_cost_bps": 10,
+                "slippage_bps": 5,
+                "dividend_mode": "cash_only",
+                "rebalance": "buy_and_hold",
+            }
+        },
     }
