@@ -85,17 +85,76 @@ def _sample_report_result() -> dict:
     }
 
 
-def test_pdf_export_html_contains_complete_user_report_sections():
-    """PDF 专用 HTML 必须包含用户问题、结论、评分表、逐票卡和完整正文。"""
+def _sample_backtest() -> dict:
+    """构造一份可用于 PDF 图表的回测结果。"""
+    return {
+        "summary": {
+            "id": "bt-1",
+            "source_run_id": "run-001",
+            "entry_date": "2026-01-16",
+            "end_date": "2026-04-22",
+            "benchmark_ticker": "SPY",
+            "metrics": {
+                "total_return_pct": 8.4,
+                "benchmark_return_pct": 5.1,
+                "excess_return_pct": 3.3,
+            },
+        },
+        "points": [
+            {
+                "point_date": "2026-01-16",
+                "portfolio_value": 100.0,
+                "benchmark_value": 100.0,
+                "portfolio_return_pct": 0.0,
+                "benchmark_return_pct": 0.0,
+            },
+            {
+                "point_date": "2026-04-22",
+                "portfolio_value": 108.4,
+                "benchmark_value": 105.1,
+                "portfolio_return_pct": 8.4,
+                "benchmark_return_pct": 5.1,
+            },
+        ],
+        "meta": {
+            "assumptions": {
+                "transaction_cost_bps": 10,
+                "slippage_bps": 5,
+                "dividend_mode": "cash_only",
+                "rebalance": "buy_and_hold",
+            }
+        },
+    }
+
+
+def test_pdf_export_html_uses_balanced_investment_layout():
+    """投资 PDF 应更精简，保留关键图表但不再重复完整长正文。"""
     service = PdfExportService(settings=AppSettings())
     html = service.build_report_html(run_id="run-001", result=_sample_report_result(), backtest=None)
 
     assert "Find a conservative long-term investment" in html
     assert "Prefer AAPL" in html
     assert "Apple Inc." in html
-    assert "Full memo body" in html
+    assert "Recommended Portfolio Allocation" in html
+    assert "Candidate Score Comparison" in html
+    assert "Risk Contribution" in html
+    assert "Portfolio vs Benchmark Backtest" not in html
+    assert "Full memo body with portfolio action plan and risk notes." not in html
+    assert "Full memo" not in html
+    assert "Ticker research cards" not in html
     assert "系统理解" not in html
     assert "长期记忆" not in html
+
+
+def test_pdf_export_html_prefers_backtest_chart_when_backtest_is_available():
+    """有回测时，第三张关键图表应切换成组合 vs 基准回测。"""
+    service = PdfExportService(settings=AppSettings())
+    html = service.build_report_html(run_id="run-001", result=_sample_report_result(), backtest=_sample_backtest())
+
+    assert "Recommended Portfolio Allocation" in html
+    assert "Candidate Score Comparison" in html
+    assert "Portfolio vs Benchmark Backtest" in html
+    assert "Risk Contribution" not in html
 
 
 def test_pdf_export_development_kind_uses_development_report():
@@ -117,7 +176,8 @@ async def test_pdf_export_returns_real_pdf_bytes(monkeypatch):
     service = PdfExportService(settings=AppSettings())
 
     async def fake_renderer(html: str) -> bytes:
-        assert "Full memo body" in html
+        assert "Decision board" in html
+        assert "Recommended Portfolio Allocation" in html
         return b"%PDF-1.4\n% test pdf\n"
 
     monkeypatch.setattr(service, "_render_html_to_pdf", fake_renderer)

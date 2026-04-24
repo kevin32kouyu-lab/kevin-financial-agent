@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
 import { isFollowedRun, readFollowedRuns, toggleFollowedRun, type FollowedRunEntry } from "../lib/followedRuns";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
+import { computeTerminalProgress, resolveTerminalStage } from "../lib/terminalProgress";
 import {
   appendPromptChip,
   buildPromptChips,
@@ -30,22 +31,6 @@ type GenericRecord = Record<string, unknown>;
 /** 拦截普通点击，保留新标签页等浏览器默认行为。 */
 function shouldUseClientNavigation(event: MouseEvent<HTMLAnchorElement>) {
   return !(event.defaultPrevented || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey || event.button !== 0);
-}
-
-/** 根据运行状态估算页面进度。 */
-function computeProgress(status: string | undefined, stepCount: number, mode: string | undefined) {
-  if (!status) return { percent: 0, tone: "neutral", textKey: "idle" };
-  if (status === "queued") return { percent: 12, tone: "neutral", textKey: "queued" };
-  if (status === "running") {
-    const expected = mode === "structured" ? 3 : 4;
-    const percent = Math.min(92, Math.max(18, Math.round((stepCount / expected) * 78)));
-    return { percent, tone: "neutral", textKey: "running" };
-  }
-  if (status === "completed") return { percent: 100, tone: "positive", textKey: "completed" };
-  if (status === "cancelled") return { percent: 100, tone: "negative", textKey: "cancelled" };
-  if (status === "failed") return { percent: 100, tone: "negative", textKey: "failed" };
-  if (status === "needs_clarification") return { percent: 100, tone: "neutral", textKey: "needs_clarification" };
-  return { percent: 0, tone: "neutral", textKey: "idle" };
 }
 
 /** 把未知值转换为对象。 */
@@ -119,21 +104,6 @@ function pickFriendlyError(message: string, locale: "zh" | "en") {
     : "The run did not complete. Please refine the request or retry shortly.";
 }
 
-/** 把运行状态翻译成页面阶段描述。 */
-function resolveUiStage(status: string | undefined, stepCount: number, locale: "zh" | "en"): string {
-  if (!status) return locale === "zh" ? "等待开始" : "Waiting to start";
-  if (status === "queued") return locale === "zh" ? "队列中" : "In queue";
-  if (status === "running") {
-    if (stepCount <= 1) return locale === "zh" ? "理解你的目标" : "Understanding your goal";
-    if (stepCount <= 3) return locale === "zh" ? "聚合市场数据" : "Aggregating market data";
-    return locale === "zh" ? "生成正式报告" : "Building the final report";
-  }
-  if (status === "completed") return locale === "zh" ? "已完成" : "Completed";
-  if (status === "cancelled") return locale === "zh" ? "已撤回" : "Cancelled";
-  if (status === "failed") return locale === "zh" ? "执行失败" : "Failed";
-  if (status === "needs_clarification") return locale === "zh" ? "等待补充信息" : "Need clarification";
-  return locale === "zh" ? "等待开始" : "Waiting to start";
-}
 
 /** 生成首屏摘要。 */
 function buildDecisionSummary(
@@ -1049,10 +1019,10 @@ export function TerminalView() {
     void loadBacktest(activeRunId);
   }, [terminalPage, activeRunId, runDetail?.run.status, loadBacktest]);
 
-  const progress = computeProgress(runDetail?.run.status, runDetail?.steps.length || 0, runDetail?.run.mode);
+  const progress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
   const friendlyError = pickFriendlyError(errorText, locale);
-  const uiStage = resolveUiStage(runDetail?.run.status, runDetail?.steps.length || 0, locale);
+  const uiStage = resolveTerminalStage(runDetail?.run.status, runDetail?.steps || [], locale);
   const result = runDetail?.result || null;
   const parsedIntent = asRecord(asRecord(result)?.parsed_intent);
   const agentControl = asRecord(parsedIntent?.agent_control);

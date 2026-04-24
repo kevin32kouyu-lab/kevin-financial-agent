@@ -445,7 +445,7 @@ function ReportOutputCharts({ locale, charts }: { locale: Locale; charts: Generi
       title: locale === "zh" ? "风险贡献" : "Risk Contribution",
       valueKeys: ["value", "risk", "risk_score", "weight"],
       labelKeys: ["name", "category", "ticker"],
-      suffix: "%",
+      suffix: "",
       type: "bar",
     },
   ];
@@ -532,7 +532,7 @@ function DevelopmentReportView({
           <strong>{toText(readDevelopmentDiagnostic(diagnostics, "evidence_count"), "0")}</strong>
         </div>
         <div className="mini-card">
-          <h3>{locale === "zh" ? "校验提醒" : "Validation warnings"}</h3>
+          <h3>{locale === "zh" ? "校验检查" : "Validation checks"}</h3>
           <strong>{toText(readDevelopmentDiagnostic(diagnostics, "validation_check_count"), "0")}</strong>
         </div>
         <div className="mini-card">

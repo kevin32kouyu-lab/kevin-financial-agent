@@ -40,6 +40,7 @@
 - `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排，并用轻量缓存同步任务进度、历史、当前 run 和回测。
 - `web/src/components/terminal/AccountPanel.tsx`：终端顶部账户入口，负责登录、注册、退出和浏览器记忆同步。
 - `web/src/hooks/useTerminalNavigation.ts`：管理 Terminal 四页内部导航，保留 URL 与 `run` 参数，同时避免整页刷新。
+- `web/src/lib/terminalProgress.ts`：按已完成阶段推断当前运行阶段和更贴近真实感受的进度百分比，避免报告阶段假卡住。
 - `web/src/lib/terminalExperience.ts`：生成开始研究页的结构化补充 chips、四步预览、可信度摘要和继续跟进文案。
 - `web/src/lib/followedRuns.ts`：在浏览器本地保存持续跟踪列表，让旧研究可以被快速找回和继续跟进。
 - `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准示例问题，并支持按语言清空本地轻量记忆。
@@ -87,13 +88,14 @@
 26. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
 27. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
 28. 结论页优先加载 run detail；artifact、audit summary 和 backtest 不阻塞正式报告阅读。
-29. 用户进入回测页或手动触发回测时，前端才调用回测相关接口。
-30. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-31. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-32. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf?kind=...`，后端读取同一份 run 数据和最近回测，用 Playwright/Chromium 返回真实 PDF 文件。
-33. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-34. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
-35. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
+29. `terminalProgress.ts` 会根据已完成阶段推断“当前阶段”和进度百分比，所以即使 step 只在阶段结束后落库，前台也不会在报告生成阶段假卡住。
+30. 用户进入回测页或手动触发回测时，前端才调用回测相关接口。
+31. `BacktestService` 从历史 run 恢复组合，按回测 V2 口径计入交易成本、滑点、分红、简化税费和再平衡，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+32. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+33. 用户点击 PDF 导出时，前端调用 `GET /api/v1/runs/{run_id}/export/pdf?kind=...`，后端读取同一份 run 数据和最近回测，用统一的“有效图表”逻辑生成更短的投资 PDF，再交给 Playwright/Chromium 返回真实 PDF 文件。
+34. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+35. 数据刷新可通过 `/api/v1/data/refresh/universe`、`/api/v1/data/refresh/macro`、`/api/v1/data/refresh/all` 手动触发，并在刷新任务表中留痕。
+36. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 与 `/readyz` 提供探活。
 
 ## 关键设计决定与原因
 
@@ -119,7 +121,10 @@
 - 双报告输出共用同一次 run：投资报告和开发报告不会各跑一遍研究，避免结论互相打架。
 - 开发报告 diagnostics 采用“主字段 + 历史别名兼容”：新前端优先读 `evidence_count`、`validation_check_count`，历史 run 仍可回退旧字段。
 - 结论页回测图采用“前端临时合成”而不是回写 run：这样不会偷偷改历史 run，又能让页面、导出和回测页尽量一致。
+- 终端进度采用“阶段加权”而不是“步数占比”：因为 run 的 step 只在阶段结束后落库，直接按数量算会让用户误以为系统卡住。
 - PDF 导出放到后端统一生成：避免浏览器 `window.print()` 造成的假 PDF、样式偏差和内容缺失。
+- 投资 PDF 采用“平衡版”而不是重复整份长 memo：PDF 负责可读、可分享，详细长内容继续留在网页、HTML 和 Markdown 导出里。
+- PDF 图表和结论页共用“有效图表”逻辑：如果已有回测，就优先展示组合 vs 基准回测；没有回测时，自动改放风险贡献图，避免页面和导出内容打架。
 - 首页与终端共享同一动态背景与玻璃层：保证视觉语言统一，不再出现“首页一套、终端一套”的割裂。
 - 首页改为“品牌入口 + 强 CTA + 研究场景预览”：让第一次访问的用户先建立信任，再进入终端。
 - Terminal 改为“四页终端”而不是“所有内容堆在一页”：让提问、结论、回测、历史各自清楚，不再互相挤压。

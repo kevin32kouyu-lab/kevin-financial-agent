@@ -145,6 +145,27 @@ const demoDetail = {
   result: demoResult,
 };
 
+const runningRun = {
+  ...demoRun,
+  status: "running",
+  finished_at: null,
+};
+
+const runningDetail = {
+  run: runningRun,
+  steps: [
+    { step_key: "intent_analysis", label: "Intent", status: "completed", position: 1, created_at: now, updated_at: now },
+    { step_key: "research_plan", label: "Plan", status: "completed", position: 2, created_at: now, updated_at: now },
+    { step_key: "structured_analysis", label: "Analysis", status: "completed", position: 3, created_at: now, updated_at: now },
+    { step_key: "evidence_retrieval", label: "Evidence", status: "completed", position: 4, created_at: now, updated_at: now },
+  ],
+  artifacts: [],
+  result: {
+    ...demoResult,
+    query: "Continue my running research.",
+  },
+};
+
 async function mockTerminalApis(
   page: Page,
   options: {
@@ -154,8 +175,12 @@ async function mockTerminalApis(
     authEmail?: string | null;
     captureLoginPosts?: string[];
     captureLinkMemoryPosts?: string[];
+    detailOverride?: typeof demoDetail;
+    historyItems?: typeof demoRun[];
   } = {},
 ) {
+  const activeDetail = options.detailOverride || demoDetail;
+  const activeHistory = options.historyItems || [activeDetail.run];
   await page.route("**/api/v1/agent/runtime-config", (route) =>
     route.fulfill({ json: { provider: "mock", api_key_configured: true, model: "mock", base_url: "", route_mode: "demo", billing_mode: "demo", official_sdk: "mock" } }),
   );
@@ -224,9 +249,9 @@ async function mockTerminalApis(
       },
     });
   });
-  await page.route("**/api/v1/runs/history?**", (route) => route.fulfill({ json: { items: [demoRun] } }));
-  await page.route("**/api/runs?**", (route) => route.fulfill({ json: { items: [demoRun] } }));
-  await page.route("**/api/runs/demo-run", (route) => route.fulfill({ json: demoDetail }));
+  await page.route("**/api/v1/runs/history?**", (route) => route.fulfill({ json: { items: activeHistory } }));
+  await page.route("**/api/runs?**", (route) => route.fulfill({ json: { items: activeHistory } }));
+  await page.route("**/api/runs/demo-run", (route) => route.fulfill({ json: activeDetail }));
   await page.route("**/api/runs/demo-run/artifacts", (route) => route.fulfill({ json: { run_id: "demo-run", artifacts: [] } }));
   await page.route("**/api/v1/runs/demo-run/audit-summary", (route) =>
     route.fulfill({ json: { run_id: "demo-run", title: "Demo research", status: "completed", query: demoResult.query, research_mode: "historical", as_of_date: "2026-01-15", top_pick: "MSFT", confidence_level: "medium", validation_flags: [], coverage_flags: [], used_sources: ["mock"], degraded_modules: [], memory_applied_fields: [] } }),
@@ -291,6 +316,17 @@ test("ask page shows mandate chips and a clear four-step preview", async ({ page
   await expect(page.getByText("Get a sized basket instead of a single ticker.")).toBeVisible();
   await page.getByRole("button", { name: "Ongoing tracking" }).click();
   await expect(page.getByText("Bring back an earlier thesis and monitor what changed.")).toBeVisible();
+});
+
+test("running research jumps above 59 percent once report generation starts", async ({ page }) => {
+  await mockTerminalApis(page, { detailOverride: runningDetail, historyItems: [runningRun] });
+
+  await page.goto("/terminal?run=demo-run");
+  await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
+  await expect(page.getByText("Task progress")).toBeVisible();
+  await expect(page.getByText("84%")).toBeVisible();
+  await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
+  await expect(page.getByText("59%")).toHaveCount(0);
 });
 
 test("terminal route tabs switch pages without a full page reload", async ({ page }) => {

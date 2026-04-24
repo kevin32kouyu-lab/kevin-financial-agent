@@ -46,19 +46,8 @@ class PdfExportService:
         """把报告数据整理成 PDF 专用 HTML，不依赖前端临时拼接。"""
         normalized_kind = _normalize_pdf_kind(kind)
         report_briefing = _record(result.get("report_briefing"))
-        meta = _record(report_briefing.get("meta"))
-        executive = _record(report_briefing.get("executive"))
-        macro = _record(report_briefing.get("macro"))
-        scoreboard = _records(report_briefing.get("scoreboard"))
-        ticker_cards = _records(report_briefing.get("ticker_cards"))
-        risk_register = _records(report_briefing.get("risk_register"))
-        research_context = _record(result.get("research_context"))
-        evidence_summary = _record(meta.get("evidence_summary"))
-        validation_summary = _record(meta.get("validation_summary"))
-        retrieved_evidence = _records(meta.get("retrieved_evidence"))
         backtest_payload = _plain(backtest)
         report_outputs = _record(result.get("report_outputs"))
-        investment_output = _record(report_outputs.get("investment"))
         development_output = _record(report_outputs.get("development"))
 
         if normalized_kind == "development":
@@ -69,172 +58,13 @@ class PdfExportService:
                 development_output=development_output,
                 backtest_payload=backtest_payload,
             )
-
-        title = _text(meta.get("title"), "Investment Research Report")
-        subtitle = _text(meta.get("subtitle"), "Research terminal / portfolio decision memo")
-        query = _text(result.get("query"), "No original request.")
-        final_report = _text(investment_output.get("markdown") or result.get("final_report"), "")
-        generated_at = _text(meta.get("generated_at") or result.get("updated_at"), "")
-        confidence = _text(meta.get("confidence_level"), "not rated")
-        chart_block = _build_investment_chart_block(_record(investment_output.get("charts")), backtest_payload)
-
-        scoreboard_rows = "".join(
-            "<tr>"
-            f"<td>{_esc(item.get('ticker'))}</td>"
-            f"<td>{_esc(item.get('company_name'))}</td>"
-            f"<td>{_esc(item.get('latest_price'))}</td>"
-            f"<td>{_esc(item.get('composite_score'))}</td>"
-            f"<td>{_esc(item.get('verdict_label'))}</td>"
-            "</tr>"
-            for item in scoreboard
+        return _build_investment_report_html(
+            run_id=run_id,
+            result=result,
+            report_briefing=report_briefing,
+            investment_output=_record(report_outputs.get("investment")),
+            backtest_payload=backtest_payload,
         )
-        ticker_blocks = "\n".join(_build_ticker_card(item) for item in ticker_cards)
-        risk_items = "".join(
-            f"<li><strong>{_esc(item.get('category'))}{' / ' + _esc(item.get('ticker')) if item.get('ticker') else ''}</strong>: {_esc(item.get('summary'))}</li>"
-            for item in risk_register
-        )
-        evidence_items = _bullet_list([*_strings(evidence_summary.get("items")), *_strings(evidence_summary.get("source_points"))])
-        validation_items = _bullet_list(_strings(validation_summary.get("items")))
-        retrieved_block = _build_retrieved_evidence(retrieved_evidence)
-        backtest_block = _build_backtest_block(backtest_payload)
-
-        return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{_esc(title)}</title>
-  <style>
-    @page {{ size: A4; margin: 15mm 13mm 17mm; }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      background: #f5f1e8;
-      color: #162033;
-      font-family: "Aptos", "Segoe UI", "Noto Sans", sans-serif;
-      font-size: 12px;
-      line-height: 1.58;
-    }}
-    .page {{ max-width: 980px; margin: 0 auto; padding: 26px 22px 40px; }}
-    .hero {{
-      color: #f8efe0;
-      background: linear-gradient(135deg, #13243d 0%, #1e4d4a 58%, #b17b39 100%);
-      border-radius: 26px;
-      padding: 30px;
-      margin-bottom: 18px;
-    }}
-    .eyebrow {{ margin: 0 0 9px; letter-spacing: .22em; text-transform: uppercase; font-size: 10px; opacity: .82; }}
-    h1 {{ margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 30px; line-height: 1.08; }}
-    h2 {{ margin: 0 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 20px; color: #13243d; }}
-    h3 {{ margin: 0 0 8px; font-size: 15px; color: #13243d; }}
-    .hero-summary {{ max-width: 760px; margin: 16px 0 0; font-size: 14px; }}
-    .chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }}
-    .chip {{ display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); }}
-    .section {{
-      background: #fffaf2;
-      border: 1px solid #e2d5bf;
-      border-radius: 20px;
-      padding: 18px;
-      margin-bottom: 14px;
-      break-inside: avoid;
-    }}
-    .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
-    .muted {{ color: #637083; }}
-    .question {{ padding: 13px 15px; background: #f0eadf; border-radius: 14px; font-size: 13px; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ padding: 9px 8px; border-bottom: 1px solid #e5dccd; text-align: left; vertical-align: top; }}
-    th {{ color: #6f5b3e; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }}
-    ul {{ margin: 8px 0 0; padding-left: 18px; }}
-    li {{ margin: 4px 0; }}
-    .cards {{ display: grid; gap: 12px; }}
-    .ticker-card {{ border: 1px solid #ded2bf; border-radius: 16px; padding: 14px; background: #fffdf8; }}
-    .ticker-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
-    .badge {{ border-radius: 999px; padding: 5px 9px; background: #e5f0ed; color: #17645e; font-size: 10px; white-space: nowrap; }}
-    .memo {{ white-space: pre-wrap; font-family: inherit; }}
-    .chart {{ width: 100%; max-height: 220px; }}
-    a {{ color: #185d8f; text-decoration: none; }}
-    .footer-note {{ margin-top: 16px; color: #768195; font-size: 10px; }}
-  </style>
-</head>
-<body>
-  <main class="page">
-    <section class="hero">
-      <p class="eyebrow">Investment report PDF</p>
-      <h1>{_esc(title)}</h1>
-      <p class="hero-summary">{_esc(executive.get("display_call") or executive.get("primary_call"))}</p>
-      <div class="chips">
-        <span class="chip">Run: {_esc(run_id)}</span>
-        <span class="chip">Top pick: {_esc(executive.get("top_pick"))}</span>
-        <span class="chip">Confidence: {_esc(confidence)}</span>
-        <span class="chip">Mode: {_esc(research_context.get("research_mode") or meta.get("research_mode") or "realtime")}</span>
-      </div>
-      <p class="muted">{_esc(subtitle)}{f" · {_esc(generated_at)}" if generated_at else ""}</p>
-    </section>
-
-    <section class="section">
-      <h2>Original request</h2>
-      <div class="question">{_esc(query)}</div>
-      {_optional_line("As of date", research_context.get("as_of_date") or meta.get("as_of_date"))}
-    </section>
-
-    <div class="grid">
-      <section class="section">
-        <h2>Executive conclusion</h2>
-        <p>{_esc(executive.get("display_action_summary") or executive.get("action_summary"))}</p>
-      </section>
-      <section class="section">
-        <h2>Market context</h2>
-        <p>{_esc(macro.get("risk_headline"))}</p>
-        <p class="muted">Regime: {_esc(macro.get("regime"))} · VIX: {_esc(macro.get("vix"))}</p>
-      </section>
-    </div>
-
-    <div class="grid">
-      <section class="section">
-        <h2>Evidence summary</h2>
-        <p>{_esc(evidence_summary.get("headline"))}</p>
-        {evidence_items}
-      </section>
-      <section class="section">
-        <h2>Validation and caveats</h2>
-        <p>{_esc(validation_summary.get("headline"))}</p>
-        {validation_items}
-      </section>
-    </div>
-
-    {retrieved_block}
-
-    {chart_block}
-
-    <section class="section">
-      <h2>Candidate scoreboard</h2>
-      <table>
-        <thead><tr><th>Ticker</th><th>Company</th><th>Price</th><th>Score</th><th>Verdict</th></tr></thead>
-        <tbody>{scoreboard_rows or '<tr><td colspan="5">No scoreboard available.</td></tr>'}</tbody>
-      </table>
-    </section>
-
-    <section class="section">
-      <h2>Ticker research cards</h2>
-      <div class="cards">{ticker_blocks or '<p>No ticker cards available.</p>'}</div>
-    </section>
-
-    <section class="section">
-      <h2>Risk register</h2>
-      <ul>{risk_items or '<li>No risk register available.</li>'}</ul>
-    </section>
-
-    {backtest_block}
-
-    <section class="section">
-      <h2>Full memo</h2>
-      <div class="memo">{_esc(final_report) if final_report else 'No full memo available.'}</div>
-    </section>
-
-    <p class="footer-note">Generated by Financial Agent. This report is for research workflow review only and is not financial advice.</p>
-  </main>
-</body>
-</html>"""
 
     async def export_report_pdf(
         self,
@@ -304,6 +134,286 @@ def _normalize_pdf_kind(kind: str) -> str:
     if normalized not in {"investment", "development"}:
         raise PdfExportUnavailable("PDF kind 只支持 investment 或 development。")
     return normalized
+
+
+def _build_investment_report_html(
+    *,
+    run_id: str,
+    result: dict[str, Any],
+    report_briefing: dict[str, Any],
+    investment_output: dict[str, Any],
+    backtest_payload: Any,
+) -> str:
+    """渲染更精简的投资 PDF，优先保留用户真正会看的信息。"""
+    meta = _record(report_briefing.get("meta"))
+    executive = _record(report_briefing.get("executive"))
+    macro = _record(report_briefing.get("macro"))
+    scoreboard = _records(report_briefing.get("scoreboard"))
+    risk_register = _records(report_briefing.get("risk_register"))
+    research_context = _record(result.get("research_context"))
+    evidence_summary = _record(meta.get("evidence_summary"))
+    validation_summary = _record(meta.get("validation_summary"))
+    retrieved_evidence = _records(meta.get("retrieved_evidence"))
+    effective_charts = _effective_investment_charts(_record(investment_output.get("charts")), backtest_payload)
+
+    title = _text(meta.get("title"), "Investment Research Report")
+    subtitle = _text(meta.get("subtitle"), "Balanced portfolio decision summary")
+    query = _text(result.get("query"), "No original request.")
+    confidence = _text(meta.get("confidence_level"), "not rated")
+    generated_at = _text(meta.get("generated_at") or result.get("updated_at"), "")
+    research_mode = _text(research_context.get("research_mode") or meta.get("research_mode"), "realtime")
+    latest_evidence = _latest_evidence_stamp(meta)
+    backtest_status = "Available" if _has_backtest_chart(_record(effective_charts.get("portfolio_vs_benchmark_backtest")), backtest_payload) else "Not ready"
+
+    chips = [
+        ("Run", run_id),
+        ("Top pick", _text(executive.get("top_pick"), "N/A")),
+        ("Confidence", confidence),
+        ("Mode", research_mode),
+        ("Latest evidence", latest_evidence or "N/A"),
+    ]
+    allocation_table = _build_allocation_table(_records(executive.get("allocation_plan")), scoreboard, executive)
+    scoreboard_rows = _build_scoreboard_rows(scoreboard[:6])
+    risk_items = _build_risk_items(risk_register[:5])
+    evidence_appendix = _build_evidence_appendix(retrieved_evidence[:6], evidence_summary)
+    chart_block = _build_investment_chart_block(effective_charts, backtest_payload)
+    validation_points = _bullet_list(_strings(validation_summary.get("items")))
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{_esc(title)}</title>
+  <style>
+    @page {{ size: A4; margin: 14mm 12mm 16mm; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: #f7f3ea;
+      color: #162033;
+      font-family: "Aptos", "Segoe UI", "Noto Sans", sans-serif;
+      font-size: 12px;
+      line-height: 1.62;
+    }}
+    .page {{ max-width: 940px; margin: 0 auto; padding: 24px 20px 34px; }}
+    .hero {{
+      color: #f8efe0;
+      background: linear-gradient(135deg, #13243d 0%, #1e4d4a 56%, #b17b39 100%);
+      border-radius: 24px;
+      padding: 28px;
+      margin-bottom: 16px;
+    }}
+    .eyebrow {{ margin: 0 0 8px; letter-spacing: .22em; text-transform: uppercase; font-size: 10px; opacity: .82; }}
+    h1 {{ margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 30px; line-height: 1.08; }}
+    h2 {{ margin: 0 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 19px; color: #13243d; }}
+    h3 {{ margin: 0 0 8px; font-size: 15px; color: #13243d; }}
+    p {{ margin: 8px 0 0; }}
+    .hero-summary {{ max-width: 760px; margin: 14px 0 0; font-size: 14px; }}
+    .chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }}
+    .chip {{ display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); }}
+    .section {{
+      background: #fffaf2;
+      border: 1px solid #e2d5bf;
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 12px;
+      break-inside: avoid;
+    }}
+    .question {{ padding: 13px 15px; background: #f0eadf; border-radius: 14px; font-size: 13px; }}
+    .summary-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }}
+    .metric-card {{ padding: 12px; border-radius: 14px; border: 1px solid #e5dccd; background: #fffdf8; }}
+    .metric-label {{ margin: 0 0 5px; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: #6c7b8a; }}
+    .metric-value {{ margin: 0; font-size: 16px; color: #13243d; font-weight: 700; }}
+    .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .muted {{ color: #637083; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ padding: 9px 8px; border-bottom: 1px solid #e5dccd; text-align: left; vertical-align: top; }}
+    th {{ color: #6f5b3e; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }}
+    ul {{ margin: 8px 0 0; padding-left: 18px; }}
+    li {{ margin: 4px 0; }}
+    .chart-stack {{ display: grid; gap: 12px; }}
+    .ticker-card {{ border: 1px solid #ded2bf; border-radius: 16px; padding: 14px; background: #fffdf8; }}
+    .chart {{ width: 100%; height: auto; display: block; max-height: 260px; }}
+    a {{ color: #185d8f; text-decoration: none; }}
+    .footer-note {{ margin-top: 14px; color: #768195; font-size: 10px; }}
+    @media print {{
+      body {{ background: #ffffff; }}
+      .page {{ padding: 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Investment report PDF</p>
+      <h1>{_esc(title)}</h1>
+      <p class="hero-summary">{_esc(executive.get("display_call") or executive.get("primary_call"))}</p>
+      <p class="hero-summary">{_esc(executive.get("display_action_summary") or executive.get("action_summary"))}</p>
+      <div class="chips">{''.join(f'<span class="chip">{_esc(label)}: {_esc(value)}</span>' for label, value in chips if value)}</div>
+      <p class="muted">{_esc(subtitle)}{f" · {_esc(generated_at)}" if generated_at else ""}</p>
+    </section>
+
+    <section class="section">
+      <h2>Original request</h2>
+      <div class="question">{_esc(query)}</div>
+      {_optional_line("As of date", research_context.get("as_of_date") or meta.get("as_of_date"))}
+    </section>
+
+    <section class="section">
+      <h2>Decision board</h2>
+      <div class="summary-grid">
+        {_build_metric_card("Final recommendation", executive.get("display_call") or executive.get("primary_call"))}
+        {_build_metric_card("Suggested action", executive.get("display_action_summary") or executive.get("action_summary"))}
+        {_build_metric_card("Primary risk", macro.get("risk_headline"))}
+        {_build_metric_card("Top pick", executive.get("top_pick"))}
+        {_build_metric_card("Mandate fit", executive.get("mandate_fit_score"))}
+        {_build_metric_card("Backtest", backtest_status)}
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="section">
+        <h2>Recommended holdings</h2>
+        {allocation_table}
+      </section>
+      <section class="section">
+        <h2>Validation snapshot</h2>
+        <p>{_esc(validation_summary.get("headline") or "The conclusion was checked against the available evidence and score table.")}</p>
+        {validation_points or '<p class="muted">No extra validation notes were recorded.</p>'}
+      </section>
+    </div>
+
+    {chart_block}
+
+    <div class="grid">
+      <section class="section">
+        <h2>Candidate comparison</h2>
+        <table>
+          <thead><tr><th>Ticker</th><th>Company</th><th>Composite</th><th>Fit</th><th>Verdict</th></tr></thead>
+          <tbody>{scoreboard_rows or '<tr><td colspan="5">No candidate comparison is available.</td></tr>'}</tbody>
+        </table>
+      </section>
+      <section class="section">
+        <h2>Risk register</h2>
+        {risk_items or '<p class="muted">No material risk note is available.</p>'}
+      </section>
+    </div>
+
+    <section class="section">
+      <h2>Evidence appendix</h2>
+      <p>{_esc(evidence_summary.get("headline") or "The recommendation is backed by the latest evidence bundle available for this run.")}</p>
+      {evidence_appendix}
+    </section>
+
+    <p class="footer-note">Generated by Financial Agent. This PDF is a concise research summary and is not financial advice.</p>
+  </main>
+</body>
+</html>"""
+
+
+def _build_metric_card(label: str, value: Any) -> str:
+    """渲染结论第一页上的关键指标卡。"""
+    text = _text(value, "N/A")
+    return (
+        "<article class=\"metric-card\">"
+        f"<p class=\"metric-label\">{_esc(label)}</p>"
+        f"<p class=\"metric-value\">{_esc(text)}</p>"
+        "</article>"
+    )
+
+
+def _build_allocation_table(
+    allocation_plan: list[dict[str, Any]],
+    scoreboard: list[dict[str, Any]],
+    executive: dict[str, Any],
+) -> str:
+    """优先展示明确仓位，没有仓位时也给出一个简洁的可读结果。"""
+    rows = allocation_plan
+    if not rows:
+        top_pick = _text(executive.get("top_pick"), "")
+        verdict = ""
+        for item in scoreboard:
+            if _text(item.get("ticker")) == top_pick:
+                verdict = _text(item.get("verdict_label"), "")
+                break
+        if top_pick:
+            rows = [{"ticker": top_pick, "weight": None, "verdict": verdict or "Focus first"}]
+    body = "".join(
+        "<tr>"
+        f"<td>{_esc(item.get('ticker'))}</td>"
+        f"<td>{_esc(_format_weight(item.get('weight')))}</td>"
+        f"<td>{_esc(item.get('verdict') or item.get('verdict_label') or 'Review')}</td>"
+        "</tr>"
+        for item in rows
+    )
+    return (
+        "<table>"
+        "<thead><tr><th>Ticker</th><th>Weight</th><th>Role</th></tr></thead>"
+        f"<tbody>{body or '<tr><td colspan=\"3\">No sizing plan is available yet.</td></tr>'}</tbody>"
+        "</table>"
+    )
+
+
+def _format_weight(value: Any) -> str:
+    """把仓位数字整理成更自然的百分比文本。"""
+    number = _float(value)
+    if number is None:
+        return "Pending"
+    return f"{number:.1f}%"
+
+
+def _build_scoreboard_rows(scoreboard: list[dict[str, Any]]) -> str:
+    """输出更精简的候选对比表。"""
+    rows = []
+    for item in scoreboard:
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(item.get('ticker'))}</td>"
+            f"<td>{_esc(item.get('company_name'))}</td>"
+            f"<td>{_esc(item.get('composite_score'))}</td>"
+            f"<td>{_esc(item.get('suitability_score') or item.get('mandate_fit_score') or 'N/A')}</td>"
+            f"<td>{_esc(item.get('verdict_label'))}</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _build_risk_items(items: list[dict[str, Any]]) -> str:
+    """输出简洁版风险登记。"""
+    if not items:
+        return ""
+    return "<ul>" + "".join(
+        f"<li><strong>{_esc(item.get('category'))}{' / ' + _esc(item.get('ticker')) if item.get('ticker') else ''}</strong>: {_esc(item.get('summary'))}</li>"
+        for item in items
+    ) + "</ul>"
+
+
+def _latest_evidence_stamp(meta: dict[str, Any]) -> str:
+    """尽量找出本次结论能对应到的最新依据日期。"""
+    dates: list[str] = []
+    for item in _records(meta.get("retrieved_evidence")):
+        value = _text(item.get("published_at") or item.get("as_of_date"), "")
+        if value:
+            dates.append(value[:10])
+    return max(dates) if dates else _text(meta.get("as_of_date"), "")
+
+
+def _build_evidence_appendix(items: list[dict[str, Any]], evidence_summary: dict[str, Any]) -> str:
+    """给 PDF 保留一个可追溯但不过长的依据附录。"""
+    if items:
+        rows = []
+        for item in items:
+            title = _text(item.get("title") or item.get("summary"), "Evidence")
+            source = _text(item.get("source_name") or item.get("source_type"), "Source")
+            published = _text(item.get("published_at") or item.get("as_of_date"), "")
+            url = _text(item.get("url"), "")
+            label = f"{source}{' · ' + published if published else ''}"
+            title_block = f'<a href="{_esc(url)}">{_esc(title)}</a>' if url else _esc(title)
+            rows.append(f"<li>{title_block}<br><span class=\"muted\">{_esc(label)}</span></li>")
+        return f"<ul>{''.join(rows)}</ul>"
+    summary_points = [*_strings(evidence_summary.get("items")), *_strings(evidence_summary.get("source_points"))]
+    return _bullet_list(summary_points) or '<p class="muted">No evidence appendix is available for this run.</p>'
 
 
 def _build_development_report_html(
@@ -462,37 +572,68 @@ def _development_diagnostic_rows(diagnostics: dict[str, Any]) -> list[tuple[str,
 
 
 def _build_investment_chart_block(charts: dict[str, Any], backtest: Any) -> str:
-    """渲染投资报告固定四类图表区域。"""
-    if not charts:
-        charts = {}
-    allocation = _build_bar_chart(
-        title="Recommended Portfolio Allocation",
-        chart=_record(charts.get("portfolio_allocation")),
-        value_keys=("weight", "weight_pct", "allocation"),
-        label_keys=("ticker", "name"),
-        suffix="%",
+    """渲染投资报告关键三张图，优先和页面展示保持一致。"""
+    effective = _effective_investment_charts(charts, backtest)
+    selected_cards = [
+        _build_bar_chart(
+            title="Recommended Portfolio Allocation",
+            chart=_record(effective.get("portfolio_allocation")),
+            value_keys=("weight", "weight_pct", "allocation"),
+            label_keys=("ticker", "name"),
+            suffix="%",
+        ),
+        _build_bar_chart(
+            title="Candidate Score Comparison",
+            chart=_record(effective.get("candidate_score_comparison")),
+            value_keys=("composite", "composite_score", "score"),
+            label_keys=("ticker", "name"),
+            suffix="",
+        ),
+    ]
+    backtest_chart = _record(effective.get("portfolio_vs_benchmark_backtest"))
+    if _has_backtest_chart(backtest_chart, backtest):
+        selected_cards.append(_build_backtest_chart_card(backtest_chart, backtest))
+    else:
+        selected_cards.append(
+            _build_bar_chart(
+                title="Risk Contribution",
+                chart=_record(effective.get("risk_contribution")),
+                value_keys=("value", "risk", "risk_score", "weight"),
+                label_keys=("name", "category", "ticker"),
+                suffix="",
+            )
+        )
+    return (
+        "<section class=\"section\">"
+        "<h2>Key charts</h2>"
+        f"<div class=\"chart-stack\">{''.join(selected_cards)}</div>"
+        "</section>"
     )
-    scores = _build_bar_chart(
-        title="Candidate Score Comparison",
-        chart=_record(charts.get("candidate_score_comparison")),
-        value_keys=("composite", "composite_score", "score"),
-        label_keys=("ticker", "name"),
-        suffix="",
-    )
-    backtest_chart = _build_backtest_chart_card(_record(charts.get("portfolio_vs_benchmark_backtest")), backtest)
-    risk = _build_bar_chart(
-        title="Risk Contribution",
-        chart=_record(charts.get("risk_contribution")),
-        value_keys=("value", "risk", "risk_score", "weight"),
-        label_keys=("name", "category", "ticker"),
-        suffix="%",
-    )
-    return f"""
-    <section class="section">
-      <h2>Report charts</h2>
-      <div class="grid">{allocation}{scores}{backtest_chart}{risk}</div>
-    </section>
-    """
+
+
+def _effective_investment_charts(charts: dict[str, Any], backtest: Any) -> dict[str, Any]:
+    """把当前已加载回测覆盖进投资图表，避免页面和 PDF 不一致。"""
+    merged = dict(charts or {})
+    backtest_chart = _record(merged.get("portfolio_vs_benchmark_backtest"))
+    payload = _record(backtest)
+    points = _records(payload.get("points"))
+    summary = _record(payload.get("summary"))
+    if points or summary:
+        merged["portfolio_vs_benchmark_backtest"] = {
+            **backtest_chart,
+            "status": "available" if points else backtest_chart.get("status", "missing"),
+            "summary": summary or _record(backtest_chart.get("summary")),
+            "points": points or _records(backtest_chart.get("points")),
+            "message": "" if points else _text(backtest_chart.get("message"), "Backtest data is insufficient; this chart was not generated."),
+        }
+    return merged
+
+
+def _has_backtest_chart(chart: dict[str, Any], backtest: Any) -> bool:
+    """判断当前是否真的有可画出的回测曲线。"""
+    payload = _record(backtest)
+    points = _records(payload.get("points")) or _records(chart.get("points"))
+    return len(points) >= 2
 
 
 def _build_bar_chart(
