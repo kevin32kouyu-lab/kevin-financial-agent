@@ -255,6 +255,8 @@ function ConclusionSummary({
   queryText,
   contextChips,
   progress,
+  progressLabel,
+  hasRunningTask,
   uiStage,
   statusCopy,
   runUpdatedAt,
@@ -269,6 +271,8 @@ function ConclusionSummary({
   queryText: string;
   contextChips: string[];
   progress: { percent: number; tone: string; textKey: string };
+  progressLabel: string;
+  hasRunningTask: boolean;
   uiStage: string;
   statusCopy: string;
   runUpdatedAt: string;
@@ -437,19 +441,19 @@ function ConclusionSummary({
           </div>
         </article>
 
-        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
+        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}${hasRunningTask ? " is-running" : ""}`} data-tour-id="terminal-progress-card">
           <div className="section-head tight">
             <div>
               <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
               <h2>{uiStage}</h2>
             </div>
-            <strong className="terminal-progress-percent">{progress.percent}%</strong>
+            <strong className="terminal-progress-percent">{progressLabel}</strong>
           </div>
           <div className="terminal-progress-stage-row">
             <span>{locale === "zh" ? "当前阶段" : "Current stage"}</span>
             <strong>{uiStage}</strong>
           </div>
-          <Progress value={progress.percent} className="terminal-progress-track-strong" />
+          <Progress value={progress.percent} className={`terminal-progress-track-strong${hasRunningTask ? " is-running" : ""}`} />
           <p className="section-note terminal-progress-copy">{statusCopy}</p>
           <div className="terminal-progress-meta">
             <span>{locale === "zh" ? "最新更新时间" : "Latest update"}</span>
@@ -1041,6 +1045,7 @@ export function TerminalView() {
 
   const progress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
+  const progressLabel = hasRunningTask ? (locale === "zh" ? "运行中" : "Running") : `${progress.percent}%`;
   const friendlyError = pickFriendlyError(errorText, locale);
   const uiStage = resolveTerminalStage(runDetail?.run.status, runDetail?.steps || [], locale);
   const result = runDetail?.result || null;
@@ -1425,19 +1430,19 @@ export function TerminalView() {
             </article>
 
             <aside className="terminal-side-stack">
-              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
+              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}${hasRunningTask ? " is-running" : ""}`} data-tour-id="terminal-progress-card">
                 <div className="section-head tight">
                   <div>
                     <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
                     <h2>{uiStage}</h2>
                   </div>
-                  <strong className="terminal-progress-percent">{progress.percent}%</strong>
+                  <strong className="terminal-progress-percent">{progressLabel}</strong>
                 </div>
                 <div className="terminal-progress-stage-row">
                   <span>{locale === "zh" ? "当前阶段" : "Current stage"}</span>
                   <strong>{uiStage}</strong>
                 </div>
-                <Progress value={progress.percent} className="terminal-progress-track-strong" />
+                <Progress value={progress.percent} className={`terminal-progress-track-strong${hasRunningTask ? " is-running" : ""}`} />
                 <p className="section-note terminal-progress-copy">{statusCopy}</p>
                 <div className="terminal-progress-meta">
                   <span>{locale === "zh" ? "最新更新时间" : "Latest update"}</span>
@@ -1504,6 +1509,8 @@ export function TerminalView() {
                 queryText={queryText}
                 contextChips={contextChips}
                 progress={progress}
+                progressLabel={progressLabel}
+                hasRunningTask={hasRunningTask}
                 uiStage={uiStage}
                 statusCopy={statusCopy}
                 runUpdatedAt={runUpdatedAt}

@@ -3942,6 +3942,48 @@ body::before {
   box-shadow: 0 0 18px rgba(120, 210, 240, 0.34);
 }
 
+.terminal-progress-track-strong.is-running::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.34) 45%, transparent 80%);
+  transform: translateX(-100%);
+  animation: terminal-progress-scan 1.15s linear infinite;
+}
+
+.terminal-progress-track-strong.is-running > div {
+  background: linear-gradient(90deg, #7fe3d6 0%, #93bfff 34%, #d7fbff 50%, #93bfff 68%, #7fe3d6 100%) !important;
+  background-size: 220% 100% !important;
+  animation: terminal-progress-flow 1.4s linear infinite;
+}
+
+.terminal-progress-panel.is-running .terminal-progress-percent {
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a9f2ff;
+}
+
+@keyframes terminal-progress-flow {
+  from {
+    background-position: 0% 50%;
+  }
+
+  to {
+    background-position: 220% 50%;
+  }
+}
+
+@keyframes terminal-progress-scan {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
 .terminal-progress-panel.progress-positive .terminal-progress-track-strong > div {
   background: linear-gradient(90deg, #7fe3d6, #66c4a1) !important;
   box-shadow: 0 0 18px rgba(102, 196, 161, 0.42);

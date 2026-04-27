@@ -431,7 +431,9 @@ test("running research jumps above 59 percent once report generation starts", as
   await page.goto("/terminal?run=demo-run");
   await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
   await expect(page.getByText("Task progress")).toBeVisible();
-  await expect(page.getByText("84%")).toBeVisible();
+  await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
+  await expect(page.locator(".terminal-progress-percent")).toHaveText("Running");
+  await expect(page.getByText("84%")).toHaveCount(0);
   await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
   await expect(page.getByText("59%")).toHaveCount(0);
 });
@@ -442,7 +444,9 @@ test("running market data step advances beyond the stale 58 percent plateau", as
   await page.goto("/terminal?run=demo-run");
   await expect(page.getByText("Task progress")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Aggregating market data" })).toBeVisible();
-  await expect(page.getByText("66%")).toBeVisible();
+  await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
+  await expect(page.locator(".terminal-progress-percent")).toHaveText("Running");
+  await expect(page.getByText("66%")).toHaveCount(0);
   await expect(page.getByText("58%")).toHaveCount(0);
   await expect(page.getByText("59%")).toHaveCount(0);
 });
