@@ -490,7 +490,8 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
 
   const loadRunBundle = useEffectEvent(async (runId: string) => {
     const cached = runBundleCacheRef.current.get(runId);
-    if (cached) {
+    const cachedStatus = cached?.detail.run.status;
+    if (cached && cachedStatus && TERMINAL_STATUSES.has(cachedStatus)) {
       startTransition(() => {
         setRunDetail(cached.detail);
         setArtifacts(cached.artifacts);
@@ -513,6 +514,11 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     setRunLoading(true);
     try {
       const detailResponse = await getRunDetail(runId);
+      const previousCache = runBundleCacheRef.current.get(runId);
+      const previousStatus = previousCache?.detail.run.status;
+      const transitionedToTerminal =
+        TERMINAL_STATUSES.has(detailResponse.run.status) && (!previousStatus || !TERMINAL_STATUSES.has(previousStatus));
+      const shouldLoadSupplemental = !previousCache?.supplementalLoaded || transitionedToTerminal;
       startTransition(() => {
         setRunDetail(detailResponse);
         setMode(detailResponse.run.mode);
@@ -520,11 +526,13 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       });
       runBundleCacheRef.current.set(runId, {
         detail: detailResponse,
-        artifacts: [],
-        auditSummary: null,
-        supplementalLoaded: false,
+        artifacts: previousCache?.artifacts ?? [],
+        auditSummary: previousCache?.auditSummary ?? null,
+        supplementalLoaded: previousCache?.supplementalLoaded && !transitionedToTerminal ? true : false,
       });
-      void loadRunSupplemental(runId);
+      if (shouldLoadSupplemental) {
+        void loadRunSupplemental(runId);
+      }
 
       const resultRecord = (detailResponse.result || {}) as Record<string, unknown>;
       const storedPreferences =
@@ -666,6 +674,16 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   useEffect(() => {
     if (!activeRunId) setStatusText(copy.status.ready);
   }, [locale, activeRunId, copy.status.ready]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeRunId) return;
+    const status = runDetail?.run.status;
+    if (status !== "queued" && status !== "running") return;
+    const timer = window.setInterval(() => {
+      void loadRunBundle(activeRunId);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [activeRunId, runDetail?.run.status, loadRunBundle]);
 
   useEffect(() => {
     return () => {

@@ -175,6 +175,19 @@ const runningDetail = {
   },
 };
 
+const staleRunningDetail = {
+  run: runningRun,
+  steps: [
+    { step_key: "intent_analysis", label: "Intent", status: "completed", position: 1, created_at: now, updated_at: now },
+    { step_key: "research_plan", label: "Plan", status: "completed", position: 2, created_at: now, updated_at: now },
+    { step_key: "structured_analysis", label: "Analysis", status: "completed", position: 3, created_at: now, updated_at: now },
+  ],
+  artifacts: [],
+  result: {
+    query: "Refresh this run after an event.",
+  },
+};
+
 async function mockTerminalApis(
   page: Page,
   options: {
@@ -186,6 +199,7 @@ async function mockTerminalApis(
     captureLinkMemoryPosts?: string[];
     captureHistoryRequests?: string[];
     detailOverride?: typeof demoDetail;
+    detailSequence?: Array<typeof demoDetail>;
     historyItems?: typeof demoRun[];
   } = {},
 ) {
@@ -267,7 +281,12 @@ async function mockTerminalApis(
     options.captureHistoryRequests?.push(route.request().url());
     await route.fulfill({ json: { items: activeHistory } });
   });
-  await page.route("**/api/runs/demo-run", (route) => route.fulfill({ json: activeDetail }));
+  let detailRequestCount = 0;
+  await page.route("**/api/runs/demo-run", (route) => {
+    const sequenceDetail = options.detailSequence?.[Math.min(detailRequestCount, options.detailSequence.length - 1)];
+    detailRequestCount += 1;
+    return route.fulfill({ json: sequenceDetail || activeDetail });
+  });
   await page.route("**/api/runs/demo-run/artifacts", (route) => route.fulfill({ json: { run_id: "demo-run", artifacts: [] } }));
   await page.route("**/api/v1/runs/demo-run/audit-summary", (route) =>
     route.fulfill({ json: { run_id: "demo-run", title: "Demo research", status: "completed", query: demoResult.query, research_mode: "historical", as_of_date: "2026-01-15", top_pick: "MSFT", confidence_level: "medium", validation_flags: [], coverage_flags: [], used_sources: ["mock"], degraded_modules: [], memory_applied_fields: [] } }),
@@ -402,6 +421,66 @@ test("running research jumps above 59 percent once report generation starts", as
   await expect(page.getByText("84%")).toBeVisible();
   await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
   await expect(page.getByText("59%")).toHaveCount(0);
+});
+
+test("run event refreshes running detail from the server instead of stale cache", async ({ page }) => {
+  await page.addInitScript(() => {
+    class FakeEventSource extends EventTarget {
+      url: string;
+      onerror: (() => void) | null = null;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        window.setTimeout(() => {
+          this.dispatchEvent(
+            new MessageEvent("run.completed", {
+              data: JSON.stringify({ run_id: "demo-run" }),
+              lastEventId: "2",
+            }),
+          );
+        }, 40);
+      }
+
+      close() {}
+    }
+
+    window.EventSource = FakeEventSource as typeof EventSource;
+  });
+  await mockTerminalApis(page, {
+    detailSequence: [staleRunningDetail as typeof demoDetail, demoDetail],
+    historyItems: [runningRun],
+  });
+
+  await page.goto("/terminal/conclusion?run=demo-run");
+  await expect(page.getByText("Refresh this run after an event.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Focus on MSFT", exact: true })).toBeVisible();
+});
+
+test("running detail refreshes without requiring a browser reload when events are missed", async ({ page }) => {
+  await page.addInitScript(() => {
+    class SilentEventSource extends EventTarget {
+      url: string;
+      onerror: (() => void) | null = null;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+      }
+
+      close() {}
+    }
+
+    window.EventSource = SilentEventSource as typeof EventSource;
+  });
+  await mockTerminalApis(page, {
+    detailSequence: [staleRunningDetail as typeof demoDetail, demoDetail],
+    historyItems: [runningRun],
+  });
+
+  await page.goto("/terminal/conclusion?run=demo-run");
+  await expect(page.getByText("Refresh this run after an event.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Focus on MSFT", exact: true })).toBeVisible({ timeout: 6000 });
 });
 
 test("terminal route tabs switch pages without a full page reload", async ({ page }) => {
