@@ -180,6 +180,30 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
 
 
 @pytest.mark.asyncio
+async def test_agent_coordinator_publishes_running_stage_before_long_data_step():
+    """长耗时阶段开始时应先发布 running，避免前端停在旧进度。"""
+    stages: list[dict[str, Any]] = []
+
+    async def on_stage(stage: dict[str, Any]) -> None:
+        """收集 coordinator 发布的阶段状态。"""
+        stages.append(stage)
+
+    coordinator = AgentCoordinator(FakeAnalysisService(), FakeReportService())
+    payload = AgentRunRequest(query="Find low risk quality tech stocks for 10000 USD")
+    response = await coordinator.run(payload, hooks=AgentRunHooks(stage_callback=on_stage))
+
+    assert response["status"] == "completed"
+    structured_events = [
+        (index, item["status"])
+        for index, item in enumerate(stages)
+        if item["key"] == "structured_analysis"
+    ]
+    assert structured_events[0][1] == "running"
+    assert structured_events[-1][1] == "completed"
+    assert structured_events[0][0] < structured_events[-1][0]
+
+
+@pytest.mark.asyncio
 async def test_agent_coordinator_stops_before_data_agent_when_clarification_needed():
     """信息不足时流程应停在 IntakeAgent，不调用数据和报告 agent。"""
     coordinator = AgentCoordinator(FakeAnalysisService(), FakeReportService())

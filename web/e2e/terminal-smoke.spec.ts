@@ -188,6 +188,19 @@ const staleRunningDetail = {
   },
 };
 
+const activeStructuredRunningDetail = {
+  run: runningRun,
+  steps: [
+    { step_key: "intent_analysis", label: "Intent", status: "completed", position: 1, created_at: now, updated_at: now },
+    { step_key: "research_plan", label: "Plan", status: "completed", position: 2, created_at: now, updated_at: now },
+    { step_key: "structured_analysis", label: "Analysis", status: "running", position: 3, created_at: now, updated_at: now },
+  ],
+  artifacts: [],
+  result: {
+    query: "Actively aggregating market data.",
+  },
+};
+
 async function mockTerminalApis(
   page: Page,
   options: {
@@ -420,6 +433,17 @@ test("running research jumps above 59 percent once report generation starts", as
   await expect(page.getByText("Task progress")).toBeVisible();
   await expect(page.getByText("84%")).toBeVisible();
   await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
+  await expect(page.getByText("59%")).toHaveCount(0);
+});
+
+test("running market data step advances beyond the stale 58 percent plateau", async ({ page }) => {
+  await mockTerminalApis(page, { detailOverride: activeStructuredRunningDetail as typeof demoDetail, historyItems: [runningRun] });
+
+  await page.goto("/terminal?run=demo-run");
+  await expect(page.getByText("Task progress")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Aggregating market data" })).toBeVisible();
+  await expect(page.getByText("66%")).toBeVisible();
+  await expect(page.getByText("58%")).toHaveCount(0);
   await expect(page.getByText("59%")).toHaveCount(0);
 });
 
