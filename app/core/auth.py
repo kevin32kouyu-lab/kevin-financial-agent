@@ -28,7 +28,11 @@ def get_api_key(request: Request) -> None:
 
 def get_client_id(request: Request) -> str:
     """读取浏览器侧 client_id，缺省时回退到默认档案。"""
-    client_id = (request.headers.get(CLIENT_ID_HEADER) or "").strip()
+    client_id = (
+        request.headers.get(CLIENT_ID_HEADER)
+        or request.query_params.get("client_id")
+        or ""
+    ).strip()
     return client_id or "default"
 
 

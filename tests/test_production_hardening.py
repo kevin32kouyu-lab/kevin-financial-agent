@@ -1,9 +1,12 @@
 """生产级补强测试：账户、审计、回测口径和数据刷新任务。"""
 
 from datetime import date
+from types import SimpleNamespace
 
 import pandas as pd
+from starlette.requests import Request
 
+from app.core.auth import get_client_id
 from app.core.config import AppSettings
 from app.domain.contracts import (
     BacktestAssumptions,
@@ -127,3 +130,19 @@ def test_market_data_service_records_refresh_jobs(tmp_path):
     assert result["dataset"] == "security_master"
     assert jobs["items"][0]["dataset"] == "security_master"
     assert jobs["items"][0]["status"] == "completed"
+
+
+def test_client_id_allows_event_stream_query_fallback():
+    """事件流不能自定义请求头时，后端也应能从 query string 读取 client_id。"""
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/runs/demo-run/events",
+            "query_string": b"client_id=browser-001",
+            "headers": [],
+            "app": SimpleNamespace(state=SimpleNamespace()),
+        }
+    )
+
+    assert get_client_id(request) == "browser-001"

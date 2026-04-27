@@ -5,12 +5,14 @@ import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
 import { ReportPanel } from "../components/ReportPanel";
 import { AccountPanel } from "../components/terminal/AccountPanel";
+import { ProductTour } from "../components/terminal/ProductTour";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
 import { isFollowedRun, readFollowedRuns, toggleFollowedRun, type FollowedRunEntry } from "../lib/followedRuns";
+import { markUiInteraction } from "../lib/interactionPerf";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 import { computeTerminalProgress, resolveTerminalStage } from "../lib/terminalProgress";
 import {
@@ -223,7 +225,7 @@ function TerminalRouteTabs({
   ];
 
   return (
-    <nav className="panel-surface terminal-route-tabs">
+    <nav className="panel-surface terminal-route-tabs" data-tour-id="terminal-route-tabs">
       {items.map((item) => (
         <a
           key={item.key}
@@ -231,7 +233,9 @@ function TerminalRouteTabs({
           onClick={(event) => {
             if (!shouldUseClientNavigation(event)) return;
             event.preventDefault();
+            const finishMark = markUiInteraction(`terminal-tab:${item.key}`);
             onNavigate(item.key, activeRunId);
+            finishMark();
           }}
           className={item.key === activePage ? "terminal-route-tab active" : "terminal-route-tab"}
         >
@@ -273,7 +277,7 @@ function ConclusionSummary({
   onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   return (
-    <section className="terminal-page-grid">
+    <section className="terminal-page-grid" data-tour-id="terminal-conclusion-page">
       <article className="panel-surface terminal-summary-panel">
         <div className="section-head terminal-page-head">
           <div>
@@ -433,7 +437,7 @@ function ConclusionSummary({
           </div>
         </article>
 
-        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`}>
+        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
           <div className="section-head tight">
             <div>
               <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
@@ -466,7 +470,7 @@ function ConclusionEmptyState({
   onNavigate: (page: TerminalPage, runId?: string | null) => void;
 }) {
   return (
-    <section className="terminal-route-stack">
+    <section className="terminal-route-stack" data-tour-id="terminal-conclusion-page">
       <article className="panel-surface terminal-route-header terminal-empty-panel">
         <div className="section-head">
           <div>
@@ -633,7 +637,7 @@ function ArchivePage({
   const boundQuery = extractBoundQuery(result, "", locale);
 
   return (
-    <section className="terminal-route-stack">
+    <section className="terminal-route-stack" data-tour-id="terminal-archive-page">
       <article className="panel-surface terminal-route-header">
         <div className="section-head">
           <div>
@@ -843,7 +847,7 @@ function BacktestPage({
   const queryText = extractBoundQuery(result, "", locale);
 
   return (
-    <section className="terminal-route-stack">
+    <section className="terminal-route-stack" data-tour-id="terminal-backtest-page">
       <article className="panel-surface terminal-route-header">
         <div className="section-head">
           <div>
@@ -902,6 +906,7 @@ export function TerminalView() {
     auditSummary,
     agentForm,
     history,
+    filters,
     activeRunId,
     runDetail,
     backtestDetail,
@@ -926,6 +931,7 @@ export function TerminalView() {
     createAgentRun,
     cancelActiveRun,
     openRun,
+    refreshHistory,
     loadBacktest,
     runBacktest,
     continueFromRun,
@@ -933,7 +939,9 @@ export function TerminalView() {
   } = useResearchConsole("agent");
   const { terminalPage, routeRunId, navigateTerminal, replaceTerminalRun } = useTerminalNavigation(activeRunId);
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
-  const [motionLevel, setMotionLevel] = useState<"high" | "low">(() => (readMotionEnabled() ? "high" : "low"));
+  const [motionLevel, setMotionLevel] = useState<"high" | "low">("low");
+  const [isRouteTransitioning, setIsRouteTransitioning] = useState(false);
+  const [productTourReplaySignal, setProductTourReplaySignal] = useState(0);
   const [, setUiFeedbackState] = useState<
     "idle" | "queued" | "running" | "completed" | "failed" | "cancelled" | "needs_clarification"
   >("idle");
@@ -953,6 +961,13 @@ export function TerminalView() {
       document.documentElement.setAttribute("data-motion", motionEnabled ? "on" : "off");
     }
   }, [motionEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsRouteTransitioning(true);
+    const timer = window.setTimeout(() => setIsRouteTransitioning(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [terminalPage]);
 
   useEffect(() => {
     const status = runDetail?.run.status;
@@ -1019,6 +1034,11 @@ export function TerminalView() {
     void loadBacktest(activeRunId);
   }, [terminalPage, activeRunId, runDetail?.run.status, loadBacktest]);
 
+  useEffect(() => {
+    if (terminalPage !== "archive") return;
+    void refreshHistory();
+  }, [terminalPage, filters.mode, filters.status, filters.search, refreshHistory]);
+
   const progress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
   const friendlyError = pickFriendlyError(errorText, locale);
@@ -1081,21 +1101,6 @@ export function TerminalView() {
     return null;
   }, [runDetail?.run.status, copy.terminal, friendlyError]);
 
-  const onboardingSteps = [
-    {
-      title: copy.terminal.onboarding.step1Title,
-      body: copy.terminal.onboarding.step1Body,
-    },
-    {
-      title: copy.terminal.onboarding.step2Title,
-      body: copy.terminal.onboarding.step2Body,
-    },
-    {
-      title: copy.terminal.onboarding.step3Title,
-      body: copy.terminal.onboarding.step3Body,
-    },
-  ];
-
   /** 切换动效开关。 */
   function toggleMotion() {
     setMotionEnabled((value) => {
@@ -1128,9 +1133,11 @@ export function TerminalView() {
     setFollowedRuns(next);
   }
 
+  const terminalMotionLevel = isRouteTransitioning ? "low" : motionLevel;
+
   return (
     <div className="terminal-route-shell">
-      <MotionBackdrop enabled={motionEnabled} level={motionLevel} className="terminal-motion" />
+      <MotionBackdrop enabled={motionEnabled} level={terminalMotionLevel} className="terminal-motion" />
 
       <header className="front-topbar terminal-topbar">
         <div className="front-brand">
@@ -1151,17 +1158,28 @@ export function TerminalView() {
           <Button variant="secondary" size="sm" className="compact-action" onClick={toggleMotion}>
             {locale === "zh" ? `动效${motionEnabled ? "开启" : "关闭"}` : `Motion ${motionEnabled ? "On" : "Off"}`}
           </Button>
-          <AccountPanel
-            locale={locale}
-            currentAccount={currentAccount}
-            loading={accountLoading}
-            submitting={authSubmitting}
-            notice={accountNotice}
-            onLogin={loginWithAccount}
-            onRegister={registerWithAccount}
-            onLogout={logoutCurrentAccount}
-            onSyncMemory={syncBrowserMemoryToAccount}
-          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="compact-action"
+            onClick={() => setProductTourReplaySignal((value) => value + 1)}
+          >
+            {copy.terminal.productGuide.reopen}
+          </Button>
+          <div data-tour-id="terminal-account-entry">
+            <AccountPanel
+              locale={locale}
+              currentAccount={currentAccount}
+              loading={accountLoading}
+              submitting={authSubmitting}
+              notice={accountNotice}
+              onLogin={loginWithAccount}
+              onRegister={registerWithAccount}
+              onLogout={logoutCurrentAccount}
+              onSyncMemory={syncBrowserMemoryToAccount}
+            />
+          </div>
         </div>
       </header>
 
@@ -1175,7 +1193,7 @@ export function TerminalView() {
       {terminalPage === "ask" ? (
         <>
           <section className="terminal-page-grid terminal-ask-grid">
-            <article className="panel-surface terminal-ask-panel">
+            <article className="panel-surface terminal-ask-panel" data-tour-id="terminal-ask-panel">
               <div className="section-head">
                 <div>
                   <p className="eyebrow">{locale === "zh" ? "开始研究" : "Start research"}</p>
@@ -1301,24 +1319,6 @@ export function TerminalView() {
               <div className="terminal-details-stack">
                 <details className="terminal-inline-details">
                   <summary>
-                    <span>{copy.terminal.onboarding.title}</span>
-                    <span className="terminal-details-summary-copy">
-                      {locale === "zh" ? "非阻断式引导，随时展开查看。" : "Non-blocking guidance you can open anytime."}
-                    </span>
-                  </summary>
-                  <div className="terminal-guide-list">
-                    {onboardingSteps.map((item, index) => (
-                      <article key={item.title} className="mini-card terminal-guide-item">
-                        <span className="mini-label">{locale === "zh" ? `步骤 ${index + 1}` : `Step ${index + 1}`}</span>
-                        <strong>{item.title}</strong>
-                        <p>{item.body}</p>
-                      </article>
-                    ))}
-                  </div>
-                </details>
-
-                <details className="terminal-inline-details">
-                  <summary>
                     <span>{locale === "zh" ? "高级设置" : "Advanced settings"}</span>
                     <span className="terminal-details-summary-copy">
                       {terminalMode === "historical"
@@ -1425,7 +1425,7 @@ export function TerminalView() {
             </article>
 
             <aside className="terminal-side-stack">
-              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`}>
+              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
                 <div className="section-head tight">
                   <div>
                     <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
@@ -1568,6 +1568,13 @@ export function TerminalView() {
           onNavigate={navigateTerminal}
         />
       ) : null}
+
+      <ProductTour
+        copy={copy.terminal.productGuide}
+        activeRunId={activeRunId}
+        replaySignal={productTourReplaySignal}
+        onNavigate={navigateTerminal}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 /** 正式报告面板：负责渲染报告正文、依据摘要、逐票研究卡与导出入口。 */
 import { useEffect, useRef, useState } from "react";
 import { formatDateTime, formatJson, formatScore, repairText } from "../lib/format";
+import { markUiInteraction } from "../lib/interactionPerf";
 import { exportReport, type ReportKind } from "../lib/reportExport";
 import { getEffectiveInvestmentCharts, getReportOutput as getReportOutputByKind, readDevelopmentDiagnostic } from "../lib/reportOutputs";
 import type { BacktestDetail, DataStatus, Locale } from "../lib/types";
@@ -691,10 +692,12 @@ function StructuredSnapshot({ locale, copy, result }: { locale: Locale; copy: Lo
 export function ReportPanel({ locale, copy, result, dataStatus, backtest = null, runId, variant = "debug" }: ReportPanelProps) {
   const [activeMetricHelpId, setActiveMetricHelpId] = useState<string | null>(null);
   const [activeReportKind, setActiveReportKind] = useState<ReportKind>("investment");
+  const [memoExpanded, setMemoExpanded] = useState(false);
   const metricHelpRootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setActiveReportKind("investment");
+    setMemoExpanded(false);
   }, [runId, result]);
 
   useEffect(() => {
@@ -859,7 +862,11 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
               role="tab"
               aria-selected={activeReportKind === kind}
               className={`anchor-chip ${activeReportKind === kind ? "active" : ""}`}
-              onClick={() => setActiveReportKind(kind)}
+              onClick={() => {
+                const finishMark = markUiInteraction(`report-tab:${kind}`);
+                setActiveReportKind(kind);
+                finishMark();
+              }}
             >
               {kind === "investment"
                 ? locale === "zh"
@@ -1383,9 +1390,13 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       </div>
 
       {finalReport ? (
-        <details id="report-memo" className="report-details anchor-target">
+        <details
+          id="report-memo"
+          className="report-details anchor-target"
+          onToggle={(event) => setMemoExpanded(event.currentTarget.open)}
+        >
           <summary>{copy.report.fullReport}</summary>
-          <article className="report-prose">{renderReportMarkdown(finalReport)}</article>
+          {memoExpanded ? <article className="report-prose">{renderReportMarkdown(finalReport)}</article> : null}
         </details>
       ) : null}
         </>

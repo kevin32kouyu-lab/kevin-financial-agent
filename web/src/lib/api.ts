@@ -267,7 +267,12 @@ export function openRunEventStream(
   onEvent: (event: RunEvent) => void,
   onError: () => void,
 ): EventSource {
-  const source = new EventSource(`/api/runs/${runId}/events`);
+  const params = new URLSearchParams();
+  const clientId = getClientId();
+  if (clientId) {
+    params.set("client_id", clientId);
+  }
+  const source = new EventSource(`/api/runs/${runId}/events${params.toString() ? `?${params.toString()}` : ""}`);
 
   const handle = (event: MessageEvent<string>) => {
     try {

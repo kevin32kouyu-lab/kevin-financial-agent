@@ -3614,6 +3614,101 @@ body::before {
   box-shadow: 0 18px 40px rgba(8, 22, 40, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+.product-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(126, 228, 216, 0.14), transparent 28%),
+    rgba(3, 10, 21, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.product-tour-overlay-center {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.product-tour-dialog {
+  position: fixed;
+  z-index: 82;
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(151, 197, 255, 0.22);
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(16, 31, 52, 0.98), rgba(8, 19, 34, 0.98)),
+    var(--surface-glass);
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.5);
+  color: var(--text-strong);
+}
+
+.product-tour-welcome {
+  position: relative;
+  width: min(720px, calc(100vw - 32px));
+  padding: 28px;
+}
+
+.product-tour-step-card {
+  padding: 22px;
+}
+
+.product-tour-dialog h2,
+.product-tour-dialog p {
+  margin: 0;
+}
+
+.product-tour-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.product-tour-proof-grid .mini-card {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(151, 197, 255, 0.16);
+}
+
+.product-tour-step-meta {
+  color: var(--text-soft);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.product-tour-highlight {
+  position: fixed;
+  z-index: 81;
+  pointer-events: none;
+  border: 2px solid rgba(126, 228, 216, 0.96);
+  border-radius: 24px;
+  box-shadow:
+    0 0 0 9999px rgba(2, 8, 18, 0.48),
+    0 0 34px rgba(126, 228, 216, 0.42);
+  transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+
+.product-tour-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.product-tour-dots span {
+  width: 28px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(226, 237, 250, 0.2);
+}
+
+.product-tour-dots span.active {
+  background: linear-gradient(90deg, #8fe2d8, #8fb8ff);
+}
+
+.product-tour-actions {
+  justify-content: flex-end;
+}
+
 .terminal-page-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.72fr);
@@ -4221,6 +4316,22 @@ body::before {
 
   .terminal-route-tab {
     flex: 0 0 auto;
+  }
+
+  .product-tour-proof-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-tour-step-card {
+    left: 12px !important;
+    right: 12px;
+    bottom: 12px;
+    top: auto !important;
+    width: auto !important;
+  }
+
+  .product-tour-welcome {
+    padding: 22px;
   }
 
   .profile-memory-grid {

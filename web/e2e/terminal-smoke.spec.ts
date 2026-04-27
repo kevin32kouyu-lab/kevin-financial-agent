@@ -2,6 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 
 const routes = ["/terminal", "/terminal/conclusion", "/terminal/backtest", "/terminal/archive"];
 const now = "2026-04-22T08:00:00Z";
+const productTourStorageKey = "financial-agent-product-tour-v1";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript((storageKey) => {
+    if (!window.sessionStorage.getItem("__product_tour_test_enabled")) {
+      window.localStorage.setItem(storageKey, "done");
+    }
+  }, productTourStorageKey);
+});
 
 const demoRun = {
   id: "demo-run",
@@ -175,6 +184,7 @@ async function mockTerminalApis(
     authEmail?: string | null;
     captureLoginPosts?: string[];
     captureLinkMemoryPosts?: string[];
+    captureHistoryRequests?: string[];
     detailOverride?: typeof demoDetail;
     historyItems?: typeof demoRun[];
   } = {},
@@ -249,8 +259,14 @@ async function mockTerminalApis(
       },
     });
   });
-  await page.route("**/api/v1/runs/history?**", (route) => route.fulfill({ json: { items: activeHistory } }));
-  await page.route("**/api/runs?**", (route) => route.fulfill({ json: { items: activeHistory } }));
+  await page.route("**/api/v1/runs/history?**", async (route) => {
+    options.captureHistoryRequests?.push(route.request().url());
+    await route.fulfill({ json: { items: activeHistory } });
+  });
+  await page.route("**/api/runs?**", async (route) => {
+    options.captureHistoryRequests?.push(route.request().url());
+    await route.fulfill({ json: { items: activeHistory } });
+  });
   await page.route("**/api/runs/demo-run", (route) => route.fulfill({ json: activeDetail }));
   await page.route("**/api/runs/demo-run/artifacts", (route) => route.fulfill({ json: { run_id: "demo-run", artifacts: [] } }));
   await page.route("**/api/v1/runs/demo-run/audit-summary", (route) =>
@@ -318,6 +334,65 @@ test("ask page shows mandate chips and a clear four-step preview", async ({ page
   await expect(page.getByText("Bring back an earlier thesis and monitor what changed.")).toBeVisible();
 });
 
+test("terminal loads history only when the archive page is opened", async ({ page }) => {
+  const historyRequests: string[] = [];
+  await mockTerminalApis(page, { captureHistoryRequests: historyRequests });
+
+  await page.goto("/terminal");
+  await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
+  await page.waitForTimeout(250);
+  expect(historyRequests).toEqual([]);
+
+  await page.getByRole("link", { name: "Archive", exact: true }).click();
+  await expect(page).toHaveURL(/\/terminal\/archive/);
+  await expect.poll(() => historyRequests.length).toBeGreaterThan(0);
+});
+
+test("terminal shows a first-run product guide and can replay it", async ({ page }) => {
+  await mockTerminalApis(page);
+
+  await page.goto("/");
+  await page.evaluate((storageKey) => {
+    window.sessionStorage.setItem("__product_tour_test_enabled", "1");
+    window.localStorage.removeItem(storageKey);
+  }, productTourStorageKey);
+  await page.goto("/terminal");
+  const tour = page.getByRole("dialog");
+  await expect(tour.getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+  await expect(tour.getByText("It turns your question into a verdict, risks, evidence, and a downloadable report.")).toBeVisible();
+
+  await tour.getByRole("button", { name: "Start Guide" }).click();
+  await expect(tour.getByRole("heading", { name: "Start with your question" })).toBeVisible();
+  await expect(page.locator('[data-tour-id="terminal-ask-panel"]')).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Track the run" })).toBeVisible();
+  await expect(page.locator('[data-tour-id="terminal-progress-card"]')).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/conclusion/);
+  await expect(tour.getByRole("heading", { name: "Read the conclusion" })).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/backtest/);
+  await expect(tour.getByRole("heading", { name: "Validate with backtest" })).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/archive/);
+  await expect(tour.getByRole("heading", { name: "Return to past research" })).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Sync your memory" })).toBeVisible();
+  await tour.getByRole("button", { name: "Finish" }).click();
+  await expect(tour).toHaveCount(0);
+
+  await expect.poll(() => page.evaluate((storageKey) => window.localStorage.getItem(storageKey), productTourStorageKey)).toBe("done");
+  await expect(page.getByRole("heading", { name: "Meet your Financial Agent" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Guide|引导/ }).click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+});
+
 test("running research jumps above 59 percent once report generation starts", async ({ page }) => {
   await mockTerminalApis(page, { detailOverride: runningDetail, historyItems: [runningRun] });
 
@@ -342,6 +417,31 @@ test("terminal route tabs switch pages without a full page reload", async ({ pag
 
   await expect(page).toHaveURL(/\/terminal\/backtest\?run=demo-run/);
   await expect.poll(() => page.evaluate(() => (window as unknown as { __terminalReloadSentinel?: string }).__terminalReloadSentinel)).toBe("kept");
+});
+
+test("run event stream includes client identity for anonymous research", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+    const captured: string[] = [];
+    (window as unknown as { __eventSourceUrls?: string[] }).__eventSourceUrls = captured;
+    class WrappedEventSource extends NativeEventSource {
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        captured.push(String(url));
+        super(url, eventSourceInitDict);
+      }
+    }
+    window.EventSource = WrappedEventSource as typeof EventSource;
+  });
+
+  await mockTerminalApis(page);
+  await page.goto("/terminal/conclusion?run=demo-run");
+  await expect(page.getByRole("heading", { name: "Focus on MSFT", exact: true })).toBeVisible();
+
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __eventSourceUrls?: string[] }).__eventSourceUrls?.length || 0)).toBe(1);
+  const eventUrl = await page.evaluate(() => (window as unknown as { __eventSourceUrls?: string[] }).__eventSourceUrls?.[0] || "");
+
+  expect(eventUrl).toContain("/api/runs/demo-run/events");
+  expect(eventUrl).toContain("client_id=");
 });
 
 test("opening a historical conclusion does not auto-create a backtest", async ({ page }) => {
@@ -385,6 +485,17 @@ test("terminal conclusion page switches between investment and development repor
   await page.getByRole("button", { name: "Export Development PDF" }).click();
   await expect.poll(() => pdfRequests.length).toBe(1);
   expect(pdfRequests[0]).toContain("kind=development");
+});
+
+test("full memo content mounts only after the memo section is expanded", async ({ page }) => {
+  await mockTerminalApis(page);
+
+  await page.goto("/terminal/conclusion?run=demo-run");
+  await expect(page.getByRole("heading", { name: "Focus on MSFT", exact: true })).toBeVisible();
+  await expect(page.getByText("Full memo text for the PDF export test.")).toHaveCount(0);
+
+  await page.locator("details#report-memo summary").click();
+  await expect(page.getByText("Full memo text for the PDF export test.")).toBeVisible();
 });
 
 test("conclusion page surfaces a user-friendly trust summary", async ({ page }) => {

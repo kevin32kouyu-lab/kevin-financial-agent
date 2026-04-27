@@ -247,6 +247,27 @@ export interface LocalePack {
       done: string;
       reopen: string;
     };
+    productGuide: {
+      eyebrow: string;
+      welcomeTitle: string;
+      welcomeBody: string;
+      start: string;
+      skip: string;
+      prev: string;
+      next: string;
+      done: string;
+      reopen: string;
+      stepLabel: string;
+      proofPoints: Array<{ title: string; body: string }>;
+      steps: {
+        ask: { title: string; body: string };
+        progress: { title: string; body: string };
+        conclusion: { title: string; body: string };
+        backtest: { title: string; body: string };
+        archive: { title: string; body: string };
+        account: { title: string; body: string };
+      };
+    };
     uiNotice: {
       successTitle: string;
       successBody: string;
@@ -604,6 +625,49 @@ const zh: LocalePack = {
       next: "下一步",
       done: "完成引导",
       reopen: "重新查看新手引导",
+    },
+    productGuide: {
+      eyebrow: "首次使用引导",
+      welcomeTitle: "认识你的金融研究助手",
+      welcomeBody: "输入一个投资问题，系统会整理结论、风险、依据和可导出的报告。",
+      start: "开始了解",
+      skip: "跳过",
+      prev: "上一步",
+      next: "下一步",
+      done: "完成",
+      reopen: "引导",
+      stepLabel: "步骤",
+      proofPoints: [
+        { title: "理解问题", body: "识别资金、风险、期限和关注标的。" },
+        { title: "收集数据", body: "汇总行情、新闻、财报和证据来源。" },
+        { title: "生成报告", body: "给出结论、仓位、风险和 PDF。" },
+      ],
+      steps: {
+        ask: {
+          title: "从问题开始",
+          body: "在这里直接写下你的投资目标，也可以点快速条件补充风险、期限和偏好。",
+        },
+        progress: {
+          title: "查看研究进度",
+          body: "任务运行时，这里会显示当前阶段、进度和最近更新时间。",
+        },
+        conclusion: {
+          title: "阅读研究结论",
+          body: "研究完成后看这里：最终建议、投资报告、开发报告和 PDF 导出都在结论页。",
+        },
+        backtest: {
+          title: "用回测验证",
+          body: "这里用历史数据检查推荐组合和基准的表现，帮助你判断结论是否稳健。",
+        },
+        archive: {
+          title: "回到历史研究",
+          body: "这里保存过去的研究，可以重新打开报告，也可以基于旧问题继续跟进。",
+        },
+        account: {
+          title: "同步你的记忆",
+          body: "登录后可以把浏览器里的偏好同步到账户，方便跨设备继续使用。",
+        },
+      },
     },
     uiNotice: {
       successTitle: "研究已完成",
@@ -971,6 +1035,49 @@ const en: LocalePack = {
       next: "Next",
       done: "Finish",
       reopen: "Show quick start again",
+    },
+    productGuide: {
+      eyebrow: "First-time guide",
+      welcomeTitle: "Meet your Financial Agent",
+      welcomeBody: "It turns your question into a verdict, risks, evidence, and a downloadable report.",
+      start: "Start Guide",
+      skip: "Skip",
+      prev: "Previous",
+      next: "Next",
+      done: "Finish",
+      reopen: "Guide",
+      stepLabel: "Step",
+      proofPoints: [
+        { title: "Understand", body: "Read capital, risk, horizon, and tickers." },
+        { title: "Collect data", body: "Gather prices, news, filings, and evidence." },
+        { title: "Report", body: "Produce verdict, sizing, risks, and PDF." },
+      ],
+      steps: {
+        ask: {
+          title: "Start with your question",
+          body: "Write the investment goal here, or tap quick hints for risk, horizon, and preferences.",
+        },
+        progress: {
+          title: "Track the run",
+          body: "When research is running, this card shows the current stage, progress, and latest update time.",
+        },
+        conclusion: {
+          title: "Read the conclusion",
+          body: "After completion, this page holds the recommendation, investment report, development report, and PDF export.",
+        },
+        backtest: {
+          title: "Validate with backtest",
+          body: "Use historical data to compare the recommended portfolio against the benchmark.",
+        },
+        archive: {
+          title: "Return to past research",
+          body: "Open previous reports here, or continue from an older question without starting over.",
+        },
+        account: {
+          title: "Sync your memory",
+          body: "Sign in to sync browser preferences into an account for use across devices.",
+        },
+      },
     },
     uiNotice: {
       successTitle: "Research completed",

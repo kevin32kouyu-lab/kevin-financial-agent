@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatCurrency, formatDate, formatPercent } from "../lib/format";
 import type { Locale } from "../lib/types";
 import type { LocalePack } from "../lib/i18n";
@@ -170,53 +170,68 @@ export function BacktestPanel({
     }
   }, [positions, activeTicker]);
 
-  const latestPointDateText = points.length ? points[points.length - 1].point_date : null;
-  let rangeStartDate: Date | null = null;
-  if (latestPointDateText) {
-    const latestPointDate = new Date(latestPointDateText);
-    if (!Number.isNaN(latestPointDate.getTime())) {
-      if (backtestRange === "1M") {
-        rangeStartDate = new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 1, latestPointDate.getDate());
-      } else if (backtestRange === "3M") {
-        rangeStartDate = new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 3, latestPointDate.getDate());
-      } else if (backtestRange === "6M") {
-        rangeStartDate = new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 6, latestPointDate.getDate());
-      } else if (backtestRange === "1Y") {
-        rangeStartDate = new Date(latestPointDate.getFullYear() - 1, latestPointDate.getMonth(), latestPointDate.getDate());
-      } else if (backtestRange === "YTD") {
-        rangeStartDate = new Date(latestPointDate.getFullYear(), 0, 1);
-      }
-    }
-  }
-
-  const filteredPoints = rangeStartDate
-    ? points.filter((item) => {
-        const pointDate = new Date(item.point_date);
-        return !Number.isNaN(pointDate.getTime()) && pointDate >= rangeStartDate!;
-      })
-    : points;
-
-  const chartPoints = filteredPoints.length ? filteredPoints : points;
   const chartWidth = 760;
   const chartHeight = 260;
-  const chartDates = chartPoints.map((item) => item.point_date);
-  const portfolioSeries = chartPoints.map((item) => item.portfolio_return_pct);
-  const benchmarkSeries = chartPoints.map((item) => item.benchmark_return_pct);
-  const combinedSeries = [...portfolioSeries, ...benchmarkSeries];
-  const portfolioGeometry = createGeometry(portfolioSeries, combinedSeries, chartDates, chartWidth, chartHeight);
-  const benchmarkGeometry = createGeometry(benchmarkSeries, combinedSeries, chartDates, chartWidth, chartHeight);
+  const rangeStartDate = useMemo(() => {
+    const latestPointDateText = points.length ? points[points.length - 1].point_date : null;
+    if (!latestPointDateText) return null;
+    const latestPointDate = new Date(latestPointDateText);
+    if (Number.isNaN(latestPointDate.getTime())) return null;
+    if (backtestRange === "1M") {
+      return new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 1, latestPointDate.getDate());
+    }
+    if (backtestRange === "3M") {
+      return new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 3, latestPointDate.getDate());
+    }
+    if (backtestRange === "6M") {
+      return new Date(latestPointDate.getFullYear(), latestPointDate.getMonth() - 6, latestPointDate.getDate());
+    }
+    if (backtestRange === "1Y") {
+      return new Date(latestPointDate.getFullYear() - 1, latestPointDate.getMonth(), latestPointDate.getDate());
+    }
+    if (backtestRange === "YTD") {
+      return new Date(latestPointDate.getFullYear(), 0, 1);
+    }
+    return null;
+  }, [backtestRange, points]);
 
-  const selectedPosition = positions.find((item) => item.ticker === activeTicker) || positions[0];
-  const selectedTimeseriesRaw = Array.isArray(selectedPosition?.timeseries) ? selectedPosition.timeseries : [];
-  const selectedTimeseries = rangeStartDate
-    ? selectedTimeseriesRaw.filter((item) => {
-        const pointDate = new Date(item.point_date);
-        return !Number.isNaN(pointDate.getTime()) && pointDate >= rangeStartDate!;
-      })
-    : selectedTimeseriesRaw;
-  const stockSeriesValues = selectedTimeseries.map((item) => item.cumulative_return_pct);
-  const stockSeriesDates = selectedTimeseries.map((item) => item.point_date);
-  const stockGeometry = createGeometry(stockSeriesValues, stockSeriesValues, stockSeriesDates, chartWidth, chartHeight);
+  const chartPoints = useMemo(() => {
+    if (!rangeStartDate) return points;
+    const filteredPoints = points.filter((item) => {
+      const pointDate = new Date(item.point_date);
+      return !Number.isNaN(pointDate.getTime()) && pointDate >= rangeStartDate;
+    });
+    return filteredPoints.length ? filteredPoints : points;
+  }, [points, rangeStartDate]);
+
+  const { portfolioGeometry, benchmarkGeometry } = useMemo(() => {
+    const dates = chartPoints.map((item) => item.point_date);
+    const portfolioValues = chartPoints.map((item) => item.portfolio_return_pct);
+    const benchmarkValues = chartPoints.map((item) => item.benchmark_return_pct);
+    const combinedValues = [...portfolioValues, ...benchmarkValues];
+    return {
+      portfolioGeometry: createGeometry(portfolioValues, combinedValues, dates, chartWidth, chartHeight),
+      benchmarkGeometry: createGeometry(benchmarkValues, combinedValues, dates, chartWidth, chartHeight),
+    };
+  }, [chartPoints]);
+
+  const selectedPosition = useMemo(
+    () => positions.find((item) => item.ticker === activeTicker) || positions[0],
+    [activeTicker, positions],
+  );
+  const selectedTimeseries = useMemo(() => {
+    const selectedTimeseriesRaw = Array.isArray(selectedPosition?.timeseries) ? selectedPosition.timeseries : [];
+    if (!rangeStartDate) return selectedTimeseriesRaw;
+    return selectedTimeseriesRaw.filter((item) => {
+      const pointDate = new Date(item.point_date);
+      return !Number.isNaN(pointDate.getTime()) && pointDate >= rangeStartDate;
+    });
+  }, [rangeStartDate, selectedPosition]);
+  const stockGeometry = useMemo(() => {
+    const stockSeriesValues = selectedTimeseries.map((item) => item.cumulative_return_pct);
+    const stockSeriesDates = selectedTimeseries.map((item) => item.point_date);
+    return createGeometry(stockSeriesValues, stockSeriesValues, stockSeriesDates, chartWidth, chartHeight);
+  }, [selectedTimeseries]);
 
   const heading = mode === "reference" ? copy.backtest.referenceTitle : copy.backtest.replayTitle;
   const description = mode === "reference" ? copy.backtest.referenceDescription : copy.backtest.replayDescription;

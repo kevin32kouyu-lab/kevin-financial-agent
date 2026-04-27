@@ -295,6 +295,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   const refreshTimerRef = useRef<number | null>(null);
   const runBundleCacheRef = useRef<Map<string, RunBundleCacheEntry>>(new Map());
   const backtestCacheRef = useRef<Map<string, BacktestDetail | null>>(new Map());
+  const historyLoadedRef = useRef(false);
 
   const closeEventSource = useEffectEvent(() => {
     if (eventSourceRef.current) {
@@ -357,12 +358,17 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     setHistoryLoading(true);
     try {
       const response = await listRunHistory(nextFilters, 20).catch(() => listRuns(nextFilters, 20));
+      historyLoadedRef.current = true;
       startTransition(() => setHistory(response.items));
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("读取历史报告失败。", "Failed to load report history."));
     } finally {
       setHistoryLoading(false);
     }
+  });
+
+  const refreshHistory = useEffectEvent(async () => {
+    await loadHistory({ ...filters, search: deferredSearch });
   });
 
   const loadBacktest = useEffectEvent(async (runId: string, force = false) => {
@@ -576,7 +582,9 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = window.setTimeout(() => {
       void loadRunBundle(runId);
-      void loadHistory({ ...filters, search: deferredSearch });
+      if (historyLoadedRef.current) {
+        void loadHistory({ ...filters, search: deferredSearch });
+      }
     }, 200);
   });
 
@@ -643,11 +651,6 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   useEffect(() => {
     void loadTerminalMeta();
   }, []);
-
-  useEffect(() => {
-    const nextFilters = { ...filters, search: deferredSearch };
-    void loadHistory(nextFilters);
-  }, [filters.mode, filters.status, deferredSearch]);
 
   useEffect(() => {
     if (terminalMode !== "historical") return;
@@ -745,7 +748,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode("agent");
-      await loadHistory({ ...filters, search: deferredSearch });
+      if (historyLoadedRef.current) void loadHistory({ ...filters, search: deferredSearch });
       void loadRunBundle(detail.run.id);
       connectRunEvents(detail.run.id);
       if (queryOverride) {
@@ -775,7 +778,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode("structured");
-      await loadHistory({ ...filters, search: deferredSearch });
+      if (historyLoadedRef.current) void loadHistory({ ...filters, search: deferredSearch });
       void loadRunBundle(detail.run.id);
       connectRunEvents(detail.run.id);
     } catch (error) {
@@ -800,7 +803,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       setBacktestDetail(null);
       setSelectedArtifactId(null);
       setMode(detail.run.mode);
-      await loadHistory({ ...filters, search: deferredSearch });
+      if (historyLoadedRef.current) void loadHistory({ ...filters, search: deferredSearch });
       void loadRunBundle(detail.run.id);
       connectRunEvents(detail.run.id);
     } catch (error) {
@@ -818,7 +821,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       const detail = await cancelRun(activeRunId);
       setRunDetail(detail);
       setStatusText(locale === "zh" ? "任务已撤回。" : "Run cancelled.");
-      await loadHistory({ ...filters, search: deferredSearch });
+      if (historyLoadedRef.current) void loadHistory({ ...filters, search: deferredSearch });
       closeEventSource();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : t("撤回任务失败。", "Failed to cancel run."));
@@ -1099,7 +1102,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     refreshData,
     clearHistory: clearHistoryItems,
     openRun,
-    refreshHistory: () => loadHistory({ ...filters, search: deferredSearch }),
+    refreshHistory,
     loadBacktest,
     runBacktest,
     continueFromRun,
