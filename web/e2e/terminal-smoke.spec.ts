@@ -425,14 +425,17 @@ test("terminal shows a first-run product guide and can replay it", async ({ page
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
 });
 
-test("running research jumps above 59 percent once report generation starts", async ({ page }) => {
+test("running research shows a numeric animated percent once report generation starts", async ({ page }) => {
   await mockTerminalApis(page, { detailOverride: runningDetail, historyItems: [runningRun] });
 
   await page.goto("/terminal?run=demo-run");
   await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
   await expect(page.getByText("Task progress")).toBeVisible();
   await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
-  await expect(page.locator(".terminal-progress-percent")).toHaveText("Running");
+  const percent = page.locator(".terminal-progress-percent").first();
+  await expect(percent).toHaveText(/^\d+%$/);
+  await expect(percent).not.toHaveText("Running");
+  await expect.poll(async () => Number((await percent.textContent())?.replace("%", "") || "0")).toBeGreaterThan(0);
   await expect(page.getByText("84%")).toHaveCount(0);
   await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
   await expect(page.getByText("59%")).toHaveCount(0);
@@ -445,7 +448,10 @@ test("running market data step advances beyond the stale 58 percent plateau", as
   await expect(page.getByText("Task progress")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Aggregating market data" })).toBeVisible();
   await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
-  await expect(page.locator(".terminal-progress-percent")).toHaveText("Running");
+  const percent = page.locator(".terminal-progress-percent").first();
+  await expect(percent).toHaveText(/^\d+%$/);
+  await expect(percent).not.toHaveText("Running");
+  await expect.poll(async () => Number((await percent.textContent())?.replace("%", "") || "0")).toBeGreaterThan(0);
   await expect(page.getByText("66%")).toHaveCount(0);
   await expect(page.getByText("58%")).toHaveCount(0);
   await expect(page.getByText("59%")).toHaveCount(0);

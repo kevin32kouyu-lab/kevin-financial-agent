@@ -683,7 +683,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
       void loadRunBundle(activeRunId);
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [activeRunId, runDetail?.run.status, loadRunBundle]);
+  }, [activeRunId, runDetail?.run.status]);
 
   useEffect(() => {
     return () => {
