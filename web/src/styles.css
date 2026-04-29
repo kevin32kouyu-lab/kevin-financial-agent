@@ -1,3 +1,21 @@
+@font-face {
+  font-family: "Geist Sans";
+  src: url("./assets/fonts/GeistVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2190-22FF;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMonoVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2190-22FF;
+}
+
 :root {
   --bg: #050b16;
   --bg-alt: #091428;
@@ -24,8 +42,14 @@
   --radius-xl: 26px;
   --radius-lg: 18px;
   --radius-md: 14px;
-  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-display: Georgia, "STSong", "Songti SC", "Noto Serif SC", serif;
+  --font-ui: "Geist Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-display: var(--font-ui);
+  --font-mono: "Geist Mono", "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-label: var(--font-ui);
+  --type-label-tracking: 0.06em;
+  --type-label-weight: 700;
+  --type-button-weight: 650;
+  --type-heading-weight: 760;
   --text-strong: #f5f9ff;
   --text-soft: rgba(223, 234, 247, 0.82);
   --text-faint: rgba(171, 192, 219, 0.68);
@@ -56,6 +80,7 @@ body {
   position: relative;
   margin: 0;
   font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   background:
     radial-gradient(circle at top left, rgba(67, 154, 255, 0.16), transparent 26%),
@@ -82,6 +107,30 @@ select {
   font: inherit;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+button,
+a,
+label,
+input,
+textarea,
+select,
+.chip,
+.status-badge,
+.app-button,
+.primary-button,
+.secondary-button,
+.ghost-danger-button,
+.mode-button,
+.terminal-route-tab,
+.terminal-entry-mode-pill {
+  font-family: var(--font-ui);
+}
+
 button {
   cursor: pointer;
   will-change: transform;
@@ -101,6 +150,7 @@ button:active {
   border: 1px solid transparent;
   border-radius: 18px;
   color: var(--text-strong);
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
@@ -466,8 +516,9 @@ select:focus {
 .front-side-card h2,
 .evidence-drawer summary h2 {
   margin: 0;
-  font-family: Cambria, Georgia, serif;
-  letter-spacing: 0.01em;
+  font-family: var(--font-display);
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .front-hero h1 {
@@ -898,7 +949,8 @@ select:focus {
 .report-prose h3 {
   margin: 0;
   font-family: var(--font-ui);
-  letter-spacing: -0.02em;
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .terminal-header h1 {
@@ -1092,6 +1144,9 @@ select:focus {
 .artifact-item {
   border: 1px solid transparent;
   border-radius: 16px;
+  font-family: var(--font-ui);
+  font-weight: 650;
+  letter-spacing: 0;
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, opacity 160ms ease;
 }
 
@@ -1168,7 +1223,9 @@ select:focus {
 .field > span,
 .toggle-field > span,
 .mini-label {
+  font-family: var(--font-label);
   font-size: 12px;
+  font-weight: 650;
   color: var(--muted);
   letter-spacing: 0.04em;
 }
@@ -1203,8 +1260,10 @@ select:focus {
 }
 
 .meta-line span {
+  font-family: var(--font-label);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  font-weight: 650;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -1221,7 +1280,10 @@ select:focus {
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.05);
   border: 1px solid rgba(15, 23, 42, 0.08);
+  font-family: var(--font-ui);
   font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
   color: var(--text);
 }
 
@@ -2290,7 +2352,8 @@ select:focus {
 
 .landing-hero h1 {
   margin: 0;
-  font-family: Cambria, Georgia, serif;
+  font-family: var(--font-display);
+  font-weight: 760;
   font-size: clamp(2.1rem, 3.5vw, 3.8rem);
   line-height: 1.03;
 }
@@ -2519,7 +2582,8 @@ body::before {
 .landing-proof-item h3,
 .terminal-poster h1 {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .report-prose h1,
@@ -2535,7 +2599,9 @@ body::before {
 
 .report-table th {
   font-size: 11px;
-  letter-spacing: 0.14em;
+  font-family: var(--font-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -2543,6 +2609,7 @@ body::before {
 .report-table td {
   border-bottom: 1px solid rgba(153, 190, 235, 0.12);
   background: transparent;
+  font-variant-numeric: tabular-nums;
 }
 
 .report-table tbody tr:hover td {
@@ -3333,7 +3400,9 @@ body::before {
   margin: 0 0 6px;
   color: rgba(160, 204, 255, 0.88);
   font-size: 0.82rem;
-  letter-spacing: 0.18em;
+  font-family: var(--font-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -3768,6 +3837,9 @@ body::before {
   border-radius: 999px;
   border: 1px solid rgba(151, 197, 255, 0.1);
   color: var(--text-soft);
+  font-family: var(--font-ui);
+  font-weight: 650;
+  letter-spacing: 0;
   text-decoration: none;
   transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
 }
@@ -3922,7 +3994,8 @@ body::before {
   font-family: var(--font-ui);
   font-size: clamp(2rem, 3.1vw, 3rem);
   line-height: 1.02;
-  letter-spacing: -0.035em;
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .terminal-summary-lead {
@@ -3953,7 +4026,8 @@ body::before {
   font-family: var(--font-ui);
   font-size: clamp(2rem, 3vw, 3rem);
   line-height: 1.04;
-  letter-spacing: -0.035em;
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .terminal-ask-note {
@@ -3966,8 +4040,10 @@ body::before {
 }
 
 .terminal-example-caption {
+  font-family: var(--font-label);
   font-size: 0.8rem;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
@@ -4091,6 +4167,9 @@ body::before {
 }
 
 .terminal-progress-percent {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 740;
   font-size: 1.8rem;
   line-height: 1;
   color: var(--text-strong);
@@ -4109,6 +4188,7 @@ body::before {
 .terminal-progress-stage-row strong,
 .terminal-progress-meta strong {
   color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
   font-size: 0.95rem;
 }
 
@@ -4247,8 +4327,10 @@ body::before {
 }
 
 .terminal-trust-tag-label {
+  font-family: var(--font-label);
   font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
@@ -4458,6 +4540,329 @@ body::before {
   background: linear-gradient(90deg, #68d391, #76a3ff);
 }
 
+.simple-showcase-report {
+  display: grid;
+  gap: 18px;
+}
+
+.simple-showcase-page {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background:
+    linear-gradient(145deg, rgba(248, 251, 255, 0.08), rgba(13, 27, 47, 0.2)),
+    rgba(6, 18, 33, 0.54);
+}
+
+.showcase-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(230px, 0.65fr);
+  gap: 18px;
+  align-items: stretch;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.showcase-hero h3,
+.showcase-section-head h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.18;
+  color: var(--text-strong);
+}
+
+.showcase-verdict {
+  margin: 14px 0 0;
+  max-width: 780px;
+  color: var(--text-strong);
+  font-size: 1.28rem;
+  line-height: 1.35;
+  font-weight: 760;
+}
+
+.showcase-action {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.showcase-badges {
+  display: grid;
+  gap: 10px;
+}
+
+.showcase-badges div,
+.showcase-query,
+.showcase-metric,
+.showcase-holdings,
+.showcase-chart-card,
+.showcase-two-column article {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(8, 22, 41, 0.56);
+}
+
+.showcase-badges div {
+  padding: 13px 14px;
+}
+
+.showcase-badges span,
+.showcase-query span,
+.showcase-metric span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-dim);
+  font-family: var(--font-label);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.showcase-badges strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 0.96rem;
+  line-height: 1.4;
+}
+
+.showcase-query {
+  padding: 14px 16px;
+  background: rgba(22, 89, 82, 0.16);
+  border-color: rgba(125, 211, 196, 0.22);
+}
+
+.showcase-query p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.showcase-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.showcase-metric {
+  min-width: 0;
+  padding: 14px;
+  min-height: 82px;
+}
+
+.showcase-metric strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 1.32rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.showcase-metric.positive {
+  border-color: rgba(125, 211, 196, 0.32);
+  background: rgba(18, 94, 82, 0.2);
+}
+
+.showcase-metric.negative {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.showcase-holdings {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.showcase-holding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.showcase-holding-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 0.5fr) minmax(68px, 0.45fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.showcase-holding-row:first-child {
+  border-top: 0;
+}
+
+.showcase-holding-row strong,
+.showcase-holding-row b {
+  color: var(--text-strong);
+}
+
+.showcase-holding-row span,
+.showcase-holding-row p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.showcase-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.showcase-chart-card {
+  display: grid;
+  gap: 12px;
+  min-height: 210px;
+  padding: 16px;
+}
+
+.showcase-chart-card h3,
+.showcase-two-column article h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.showcase-chart-card p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.showcase-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.showcase-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.showcase-bar-row {
+  display: grid;
+  grid-template-columns: minmax(52px, 0.65fr) minmax(80px, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
+.showcase-bar-row > span,
+.showcase-bar-row strong {
+  overflow-wrap: anywhere;
+}
+
+.showcase-bar-row > div {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.showcase-bar-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7dd3c4, #d7a84f);
+}
+
+.showcase-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.showcase-legend span {
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.showcase-legend .portfolio {
+  background: #17645e;
+}
+
+.showcase-legend .benchmark {
+  background: #a05d25;
+}
+
+.showcase-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.showcase-two-column article {
+  padding: 16px;
+}
+
+.showcase-two-column ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.showcase-two-column li {
+  margin: 8px 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.showcase-two-column li strong {
+  color: var(--text-strong);
+}
+
+.showcase-two-column li span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 0.84rem;
+}
+
+.showcase-two-column article > p {
+  color: var(--text-soft);
+}
+
+.showcase-footer-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 900px) {
+  .showcase-hero,
+  .showcase-two-column,
+  .showcase-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .showcase-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .simple-showcase-page {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .showcase-metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .showcase-holding-row,
+  .showcase-bar-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .development-report-view {
   display: grid;
   gap: 18px;
@@ -4468,6 +4873,83 @@ body::before {
   border-radius: 24px;
   padding: 22px;
   background: rgba(6, 18, 33, 0.42);
+}
+
+/* 品牌字体体系：统一标题、标签、按钮和数字的显示规则。 */
+.front-hero h1,
+.front-query-card h2,
+.front-brief-card h2,
+.front-side-card h2,
+.terminal-header h1,
+.terminal-banner h2,
+.panel-surface h2,
+.panel-surface h3,
+.report-prose h1,
+.report-prose h2,
+.report-prose h3,
+.landing-hero h1,
+.landing-hero-panel h1,
+.landing-story-band h2,
+.landing-proof-item h3,
+.terminal-poster h1,
+.terminal-summary-title,
+.terminal-ask-title {
+  font-family: var(--font-display);
+  font-weight: var(--type-heading-weight);
+  letter-spacing: 0;
+}
+
+.eyebrow,
+.mini-label,
+.field > span,
+.toggle-field > span,
+.meta-line span,
+.front-mini-stat span,
+.front-quick-item span,
+.front-exchange-pill span,
+.heatmap-table th,
+.report-table th,
+.ring-label,
+.candidate-ticker,
+.score-pill span,
+.stage-index,
+.landing-brand,
+.landing-signal-metric span,
+.poster-stat span,
+.candidate-section-label,
+.terminal-example-caption,
+.terminal-trust-tag-label {
+  font-family: var(--font-label);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-tracking);
+}
+
+.app-button,
+.primary-button,
+.secondary-button,
+.ghost-danger-button,
+.mode-button,
+.terminal-route-tab,
+.terminal-entry-mode-pill,
+.chip,
+.status-badge,
+.anchor-chip,
+.side-tab {
+  font-family: var(--font-ui);
+  font-weight: var(--type-button-weight);
+  letter-spacing: 0;
+}
+
+.terminal-progress-percent,
+.terminal-progress-stage-row strong,
+.terminal-progress-meta strong,
+.output-chart-row strong,
+.mini-card strong,
+.score-pill strong,
+.heat-cell,
+.ring-value,
+.report-table td {
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 1100px) {
@@ -4494,12 +4976,15 @@ body::before {
   }
 
   .terminal-route-tabs {
-    overflow-x: auto;
-    white-space: nowrap;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    white-space: normal;
   }
 
   .terminal-route-tab {
-    flex: 0 0 auto;
+    flex: 1 1 calc(50% - 10px);
+    min-width: 0;
+    padding-inline: 12px;
   }
 
   .product-tour-proof-grid {

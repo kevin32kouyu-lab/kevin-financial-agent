@@ -36,6 +36,14 @@ def build_dual_report_outputs(
         core_holdings=core_holdings,
         charts=charts,
     )
+    simple_display_model = build_simple_report_display_model(
+        query=query,
+        language_code=language_code,
+        bundle=bundle,
+        core_holdings=core_holdings,
+        charts=charts,
+        backtest=backtest,
+    )
     professional_markdown = _build_professional_investment_markdown(
         query=query,
         language_code=language_code,
@@ -58,6 +66,7 @@ def build_dual_report_outputs(
             "title": _label(language_code, "简单版投资报告", "Simple Investment Report"),
             "markdown": simple_markdown,
             "charts": charts,
+            "display_model": simple_display_model,
             "core_holdings": core_holdings,
             "satellite_holdings": satellite_holdings,
         },
@@ -74,6 +83,7 @@ def build_dual_report_outputs(
             "title": _label(language_code, "简单版投资报告", "Simple Investment Report"),
             "markdown": simple_markdown,
             "charts": charts,
+            "display_model": simple_display_model,
             "core_holdings": core_holdings,
             "satellite_holdings": satellite_holdings,
         },
@@ -107,6 +117,298 @@ def attach_dual_report_outputs(
     bundle["report_outputs"] = outputs
     bundle["final_report"] = outputs["simple_investment"]["markdown"]
     return outputs
+
+
+def build_simple_report_display_model(
+    *,
+    query: str,
+    language_code: str,
+    bundle: GenericRecord,
+    core_holdings: list[GenericRecord],
+    charts: GenericRecord | None = None,
+    backtest: Any = None,
+) -> GenericRecord:
+    """构建网页和 PDF 共用的简单版两页展示母版。"""
+    report_briefing = _record(bundle.get("report_briefing"))
+    meta = _record(report_briefing.get("meta"))
+    executive = _record(report_briefing.get("executive"))
+    macro = _record(report_briefing.get("macro"))
+    scoreboard = _records(report_briefing.get("scoreboard"))
+    risk_register = _records(report_briefing.get("risk_register"))
+    validation_summary = _record(meta.get("validation_summary"))
+    evidence_summary = _record(meta.get("evidence_summary"))
+    evidence = _records(meta.get("retrieved_evidence"))
+    checks = _records(meta.get("validation_checks"))
+    effective_charts = _effective_display_charts(report_briefing, charts or {}, backtest)
+    chart_slots = _display_chart_slots(effective_charts, language_code)
+
+    title = _label(language_code, "简单版投资报告", "Simple Investment Report")
+    subtitle = _label(
+        language_code,
+        "展示型投资结论：先看结论，再看图表和证据。",
+        "Showcase investment summary: decision first, charts and evidence second.",
+    )
+    risk_summary = _text(macro.get("risk_headline"), "")
+    if not risk_summary and risk_register:
+        risk_summary = _text(risk_register[0].get("summary"), "")
+
+    return {
+        "version": "simple_report_showcase_v1",
+        "layout": "two_page_showcase",
+        "title": title,
+        "subtitle": subtitle,
+        "query": query or _text(bundle.get("query"), _label(language_code, "未提供原始问题。", "No original request.")),
+        "generated_at": _text(meta.get("generated_at") or bundle.get("updated_at"), ""),
+        "as_of_date": _text(meta.get("as_of_date") or _record(bundle.get("research_context")).get("as_of_date"), ""),
+        "pages": [
+            {
+                "id": "decision",
+                "title": _label(language_code, "第 1 页：决策总览", "Decision page"),
+                "summary": _label(language_code, "直接说明结论、动作、仓位和关键数字。", "Shows the verdict, action, sizing and key numbers."),
+            },
+            {
+                "id": "credibility",
+                "title": _label(language_code, "第 2 页：可信依据", "Credibility page"),
+                "summary": _label(language_code, "用评分、回测、风险、证据和校验解释为什么可信。", "Explains trust with scores, backtest, risks, evidence and checks."),
+            },
+        ],
+        "decision": {
+            "headline": _text(executive.get("display_call") or executive.get("primary_call"), _label(language_code, "暂无结论。", "No conclusion available.")),
+            "action": _text(executive.get("display_action_summary") or executive.get("action_summary"), _label(language_code, "暂无执行建议。", "No action summary available.")),
+            "top_pick": _text(executive.get("top_pick"), "N/A"),
+            "confidence": _text(meta.get("confidence_level"), _label(language_code, "未评级", "not rated")),
+            "risk_summary": risk_summary or _label(language_code, "暂无主要风险摘要。", "No primary risk summary available."),
+        },
+        "key_metrics": _display_key_metrics(
+            language_code=language_code,
+            executive=executive,
+            scoreboard=scoreboard,
+            evidence=evidence,
+            checks=checks,
+            charts=effective_charts,
+        ),
+        "holdings": _display_holdings(executive=executive, scoreboard=scoreboard, core_holdings=core_holdings, language_code=language_code),
+        "chart_slots": chart_slots,
+        "reasons": _display_reasons(core_holdings=core_holdings, scoreboard=scoreboard, language_code=language_code),
+        "risks": _display_risks(risk_register, language_code),
+        "evidence": _display_evidence(evidence=evidence, evidence_summary=evidence_summary, language_code=language_code),
+        "validation": {
+            "headline": _text(validation_summary.get("headline"), _label(language_code, "暂无校验摘要。", "No validation summary available.")),
+            "items": _strings(validation_summary.get("items"))[:3],
+        },
+        "footer_note": _label(
+            language_code,
+            "本报告仅用于研究辅助，不构成财务、法律或税务建议。",
+            "This report is for research support only and is not financial, legal, or tax advice.",
+        ),
+    }
+
+
+def _effective_display_charts(report_briefing: GenericRecord, charts: GenericRecord, backtest: Any) -> GenericRecord:
+    """把最新回测合入展示母版图表，保证页面和 PDF 看同一组图。"""
+    effective = dict(charts or {})
+    backtest_payload = _record(_plain(backtest))
+    points = _records(backtest_payload.get("points"))
+    summary = _record(backtest_payload.get("summary"))
+    if points or summary:
+        current = _record(effective.get("portfolio_vs_benchmark_backtest"))
+        effective["portfolio_vs_benchmark_backtest"] = {
+            **current,
+            "status": "available" if points else current.get("status", "missing"),
+            "summary": summary or _record(current.get("summary")),
+            "points": points or _records(current.get("points")),
+            "message": "" if points else _text(current.get("message"), "Backtest data is not available for this run."),
+        }
+    if not effective:
+        return _build_investment_charts(report_briefing, backtest)
+    return effective
+
+
+def _display_chart_slots(charts: GenericRecord, language_code: str) -> list[GenericRecord]:
+    """固定简单版报告的三张核心图。"""
+    backtest_chart = _record(charts.get("portfolio_vs_benchmark_backtest"))
+    backtest_points = _records(backtest_chart.get("points"))
+    third_key = "portfolio_vs_benchmark_backtest" if backtest_chart.get("status") == "available" and len(backtest_points) >= 2 else "risk_contribution"
+    labels = {
+        "portfolio_allocation": _label(language_code, "推荐仓位", "Recommended Portfolio Allocation"),
+        "candidate_score_comparison": _label(language_code, "候选评分", "Candidate Score Comparison"),
+        "portfolio_vs_benchmark_backtest": _label(language_code, "组合 vs SPY", "Portfolio vs Benchmark Backtest"),
+        "risk_contribution": _label(language_code, "风险来源", "Risk Contribution"),
+    }
+    return [
+        {"key": "portfolio_allocation", "title": labels["portfolio_allocation"], "type": "bar"},
+        {"key": "candidate_score_comparison", "title": labels["candidate_score_comparison"], "type": "bar"},
+        {"key": third_key, "title": labels[third_key], "type": "line" if third_key == "portfolio_vs_benchmark_backtest" else "bar"},
+    ]
+
+
+def _display_key_metrics(
+    *,
+    language_code: str,
+    executive: GenericRecord,
+    scoreboard: list[GenericRecord],
+    evidence: list[GenericRecord],
+    checks: list[GenericRecord],
+    charts: GenericRecord,
+) -> list[GenericRecord]:
+    """提炼第一页可扫描的 3 到 5 个关键数字。"""
+    metrics: list[GenericRecord] = []
+    mandate_fit = _optional_number(executive.get("mandate_fit_score"))
+    if mandate_fit is not None:
+        metrics.append(
+            {
+                "key": "mandate_fit",
+                "label": _label(language_code, "适配分", "Mandate fit"),
+                "value": f"{mandate_fit:.1f}",
+                "tone": _score_tone(mandate_fit),
+            }
+        )
+    backtest_metrics = _record(_record(_record(charts.get("portfolio_vs_benchmark_backtest")).get("summary")).get("metrics"))
+    total_return = _optional_number(backtest_metrics.get("total_return_pct"))
+    excess_return = _optional_number(backtest_metrics.get("excess_return_pct"))
+    if total_return is not None:
+        metrics.append(
+            {
+                "key": "portfolio_return",
+                "label": _label(language_code, "组合回测", "Portfolio return"),
+                "value": f"{total_return:.1f}%",
+                "tone": "positive" if total_return >= 0 else "negative",
+            }
+        )
+    if excess_return is not None:
+        metrics.append(
+            {
+                "key": "excess_return",
+                "label": _label(language_code, "相对 SPY", "Excess vs SPY"),
+                "value": f"{excess_return:.1f}%",
+                "tone": "positive" if excess_return >= 0 else "negative",
+            }
+        )
+    if total_return is None and excess_return is None:
+        metrics.append(
+            {
+                "key": "backtest_status",
+                "label": _label(language_code, "回测", "Backtest"),
+                "value": _label(language_code, "未生成", "Not ready"),
+                "tone": "neutral",
+            }
+        )
+    metrics.append(
+        {
+            "key": "evidence_count",
+            "label": _label(language_code, "证据数", "Evidence"),
+            "value": str(len(evidence)),
+            "tone": "neutral",
+        }
+    )
+    metrics.append(
+        {
+            "key": "validation_checks",
+            "label": _label(language_code, "校验数", "Checks"),
+            "value": str(len(checks)),
+            "tone": "neutral",
+        }
+    )
+    if len(metrics) < 5:
+        metrics.append(
+            {
+                "key": "candidate_count",
+                "label": _label(language_code, "候选数", "Candidates"),
+                "value": str(len(scoreboard)),
+                "tone": "neutral",
+            }
+        )
+    return metrics[:5]
+
+
+def _display_holdings(
+    *,
+    executive: GenericRecord,
+    scoreboard: list[GenericRecord],
+    core_holdings: list[GenericRecord],
+    language_code: str,
+) -> list[GenericRecord]:
+    """整理第一页推荐组合，每个标的只保留一句能解释角色的话。"""
+    card_by_ticker = {_text(item.get("ticker")): item for item in core_holdings}
+    score_by_ticker = {_text(item.get("ticker")): item for item in scoreboard}
+    allocation = _records(executive.get("allocation_plan"))
+    rows = allocation or core_holdings[:4] or scoreboard[:4]
+    holdings: list[GenericRecord] = []
+    for item in rows[:5]:
+        ticker = _text(item.get("ticker"))
+        card = card_by_ticker.get(ticker) or score_by_ticker.get(ticker) or item
+        holdings.append(
+            {
+                "ticker": ticker,
+                "company": _text(card.get("company_name"), ticker),
+                "weight": _optional_number(item.get("weight")),
+                "role": _text(item.get("verdict") or item.get("verdict_label"), _label(language_code, "建议关注", "Review")),
+                "reason": _text(card.get("thesis") or card.get("fit_reason"), _label(language_code, "暂无一句话理由。", "No one-line reason available.")),
+            }
+        )
+    return holdings
+
+
+def _display_reasons(core_holdings: list[GenericRecord], scoreboard: list[GenericRecord], language_code: str) -> list[GenericRecord]:
+    """整理第二页核心理由。"""
+    rows = core_holdings[:4] or scoreboard[:4]
+    return [
+        {
+            "ticker": _text(item.get("ticker")),
+            "company": _text(item.get("company_name"), _text(item.get("ticker"))),
+            "text": _text(item.get("thesis") or item.get("fit_reason") or item.get("verdict_label"), _label(language_code, "暂无核心理由。", "No core reason available.")),
+        }
+        for item in rows
+    ]
+
+
+def _display_risks(risk_register: list[GenericRecord], language_code: str) -> list[GenericRecord]:
+    """整理第二页关键风险。"""
+    if not risk_register:
+        return [{"category": _label(language_code, "风险", "Risk"), "ticker": "", "summary": _label(language_code, "暂无明确风险登记。", "No specific risk register is available.")}]
+    return [
+        {
+            "category": _text(item.get("category"), _label(language_code, "风险", "Risk")),
+            "ticker": _text(item.get("ticker"), ""),
+            "summary": _text(item.get("summary"), _label(language_code, "暂无风险说明。", "No risk detail available.")),
+        }
+        for item in risk_register[:3]
+    ]
+
+
+def _display_evidence(evidence: list[GenericRecord], evidence_summary: GenericRecord, language_code: str) -> list[GenericRecord]:
+    """整理第二页证据摘要，保持可追溯但不过长。"""
+    if evidence:
+        return [
+            {
+                "title": _text(item.get("title") or item.get("summary"), _label(language_code, "未命名证据", "Untitled evidence")),
+                "source": _text(item.get("source_name") or item.get("source_type") or item.get("source"), _label(language_code, "来源未知", "Unknown source")),
+                "date": _text(item.get("published_at") or item.get("as_of_date"), ""),
+                "ticker": _text(item.get("ticker"), ""),
+                "url": _text(item.get("url"), ""),
+            }
+            for item in evidence[:5]
+        ]
+    summary_points = _strings(evidence_summary.get("items")) or _strings(evidence_summary.get("source_points"))
+    return [
+        {
+            "title": point,
+            "source": _label(language_code, "报告摘要", "Report summary"),
+            "date": "",
+            "ticker": "",
+            "url": "",
+        }
+        for point in summary_points[:5]
+    ]
+
+
+def _score_tone(score: float) -> str:
+    """把评分映射为展示色调。"""
+    if score >= 75:
+        return "positive"
+    if score >= 55:
+        return "neutral"
+    return "negative"
 
 
 def _build_simple_investment_markdown(

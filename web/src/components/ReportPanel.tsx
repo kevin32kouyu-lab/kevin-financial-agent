@@ -7,6 +7,7 @@ import { getEffectiveInvestmentCharts, getReportOutput as getReportOutputByKind,
 import type { BacktestDetail, DataStatus, Locale } from "../lib/types";
 import type { LocalePack } from "../lib/i18n";
 import { ResearchCharts } from "./ResearchCharts";
+import { SimpleInvestmentShowcase } from "./SimpleInvestmentReport";
 
 type GenericRecord = Record<string, unknown>;
 
@@ -994,7 +995,7 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
       ) : null}
 
       {variant === "terminal" && activeReportKind === "simple_investment" ? (
-        <SimpleInvestmentReportView locale={locale} result={result} output={simpleInvestmentOutput} charts={investmentCharts} />
+        <SimpleInvestmentShowcase locale={locale} result={result} output={simpleInvestmentOutput} charts={investmentCharts} backtest={backtest} />
       ) : null}
 
       {variant !== "terminal" || activeReportKind === "professional_investment" ? (

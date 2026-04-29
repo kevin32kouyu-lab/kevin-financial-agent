@@ -23,6 +23,8 @@
 - `app/tools/fetchers.py`：对接外部数据源并提供主源/备用源回退。
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：提供报告包构建、RAG 证据接入、正式报告生成和最终校验入口。
+- `app/services/report_outputs.py`：把同一次 run 的结果整理成简单版、专业版和开发报告，并为简单版生成网页/PDF 共用展示母版。
+- `app/services/pdf_export_service.py`：把报告展示母版或专业/开发报告内容渲染成后端真实 PDF。
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，标记证据时效、来源可靠性、引用映射和历史资料缺口。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、历史资料缺口、数据降级和时间范围。
 - `app/services/backtest_service.py`：根据历史建议计算组合收益、基准对比、逐票贡献和保守回测口径。
@@ -41,6 +43,7 @@
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
 - `web/src/components/TerminalTrustPanels.tsx`：旧版可信度概览组件，用户终端前台不再直接使用。
 - `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要和导出操作。
+- `web/src/components/SimpleInvestmentReport.tsx`：渲染简单版两页展示报告，让网页和 PDF 使用同一套内容结构。
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 时间线、工具调用、正反论证、checkpoint 和恢复按钮。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格和本次回测口径。
 - `web/src/lib/motion.ts`：动效偏好读写（本地记忆 + 系统低动态检测）。
@@ -67,14 +70,17 @@
 17. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决。
 18. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
 19. `ValidatorAgent` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
-20. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
-21. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-22. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
-23. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-24. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-25. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-26. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-27. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
+20. `report_outputs.py` 生成三报告输出；简单版额外生成 `display_model`，作为网页和 PDF 的共同母版。
+21. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
+22. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+23. `/terminal/conclusion` 中 `ReportPanel` 默认选择简单版，并把 `display_model` 交给 `SimpleInvestmentReport` 渲染两页展示报告。
+24. 用户导出简单版 PDF 时，`PdfExportService` 读取同一份 `display_model`；若当前 run 已有最新回测，则第三张图优先切为“组合 vs SPY”。
+25. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
+26. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
+27. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+28. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+29. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+30. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
 
 ## 关键设计决定与原因
 
@@ -98,6 +104,8 @@
 - `ValidatorAgent` 统一计算 `confidence_level`：避免多个模块各写各的可信度，减少前后不一致。
 - 澄清机制采用“一句短追问”而不是长段解释：减少用户把补充信息步骤误解成系统报错。
 - 结论、依据、校验、安全摘要共用同一份结构化数据：保证页面、历史记录和导出内容一致。
+- 简单版投资报告使用两页展示母版：第一页负责结论、动作、仓位和关键数字，第二页负责评分、回测/风险、证据和校验；这样更适合展示项目完整度。
+- 简单版网页和 PDF 共用 `display_model`：避免前端页面和后端 PDF 各自拼模板造成内容或视觉风格不一致。
 - 首页与终端共享同一动态背景与玻璃层：保证视觉语言统一，不再出现“首页一套、终端一套”的割裂。
 - 首页改为“品牌入口 + 强 CTA + 研究场景演示”：让第一次访问的用户先建立信任，再进入终端。
 - Terminal 改为“四页终端”而不是“所有内容堆在一页”：让提问、结论、回测、历史各自清楚，不再互相挤压。

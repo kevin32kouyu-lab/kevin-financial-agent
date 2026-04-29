@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import AppSettings, ROOT_DIR
+from app.services.report_outputs import build_simple_report_display_model
 
 
 class PdfExportUnavailable(RuntimeError):
@@ -167,6 +168,37 @@ def _build_investment_report_html(
     backtest_payload: Any,
 ) -> str:
     """渲染更精简的投资 PDF，优先保留用户真正会看的信息。"""
+    meta = _record(report_briefing.get("meta"))
+    effective_charts = _effective_investment_charts(_record(investment_output.get("charts")), backtest_payload)
+    display_model = _record(investment_output.get("display_model"))
+    if display_model.get("layout") != "two_page_showcase":
+        display_model = build_simple_report_display_model(
+            query=_text(result.get("query"), "No original request."),
+            language_code=_infer_report_language(result),
+            bundle=result,
+            core_holdings=_records(investment_output.get("core_holdings")),
+            charts=effective_charts,
+            backtest=backtest_payload,
+        )
+    else:
+        display_model = _refresh_simple_showcase_model(display_model, effective_charts)
+    return _build_simple_showcase_report_html(
+        run_id=run_id,
+        display_model=display_model,
+        charts=effective_charts,
+        backtest_payload=backtest_payload,
+    )
+
+
+def _build_legacy_investment_report_html(
+    *,
+    run_id: str,
+    result: dict[str, Any],
+    report_briefing: dict[str, Any],
+    investment_output: dict[str, Any],
+    backtest_payload: Any,
+) -> str:
+    """保留旧模板实现，便于后续对比或回滚。"""
     meta = _record(report_briefing.get("meta"))
     executive = _record(report_briefing.get("executive"))
     macro = _record(report_briefing.get("macro"))
@@ -332,6 +364,301 @@ def _build_investment_report_html(
   </main>
 </body>
 </html>"""
+
+
+def _build_simple_showcase_report_html(
+    *,
+    run_id: str,
+    display_model: dict[str, Any],
+    charts: dict[str, Any],
+    backtest_payload: Any,
+) -> str:
+    """把简单版展示母版渲染成两页 PDF HTML。"""
+    decision = _record(display_model.get("decision"))
+    pages = _records(display_model.get("pages"))
+    decision_title = _text(pages[0].get("title") if pages else "", "Decision page")
+    credibility_title = _text(pages[1].get("title") if len(pages) > 1 else "", "Credibility page")
+    title = _text(display_model.get("title"), "Simple Investment Report")
+    subtitle = _text(display_model.get("subtitle"), "Decision first, evidence second.")
+    generated_at = _text(display_model.get("generated_at"), "")
+    as_of_date = _text(display_model.get("as_of_date"), "")
+    meta_line = " · ".join(item for item in [f"Run {run_id}", generated_at, f"as_of {as_of_date}" if as_of_date else ""] if item)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{_esc(title)}</title>
+  <style>
+    @page {{ size: A4; margin: 12mm 10mm 14mm; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: #eef3f7;
+      color: #172033;
+      font-family: "Aptos", "Segoe UI", "Noto Sans", sans-serif;
+      font-size: 11.5px;
+      line-height: 1.55;
+    }}
+    .report-shell {{ max-width: 980px; margin: 0 auto; padding: 0; }}
+    .simple-report-page {{
+      min-height: 268mm;
+      padding: 18mm 14mm;
+      background: #fbfcfe;
+      border: 1px solid #d8e2ee;
+      break-after: page;
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }}
+    .simple-report-page:last-child {{ break-after: auto; }}
+    .report-kicker {{ margin: 0 0 8px; color: #607086; letter-spacing: .18em; text-transform: uppercase; font-size: 9.5px; }}
+    h1 {{ margin: 0; color: #122033; font-size: 30px; line-height: 1.06; letter-spacing: 0; }}
+    h2 {{ margin: 0; color: #122033; font-size: 20px; line-height: 1.2; }}
+    h3 {{ margin: 0 0 7px; color: #122033; font-size: 14px; }}
+    p {{ margin: 6px 0 0; }}
+    .decision-hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(230px, .75fr);
+      gap: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #dbe5ef;
+    }}
+    .verdict {{ margin-top: 14px; color: #122033; font-size: 20px; line-height: 1.28; font-weight: 750; }}
+    .action {{ color: #40516a; font-size: 13px; }}
+    .query-box {{ margin-top: 12px; padding: 11px 13px; border-radius: 12px; background: #eef6f5; border: 1px solid #cde2df; }}
+    .badge-stack {{ display: grid; gap: 9px; }}
+    .badge {{ padding: 10px 12px; border-radius: 12px; background: #ffffff; border: 1px solid #dbe5ef; }}
+    .badge span {{ display: block; margin-bottom: 4px; color: #607086; font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; }}
+    .badge strong {{ color: #13243d; font-size: 14px; }}
+    .metric-grid {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }}
+    .metric-card {{ padding: 11px; min-height: 74px; border-radius: 12px; background: #ffffff; border: 1px solid #dbe5ef; }}
+    .metric-card.positive {{ border-color: #b7d8d1; background: #f1faf7; }}
+    .metric-card.negative {{ border-color: #edc7bd; background: #fff5f2; }}
+    .metric-card .label {{ margin: 0; color: #607086; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; }}
+    .metric-card .value {{ margin: 5px 0 0; color: #13243d; font-size: 18px; font-weight: 800; }}
+    .section {{
+      padding: 14px;
+      border-radius: 14px;
+      background: #ffffff;
+      border: 1px solid #dbe5ef;
+      break-inside: avoid;
+    }}
+    .two-column {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .holding-list, .plain-list {{ display: grid; gap: 8px; margin-top: 8px; }}
+    .holding-row {{ display: grid; grid-template-columns: 72px 70px minmax(0, 1fr); gap: 9px; align-items: start; padding: 8px 0; border-bottom: 1px solid #eef2f6; }}
+    .holding-row:last-child {{ border-bottom: 0; }}
+    .holding-row strong {{ color: #13243d; }}
+    .muted {{ color: #66758a; }}
+    .chart-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }}
+    .ticker-card {{ border: 1px solid #dbe5ef; border-radius: 14px; padding: 12px; background: #f9fbfd; break-inside: avoid; }}
+    .chart {{ width: 100%; height: auto; display: block; max-height: 215px; }}
+    ul {{ margin: 8px 0 0; padding-left: 18px; }}
+    li {{ margin: 4px 0; }}
+    a {{ color: #17645e; text-decoration: none; }}
+    .footer-note {{ align-self: end; margin-top: 12px; color: #66758a; font-size: 9.5px; }}
+    @media print {{
+      body {{ background: #ffffff; }}
+      .report-shell {{ max-width: none; }}
+      .simple-report-page {{ border: 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="report-shell">
+    <section class="simple-report-page decision-page">
+      <div class="decision-hero">
+        <div>
+          <p class="report-kicker">{_esc(decision_title)}</p>
+          <h1>{_esc(title)}</h1>
+          <p class="muted">{_esc(subtitle)}{f" · {_esc(meta_line)}" if meta_line else ""}</p>
+          <p class="verdict">{_esc(decision.get("headline"))}</p>
+          <p class="action">{_esc(decision.get("action"))}</p>
+          <div class="query-box"><strong>Original request</strong><p>{_esc(display_model.get("query"))}</p></div>
+        </div>
+        <div class="badge-stack">
+          <div class="badge"><span>Top pick</span><strong>{_esc(decision.get("top_pick"))}</strong></div>
+          <div class="badge"><span>Confidence</span><strong>{_esc(decision.get("confidence"))}</strong></div>
+          <div class="badge"><span>Main risk</span><strong>{_esc(decision.get("risk_summary"))}</strong></div>
+        </div>
+      </div>
+      <div class="metric-grid">{_showcase_metric_cards(_records(display_model.get("key_metrics")))}</div>
+      <section class="section">
+        <h2>Recommended holdings</h2>
+        {_showcase_holdings(_records(display_model.get("holdings")))}
+      </section>
+      <section class="section">
+        <h2>Key charts</h2>
+        <div class="chart-grid">{_showcase_chart_cards(_records(display_model.get("chart_slots")), charts, backtest_payload)}</div>
+      </section>
+      <p class="footer-note">{_esc(display_model.get("footer_note"))}</p>
+    </section>
+    <section class="simple-report-page credibility-page">
+      <p class="report-kicker">{_esc(credibility_title)}</p>
+      <div class="two-column">
+        <section class="section">
+          <h2>Why this conclusion</h2>
+          {_showcase_reasons(_records(display_model.get("reasons")))}
+        </section>
+        <section class="section">
+          <h2>Key risks</h2>
+          {_showcase_risks(_records(display_model.get("risks")))}
+        </section>
+      </div>
+      <div class="two-column">
+        <section class="section">
+          <h2>Evidence snapshot</h2>
+          {_showcase_evidence(_records(display_model.get("evidence")))}
+        </section>
+        <section class="section">
+          <h2>Validation snapshot</h2>
+          {_showcase_validation(_record(display_model.get("validation")))}
+        </section>
+      </div>
+      <p class="footer-note">{_esc(display_model.get("footer_note"))}</p>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+def _refresh_simple_showcase_model(display_model: dict[str, Any], charts: dict[str, Any]) -> dict[str, Any]:
+    """用最新有效图表刷新展示母版的图表槽位。"""
+    refreshed = dict(display_model)
+    backtest_chart = _record(charts.get("portfolio_vs_benchmark_backtest"))
+    backtest_points = _records(backtest_chart.get("points"))
+    third_key = "portfolio_vs_benchmark_backtest" if backtest_chart.get("status") == "available" and len(backtest_points) >= 2 else "risk_contribution"
+    existing_slots = _records(refreshed.get("chart_slots"))
+    titles = {slot.get("key"): slot.get("title") for slot in existing_slots}
+    refreshed["chart_slots"] = [
+        {
+            "key": "portfolio_allocation",
+            "title": titles.get("portfolio_allocation") or "Recommended Portfolio Allocation",
+            "type": "bar",
+        },
+        {
+            "key": "candidate_score_comparison",
+            "title": titles.get("candidate_score_comparison") or "Candidate Score Comparison",
+            "type": "bar",
+        },
+        {
+            "key": third_key,
+            "title": titles.get(third_key) or ("Portfolio vs Benchmark Backtest" if third_key == "portfolio_vs_benchmark_backtest" else "Risk Contribution"),
+            "type": "line" if third_key == "portfolio_vs_benchmark_backtest" else "bar",
+        },
+    ]
+    return refreshed
+
+
+def _showcase_metric_cards(metrics: list[dict[str, Any]]) -> str:
+    """渲染展示报告第一页的关键数字。"""
+    if not metrics:
+        return '<article class="metric-card"><p class="label">Metrics</p><p class="value">N/A</p></article>'
+    return "".join(
+        f'<article class="metric-card {_esc(item.get("tone"))}"><p class="label">{_esc(item.get("label"))}</p><p class="value">{_esc(item.get("value"))}</p></article>'
+        for item in metrics[:5]
+    )
+
+
+def _showcase_holdings(items: list[dict[str, Any]]) -> str:
+    """渲染推荐持仓列表。"""
+    if not items:
+        return '<p class="muted">No recommended holding is available.</p>'
+    rows = []
+    for item in items[:5]:
+        weight = _format_weight(item.get("weight"))
+        rows.append(
+            '<div class="holding-row">'
+            f'<strong>{_esc(item.get("ticker"))}</strong>'
+            f'<span class="muted">{_esc(weight)}</span>'
+            f'<span><strong>{_esc(item.get("role"))}</strong><br>{_esc(item.get("company") or item.get("reason"))}</span>'
+            "</div>"
+        )
+    return f'<div class="holding-list">{"".join(rows)}</div>'
+
+
+def _showcase_chart_cards(slots: list[dict[str, Any]], charts: dict[str, Any], backtest: Any) -> str:
+    """按母版声明渲染三张核心图。"""
+    if not slots:
+        return '<p class="muted">No chart slot is available.</p>'
+    cards = []
+    for slot in slots[:3]:
+        key = _text(slot.get("key"), "")
+        title = _text(slot.get("title"), key or "Chart")
+        chart = _record(charts.get(key))
+        if key == "portfolio_vs_benchmark_backtest":
+            cards.append(_build_backtest_chart_card({**chart, "title": title}, backtest))
+        elif key == "candidate_score_comparison":
+            cards.append(
+                _build_bar_chart(
+                    title=title,
+                    chart=chart,
+                    value_keys=("composite", "composite_score", "score"),
+                    label_keys=("ticker", "name"),
+                    suffix="",
+                )
+            )
+        elif key == "risk_contribution":
+            cards.append(
+                _build_bar_chart(
+                    title=title,
+                    chart=chart,
+                    value_keys=("value", "risk", "risk_score", "weight"),
+                    label_keys=("name", "category", "ticker"),
+                    suffix="",
+                )
+            )
+        else:
+            cards.append(
+                _build_bar_chart(
+                    title=title,
+                    chart=chart,
+                    value_keys=("weight", "weight_pct", "allocation"),
+                    label_keys=("ticker", "name"),
+                    suffix="%",
+                )
+            )
+    return "".join(cards)
+
+
+def _showcase_reasons(items: list[dict[str, Any]]) -> str:
+    """渲染核心理由。"""
+    if not items:
+        return '<p class="muted">No core reason is available.</p>'
+    return "<ul>" + "".join(f'<li><strong>{_esc(item.get("ticker"))}</strong>: {_esc(item.get("text"))}</li>' for item in items[:4]) + "</ul>"
+
+
+def _showcase_risks(items: list[dict[str, Any]]) -> str:
+    """渲染关键风险。"""
+    if not items:
+        return '<p class="muted">No risk item is available.</p>'
+    return "<ul>" + "".join(
+        f'<li><strong>{_esc(item.get("category"))}{(" / " + _esc(item.get("ticker"))) if item.get("ticker") else ""}</strong>: {_esc(item.get("summary"))}</li>'
+        for item in items[:3]
+    ) + "</ul>"
+
+
+def _showcase_evidence(items: list[dict[str, Any]]) -> str:
+    """渲染证据快照。"""
+    if not items:
+        return '<p class="muted">No evidence item is available.</p>'
+    rows = []
+    for item in items[:5]:
+        title = _esc(item.get("title"))
+        url = _text(item.get("url"), "")
+        title_html = f'<a href="{_esc(url)}">{title}</a>' if url else title
+        source = _esc(item.get("source"))
+        date = _esc(item.get("date"))
+        rows.append(f"<li>{title_html}<br><span class=\"muted\">{source}{' · ' + date if date else ''}</span></li>")
+    return f"<ul>{''.join(rows)}</ul>"
+
+
+def _showcase_validation(validation: dict[str, Any]) -> str:
+    """渲染校验摘要。"""
+    headline = _text(validation.get("headline"), "No validation summary available.")
+    items = _strings(validation.get("items"))
+    body = _bullet_list(items) if items else '<p class="muted">No extra validation item is available.</p>'
+    return f"<p>{_esc(headline)}</p>{body}"
 
 
 def _build_metric_card(label: str, value: Any) -> str:
@@ -849,6 +1176,17 @@ def _markdown_to_html(markdown: str) -> str:
     if in_list:
         rows.append("</ul>")
     return "\n".join(rows)
+
+
+def _infer_report_language(result: dict[str, Any]) -> str:
+    """从 run 结果推断报告语言，旧数据缺字段时默认英文。"""
+    parsed_intent = _record(result.get("parsed_intent"))
+    system_context = _record(parsed_intent.get("system_context"))
+    language = _text(system_context.get("language"), "").lower()
+    if language in {"zh", "en"}:
+        return language
+    query = _text(result.get("query"), "")
+    return "zh" if re.search(r"[\u4e00-\u9fff]", query) else "en"
 
 
 def _float(value: Any) -> float | None:

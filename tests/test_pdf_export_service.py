@@ -198,6 +198,84 @@ def test_pdf_export_html_prefers_backtest_chart_when_backtest_is_available():
     assert "Risk Contribution" not in html
 
 
+def test_pdf_export_simple_kind_reads_shared_display_model():
+    """简单版 PDF 应读取网页同用的展示母版，而不是单独拼另一套内容。"""
+    result = _sample_report_result()
+    result["report_outputs"]["simple_investment"]["display_model"] = {
+        "version": "simple_report_showcase_v1",
+        "layout": "two_page_showcase",
+        "title": "Shared Showcase Report",
+        "subtitle": "Shared by web and PDF",
+        "query": "Display model query marker.",
+        "pages": [
+            {"id": "decision", "title": "Decision page"},
+            {"id": "credibility", "title": "Credibility page"},
+        ],
+        "decision": {
+            "headline": "Display model verdict marker.",
+            "action": "Display model action marker.",
+            "top_pick": "AAPL",
+            "confidence": "high",
+            "risk_summary": "Display model risk marker.",
+        },
+        "key_metrics": [
+            {"key": "mandate_fit", "label": "Mandate fit", "value": "82.0", "tone": "positive"},
+            {"key": "evidence_count", "label": "Evidence", "value": "1", "tone": "neutral"},
+        ],
+        "holdings": [{"ticker": "AAPL", "weight": 60, "role": "Core", "reason": "Display model holding marker."}],
+        "chart_slots": [
+            {"key": "portfolio_allocation", "title": "Recommended Portfolio Allocation", "type": "bar"},
+            {"key": "candidate_score_comparison", "title": "Candidate Score Comparison", "type": "bar"},
+            {"key": "risk_contribution", "title": "Risk Contribution", "type": "bar"},
+        ],
+        "reasons": [{"ticker": "AAPL", "text": "Display model reason marker."}],
+        "risks": [{"category": "Valuation", "summary": "Display model risk detail marker."}],
+        "evidence": [{"title": "Display model evidence marker.", "source": "SEC EDGAR", "date": "2026-04-01"}],
+        "validation": {"headline": "Display model validation marker.", "items": ["Shared model check."]},
+        "footer_note": "Display model footer marker.",
+    }
+
+    service = PdfExportService(settings=AppSettings())
+    html = service.build_report_html(run_id="run-001", result=result, backtest=None)
+
+    assert "Shared Showcase Report" in html
+    assert "simple-report-page decision-page" in html
+    assert "simple-report-page credibility-page" in html
+    assert "Display model verdict marker." in html
+    assert "Display model evidence marker." in html
+    assert "Display model footer marker." in html
+
+
+def test_pdf_export_refreshes_display_model_chart_slot_with_latest_backtest():
+    """已有展示母版也要按最新回测刷新第三张图。"""
+    result = _sample_report_result()
+    result["report_outputs"]["simple_investment"]["display_model"] = {
+        "version": "simple_report_showcase_v1",
+        "layout": "two_page_showcase",
+        "title": "Shared Showcase Report",
+        "query": "Display model query marker.",
+        "pages": [{"id": "decision", "title": "Decision page"}, {"id": "credibility", "title": "Credibility page"}],
+        "decision": {"headline": "Decision", "action": "Action", "top_pick": "AAPL", "confidence": "medium", "risk_summary": "Risk"},
+        "key_metrics": [],
+        "holdings": [],
+        "chart_slots": [
+            {"key": "portfolio_allocation", "title": "Recommended Portfolio Allocation", "type": "bar"},
+            {"key": "candidate_score_comparison", "title": "Candidate Score Comparison", "type": "bar"},
+            {"key": "risk_contribution", "title": "Risk Contribution", "type": "bar"},
+        ],
+        "reasons": [],
+        "risks": [],
+        "evidence": [],
+        "validation": {"headline": "Validation", "items": []},
+    }
+
+    service = PdfExportService(settings=AppSettings())
+    html = service.build_report_html(run_id="run-001", result=result, backtest=_sample_backtest())
+
+    assert "Portfolio vs Benchmark Backtest" in html
+    assert "Risk Contribution" not in html
+
+
 def test_pdf_export_development_kind_uses_development_report():
     """开发报告 PDF 应使用工程支撑报告内容，不混成投资正文。"""
     service = PdfExportService(settings=AppSettings())
@@ -217,7 +295,8 @@ async def test_pdf_export_returns_real_pdf_bytes(monkeypatch):
     service = PdfExportService(settings=AppSettings())
 
     async def fake_renderer(html: str) -> bytes:
-        assert "Decision board" in html
+        assert "simple-report-page decision-page" in html
+        assert "simple-report-page credibility-page" in html
         assert "Recommended Portfolio Allocation" in html
         return b"%PDF-1.4\n% test pdf\n"
 

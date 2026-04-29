@@ -129,6 +129,63 @@ export function createDemoGuideRunDetail(locale: Locale): RunDetailResponse {
     { name: zh ? "盈利预期" : "Earnings expectations", value: 31 },
     { name: zh ? "集中度" : "Concentration", value: 27 },
   ];
+  const demoBacktest = createDemoGuideBacktest(locale);
+  const simpleDisplayModel = {
+    version: "simple_report_showcase_v1",
+    layout: "two_page_showcase",
+    title: zh ? "简单版投资报告" : "Simple Investment Report",
+    subtitle: zh ? "展示型投资结论：先看结论，再看图表和证据。" : "Showcase investment summary: decision first, charts and evidence second.",
+    query,
+    generated_at: DEMO_UPDATED_AT,
+    pages: [
+      { id: "decision", title: zh ? "第 1 页：决策总览" : "Decision page" },
+      { id: "credibility", title: zh ? "第 2 页：可信依据" : "Credibility page" },
+    ],
+    decision: {
+      headline: zh ? "优先关注 MSFT，AAPL 稳定补充，NVDA 小比例参与成长。" : "Focus on MSFT first, use AAPL for stability, and keep NVDA as a smaller growth sleeve.",
+      action: zh ? "先建核心仓位，再用小比例跟踪高波动成长。" : "Build the core first, then size the higher-volatility growth sleeve cautiously.",
+      top_pick: "MSFT",
+      confidence: zh ? "中等" : "medium",
+      risk_summary: zh ? "估值与回撤是主要风险。" : "Valuation and drawdown risk remain the main watch points.",
+    },
+    key_metrics: [
+      { key: "mandate_fit", label: zh ? "适配分" : "Mandate fit", value: "86.0", tone: "positive" },
+      { key: "portfolio_return", label: zh ? "组合回测" : "Portfolio return", value: "9.4%", tone: "positive" },
+      { key: "excess_return", label: zh ? "相对 SPY" : "Excess vs SPY", value: "4.3%", tone: "positive" },
+      { key: "evidence_count", label: zh ? "证据数" : "Evidence", value: "3", tone: "neutral" },
+      { key: "validation_checks", label: zh ? "校验数" : "Checks", value: "2", tone: "neutral" },
+    ],
+    holdings: [
+      { ticker: "MSFT", company: "Microsoft", weight: 50, role: zh ? "核心" : "Core", reason: zh ? "质量和现金流最稳。" : "Best quality and cash-flow fit." },
+      { ticker: "AAPL", company: "Apple", weight: 30, role: zh ? "稳定补充" : "Stabilizer", reason: zh ? "现金流和生态稳定性更强。" : "Durable cash flow and ecosystem stability." },
+      { ticker: "NVDA", company: "NVIDIA", weight: 20, role: zh ? "成长卫星" : "Growth sleeve", reason: zh ? "增长弹性强，但波动更高。" : "Higher upside with higher volatility." },
+    ],
+    chart_slots: [
+      { key: "portfolio_allocation", title: zh ? "推荐仓位" : "Recommended Portfolio Allocation", type: "bar" },
+      { key: "candidate_score_comparison", title: zh ? "候选评分" : "Candidate Score Comparison", type: "bar" },
+      { key: "portfolio_vs_benchmark_backtest", title: zh ? "组合 vs SPY" : "Portfolio vs Benchmark Backtest", type: "line" },
+    ],
+    reasons: [
+      { ticker: "MSFT", company: "Microsoft", text: zh ? "云业务、企业软件粘性和现金流质量让它适合做核心。" : "Cloud, software retention, and cash-flow quality make it the core." },
+      { ticker: "AAPL", company: "Apple", text: zh ? "回购、生态和消费科技现金流提供稳定补充。" : "Buybacks, ecosystem depth, and consumer-tech cash flow add stability." },
+      { ticker: "NVDA", company: "NVIDIA", text: zh ? "AI 增长弹性突出，但仓位需要受估值和波动约束。" : "AI growth upside is strong, but sizing must reflect valuation and volatility." },
+    ],
+    risks: [
+      { category: zh ? "估值" : "Valuation", ticker: "NVDA", summary: zh ? "高估值会放大回撤。" : "High valuation can amplify drawdowns." },
+      { category: zh ? "盈利预期" : "Earnings expectations", ticker: "MSFT", summary: zh ? "云和 AI 预期若降温，核心仓位也会受压。" : "If cloud and AI expectations cool, the core sleeve can also be pressured." },
+      { category: zh ? "组合集中度" : "Concentration", ticker: "", summary: zh ? "三只科技权重较集中，需要定期复盘。" : "Three technology holdings create concentration that needs review." },
+    ],
+    evidence: [
+      { title: "MSFT quality snapshot", source: "demo", date: "2026-04-20", ticker: "MSFT", url: "" },
+      { title: "AAPL cash-flow snapshot", source: "demo", date: "2026-04-21", ticker: "AAPL", url: "" },
+      { title: "NVDA growth risk snapshot", source: "demo", date: "2026-04-22", ticker: "NVDA", url: "" },
+    ],
+    validation: {
+      headline: zh ? "结论和风险提示一致，未发现阻断性降级。" : "Verdict and risk notes are consistent; no blocking degradation is shown.",
+      items: zh ? ["推荐仓位合计为 100%。", "高波动标的 NVDA 已限制为卫星仓位。"] : ["Recommended sizing sums to 100%.", "Higher-volatility NVDA is constrained to a satellite sleeve."],
+    },
+    footer_note: zh ? "本报告仅用于研究辅助，不构成财务、法律或税务建议。" : "This report is for research support only and is not financial, legal, or tax advice.",
+  };
 
   return {
     run: {
@@ -156,7 +213,7 @@ export function createDemoGuideRunDetail(locale: Locale): RunDetailResponse {
     result: {
       status: "completed",
       query,
-      final_report: professionalMarkdown,
+      final_report: simpleMarkdown,
       report_mode: "deepseek_demo",
       research_context: { research_mode: "realtime", as_of_date: null },
       parsed_intent: {
@@ -236,20 +293,22 @@ export function createDemoGuideRunDetail(locale: Locale): RunDetailResponse {
       report_outputs: {
         simple_investment: {
           markdown: simpleMarkdown,
+          display_model: simpleDisplayModel,
           charts: {
             portfolio_allocation: { status: "ready", items: allocationItems },
             candidate_score_comparison: { status: "ready", items: scoreItems },
             risk_contribution: { status: "ready", items: riskItems },
-            portfolio_vs_benchmark_backtest: { status: "available", summary: createDemoGuideBacktest(locale).summary, points: createDemoGuideBacktest(locale).points },
+            portfolio_vs_benchmark_backtest: { status: "available", summary: demoBacktest.summary, points: demoBacktest.points },
           },
         },
         investment: {
           markdown: simpleMarkdown,
+          display_model: simpleDisplayModel,
           charts: {
             portfolio_allocation: { status: "ready", items: allocationItems },
             candidate_score_comparison: { status: "ready", items: scoreItems },
             risk_contribution: { status: "ready", items: riskItems },
-            portfolio_vs_benchmark_backtest: { status: "available", summary: createDemoGuideBacktest(locale).summary, points: createDemoGuideBacktest(locale).points },
+            portfolio_vs_benchmark_backtest: { status: "available", summary: demoBacktest.summary, points: demoBacktest.points },
           },
         },
         professional_investment: {
@@ -258,7 +317,7 @@ export function createDemoGuideRunDetail(locale: Locale): RunDetailResponse {
             portfolio_allocation: { status: "ready", items: allocationItems },
             candidate_score_comparison: { status: "ready", items: scoreItems },
             risk_contribution: { status: "ready", items: riskItems },
-            portfolio_vs_benchmark_backtest: { status: "available", summary: createDemoGuideBacktest(locale).summary, points: createDemoGuideBacktest(locale).points },
+            portfolio_vs_benchmark_backtest: { status: "available", summary: demoBacktest.summary, points: demoBacktest.points },
           },
         },
         development: {

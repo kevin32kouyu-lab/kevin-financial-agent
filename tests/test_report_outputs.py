@@ -96,6 +96,41 @@ def test_backtest_chart_payload_preserves_points_and_summary() -> None:
     assert backtest_chart["points"][0]["portfolio_value"] == 100.0
 
 
+def test_simple_report_output_includes_two_page_display_model() -> None:
+    """简单版报告应提供网页和 PDF 共用的两页展示母版。"""
+    outputs = build_dual_report_outputs(
+        bundle=_sample_bundle(),
+        query="Find conservative long-term compounders.",
+        language_code="en",
+        backtest=_sample_backtest(),
+    )
+    model = outputs["simple_investment"]["display_model"]
+
+    assert model["version"] == "simple_report_showcase_v1"
+    assert model["layout"] == "two_page_showcase"
+    assert [page["id"] for page in model["pages"]] == ["decision", "credibility"]
+    assert model["query"] == "Find conservative long-term compounders."
+    assert model["decision"]["headline"] == "AAPL is the primary recommendation."
+    assert model["decision"]["action"] == "Build gradually and keep MSFT as a satellite."
+    assert model["decision"]["top_pick"] == "AAPL"
+    assert {metric["key"] for metric in model["key_metrics"]} >= {
+        "mandate_fit",
+        "evidence_count",
+        "portfolio_return",
+        "excess_return",
+    }
+    assert [chart["key"] for chart in model["chart_slots"]] == [
+        "portfolio_allocation",
+        "candidate_score_comparison",
+        "portfolio_vs_benchmark_backtest",
+    ]
+    assert model["holdings"][0]["ticker"] == "AAPL"
+    assert model["reasons"][0]["ticker"] == "AAPL"
+    assert model["risks"][0]["category"] == "Valuation"
+    assert model["evidence"][0]["title"] == "Apple filing"
+    assert model["validation"]["headline"] == "Checks passed."
+
+
 def _sample_bundle() -> dict:
     """构造覆盖三报告输出的最小 bundle。"""
     return {
@@ -137,6 +172,7 @@ def _sample_bundle() -> dict:
                 "top_pick_verdict": "Accumulate",
                 "display_call": "AAPL is the primary recommendation.",
                 "display_action_summary": "Build gradually and keep MSFT as a satellite.",
+                "mandate_fit_score": 86,
                 "allocation_plan": [
                     {"ticker": "AAPL", "weight": 45, "verdict": "Core"},
                     {"ticker": "MSFT", "weight": 30, "verdict": "Core"},

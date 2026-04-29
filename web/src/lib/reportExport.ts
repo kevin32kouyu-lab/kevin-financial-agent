@@ -293,10 +293,10 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)}</title>
   <style>
-    body { font-family: "Aptos", "Segoe UI", sans-serif; color: #10233b; background: #f4f7fb; margin: 0; }
+    body { font-family: "Geist Sans", "Aptos", "Segoe UI", "Microsoft YaHei", Arial, sans-serif; font-variant-numeric: tabular-nums; color: #10233b; background: #f4f7fb; margin: 0; }
     main { max-width: 960px; margin: 0 auto; padding: 36px 28px 56px; }
     article { background: #fff; border: 1px solid #d8e2ee; border-radius: 22px; padding: 28px; }
-    h1, h2, h3 { font-family: Cambria, Georgia, serif; }
+    h1, h2, h3 { font-family: "Geist Sans", "Aptos", "Segoe UI", "Microsoft YaHei", Arial, sans-serif; font-weight: 760; letter-spacing: 0; }
     p, li { line-height: 1.75; }
   </style>
 </head>
@@ -400,11 +400,11 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
   <title>${escapeHtml(meta?.title || "Investment Report")}</title>
   <style>
     @page { size: A4; margin: 16mm; }
-    body { font-family: "Aptos", "Segoe UI", sans-serif; margin: 0; color: #10233b; background: #f4f7fb; }
+    body { font-family: "Geist Sans", "Aptos", "Segoe UI", "Microsoft YaHei", Arial, sans-serif; font-variant-numeric: tabular-nums; margin: 0; color: #10233b; background: #f4f7fb; }
     .page { max-width: 1100px; margin: 0 auto; padding: 32px 28px 48px; }
     .hero, .section, .ticker-card { background: #fff; border: 1px solid #d8e2ee; border-radius: 22px; box-shadow: 0 12px 28px rgba(15,23,42,.06); }
     .hero { padding: 28px; margin-bottom: 20px; }
-    .hero h1, .section h2, .ticker-card h3 { margin: 0; font-family: Cambria, Georgia, serif; }
+    .hero h1, .section h2, .ticker-card h3 { margin: 0; font-family: "Geist Sans", "Aptos", "Segoe UI", "Microsoft YaHei", Arial, sans-serif; font-weight: 760; letter-spacing: 0; }
     .hero p { line-height: 1.7; }
     .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; margin-bottom: 18px; }
     .section { padding: 22px; margin-bottom: 18px; }
@@ -412,11 +412,11 @@ function buildReportHtml(result: Record<string, unknown>, locale: Locale, backte
     .pill { padding: 7px 12px; border-radius: 999px; background: #e8f3f0; color: #0f766e; font-size: 12px; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 12px 10px; border-bottom: 1px solid #dfe7f1; text-align: left; }
-    th { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #5d7187; }
+    th { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5d7187; }
     .cards { display: grid; gap: 16px; }
     .ticker-card { padding: 18px; }
     .ticker-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
-    .ticker { margin: 0 0 4px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: #5d7187; }
+    .ticker { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5d7187; }
     .verdict { padding: 8px 12px; border-radius: 999px; background: #eef4ff; color: #205ea8; font-size: 12px; }
     ul { margin: 10px 0 0; padding-left: 20px; line-height: 1.7; }
     @media print { body { background: #fff; } .page { padding: 0; } .hero, .section, .ticker-card { box-shadow: none; } }
