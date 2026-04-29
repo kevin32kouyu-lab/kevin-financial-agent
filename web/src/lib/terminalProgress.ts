@@ -30,16 +30,6 @@ const RUNNING_STAGE_PROGRESS: Record<string, number> = {
   validation: 97,
 };
 
-const ACTIVE_STAGE_PROGRESS: Record<string, number> = {
-  intent_analysis: 18,
-  assumption_fill: 28,
-  research_plan: 42,
-  structured_analysis: 66,
-  evidence_retrieval: 78,
-  final_report: 91,
-  validation: 98,
-};
-
 const STAGE_LABELS = {
   zh: {
     idle: "等待开始",
@@ -100,22 +90,6 @@ function readOrderedStepKeys(steps: unknown): string[] {
   return keys.sort((left, right) => STAGE_ORDER.indexOf(left as never) - STAGE_ORDER.indexOf(right as never));
 }
 
-/** 读取后端明确标记为 running 的阶段。 */
-function readActiveStepKey(steps: unknown): string {
-  if (!Array.isArray(steps)) return "";
-  const runningSteps = steps
-    .filter((item) => item && typeof item === "object")
-    .map((item) => item as GenericRecord)
-    .filter((item) => readStepStatus(item) === "running")
-    .map((item) => ({
-      key: readStepKey(item),
-      position: typeof item.position === "number" ? item.position : 0,
-    }))
-    .filter((item) => item.key && STAGE_ORDER.includes(item.key as never));
-  if (!runningSteps.length) return "";
-  return runningSteps.sort((left, right) => right.position - left.position)[0].key;
-}
-
 /** 推断当前正在执行的阶段。 */
 function inferRunningStage(stepKeys: string[]): string {
   if (!stepKeys.length) return "intent_analysis";
@@ -131,10 +105,9 @@ export function computeTerminalProgress(status: string | undefined, steps: unkno
   if (!status) return { percent: 0, tone: "neutral", textKey: "idle" };
   if (status === "queued") return { percent: 12, tone: "neutral", textKey: "queued" };
   if (status === "running") {
-    const activeStage = readActiveStepKey(steps);
-    const stage = activeStage || inferRunningStage(readOrderedStepKeys(steps));
+    const stage = inferRunningStage(readOrderedStepKeys(steps));
     return {
-      percent: (activeStage ? ACTIVE_STAGE_PROGRESS[stage] : RUNNING_STAGE_PROGRESS[stage]) || 42,
+      percent: RUNNING_STAGE_PROGRESS[stage] || 42,
       tone: "neutral",
       textKey: "running",
     };
@@ -152,7 +125,7 @@ export function resolveTerminalStage(status: string | undefined, steps: unknown,
   if (!status) return labels.idle;
   if (status === "queued") return labels.queued;
   if (status === "running") {
-    const stage = readActiveStepKey(steps) || inferRunningStage(readOrderedStepKeys(steps));
+    const stage = inferRunningStage(readOrderedStepKeys(steps));
     return labels[stage as keyof typeof labels] || labels.structured_analysis;
   }
   if (status === "completed") return labels.completed;

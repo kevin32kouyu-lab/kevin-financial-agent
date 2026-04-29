@@ -7,7 +7,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from app.analysis_runtime import DebugAnalysisRequest, PipelineOptions, run_analysis_pipeline
-from app.integrations.llm_client import VolcengineChatClient, VolcengineChatConfig
+from app.integrations.llm_client import DeepSeekChatClient, DeepSeekChatConfig
 
 from .intent import _build_follow_up_question, _normalize_query, parse_intent
 from .models import AgentRunRequest, ParsedIntent
@@ -40,7 +40,7 @@ async def _maybe_call(callback: AsyncHook, *args: Any) -> None:
 
 
 def get_runtime_config(model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
-    config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
+    config = DeepSeekChatConfig.from_overrides(model=model, base_url=base_url)
     return config.public_view()
 
 
@@ -96,8 +96,8 @@ async def _append_stage(
 
 async def run_financial_agent(payload: AgentRunRequest, hooks: AgentRunHooks | None = None) -> dict[str, Any]:
     normalized_query = _normalize_query(payload.query)
-    runtime_config = VolcengineChatConfig.from_overrides(model=payload.llm.model, base_url=payload.llm.base_url)
-    client = VolcengineChatClient(runtime_config)
+    runtime_config = DeepSeekChatConfig.from_overrides(model=payload.llm.model, base_url=payload.llm.base_url)
+    client = DeepSeekChatClient(runtime_config)
 
     response: dict[str, Any] = {
         "mode": "natural_language",

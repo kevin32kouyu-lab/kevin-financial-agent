@@ -44,12 +44,6 @@ Railway 会自动识别根目录 `Dockerfile`。
 
 最少需要填：
 
-- `ARK_API_KEY`
-- `ARK_BASE_URL`
-- `ARK_MODEL`
-
-如果火山 API 不稳定，建议同时填写 DeepSeek 备用源：
-
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_MODEL=deepseek-chat`
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
@@ -150,13 +144,11 @@ I have about $50,000 and want long-term growth with controlled risk. Compare Mic
 
 通常先检查：
 
-- `ARK_API_KEY`
-- `ARK_BASE_URL`
-- `ARK_MODEL`
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_MODEL`
+- `DEEPSEEK_BASE_URL`
 
-这三个变量是否都已在 Railway 面板中配置。
-
-如果火山临时不可用，可以配置 `DEEPSEEK_API_KEY`，系统会在火山失败时自动切到 DeepSeek。
+这三个变量是否都已在 Railway 面板中配置，其中 `DEEPSEEK_MODEL` 和 `DEEPSEEK_BASE_URL` 可以使用默认值。
 
 ### 页面能打开，但回测失败
 

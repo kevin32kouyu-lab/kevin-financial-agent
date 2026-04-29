@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from app.integrations.llm_client import DeepSeekChatClient, DeepSeekChatConfig, FallbackChatClient, VolcengineChatClient, VolcengineChatConfig
+from app.integrations.llm_client import DeepSeekChatClient, DeepSeekChatConfig
 
 from app.domain.contracts import ParsedIntent
 from app.services.investment_memo import (
@@ -94,15 +94,11 @@ class ReportService:
         bundle["report_briefing"]["meta"] = meta
 
     def get_runtime_config(self, *, model: str | None = None, base_url: str | None = None) -> dict[str, Any]:
-        runtime_view = VolcengineChatConfig.from_overrides(model=model, base_url=base_url).public_view()
-        runtime_view["fallback"] = DeepSeekChatConfig.from_env().public_view()
-        return runtime_view
+        return DeepSeekChatConfig.from_overrides(model=model, base_url=base_url).public_view()
 
-    def _build_chat_client(self, runtime_config: VolcengineChatConfig) -> FallbackChatClient:
-        """构建主模型 + DeepSeek 备用模型客户端。"""
-        deepseek_config = DeepSeekChatConfig.from_env()
-        fallback = DeepSeekChatClient(deepseek_config) if deepseek_config.can_attempt() else None
-        return FallbackChatClient(primary=VolcengineChatClient(runtime_config), fallback=fallback)
+    def _build_chat_client(self, runtime_config: DeepSeekChatConfig) -> DeepSeekChatClient:
+        """构建统一的 DeepSeek 模型客户端。"""
+        return DeepSeekChatClient(runtime_config)
 
     def build_report_package(
         self,
@@ -115,7 +111,7 @@ class ReportService:
         base_url: str | None = None,
     ) -> dict[str, Any]:
         """构造报告基础包，供 EvidenceAgent 接管 RAG 证据。"""
-        runtime_config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
+        runtime_config = DeepSeekChatConfig.from_overrides(model=model, base_url=base_url)
         merged_data_package = build_merged_data_package(query, intent, analysis)
         report_briefing = build_report_briefing(query, intent, merged_data_package)
         report_input = build_report_input(query, intent, merged_data_package)
@@ -160,7 +156,7 @@ class ReportService:
         base_url: str | None = None,
     ) -> dict[str, Any]:
         """生成正式报告或结构化兜底报告，不在这里执行 RAG 一致性校验。"""
-        runtime_config = VolcengineChatConfig.from_overrides(model=model, base_url=base_url)
+        runtime_config = DeepSeekChatConfig.from_overrides(model=model, base_url=base_url)
         bundle: dict[str, Any] = {
             "runtime": runtime_config.public_view(),
             "report_input": report_input,
@@ -185,13 +181,6 @@ class ReportService:
             )
             bundle["llm_raw"]["report_response"] = report_result["content"]
             bundle["llm_raw"]["report_provider"] = report_result.get("provider")
-            if report_result.get("fallback_from"):
-                bundle["llm_raw"]["fallback_from"] = report_result.get("fallback_from")
-                bundle["llm_raw"]["primary_error"] = report_result.get("primary_error")
-                bundle["report_briefing"]["meta"]["llm_fallback"] = {
-                    "from": report_result.get("fallback_from"),
-                    "to": report_result.get("provider"),
-                }
             validation_error = validate_report_output(report_result["content"], intent, report_briefing)
             if validation_error:
                 bundle["final_report"] = build_rule_based_report(intent, report_briefing)

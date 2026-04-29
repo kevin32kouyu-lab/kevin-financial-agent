@@ -41,7 +41,7 @@ class PdfExportService:
         run_id: str,
         result: dict[str, Any],
         backtest: Any = None,
-        kind: str = "investment",
+        kind: str = "simple_investment",
     ) -> str:
         """把报告数据整理成 PDF 专用 HTML，不依赖前端临时拼接。"""
         normalized_kind = _normalize_pdf_kind(kind)
@@ -58,11 +58,19 @@ class PdfExportService:
                 development_output=development_output,
                 backtest_payload=backtest_payload,
             )
+        if normalized_kind == "professional_investment":
+            return _build_professional_investment_report_html(
+                run_id=run_id,
+                result=result,
+                report_briefing=report_briefing,
+                investment_output=_select_investment_output(report_outputs, "professional_investment"),
+                backtest_payload=backtest_payload,
+            )
         return _build_investment_report_html(
             run_id=run_id,
             result=result,
             report_briefing=report_briefing,
-            investment_output=_record(report_outputs.get("investment")),
+            investment_output=_select_investment_output(report_outputs, "simple_investment"),
             backtest_payload=backtest_payload,
         )
 
@@ -72,7 +80,7 @@ class PdfExportService:
         run_id: str,
         result: dict[str, Any],
         backtest: Any = None,
-        kind: str = "investment",
+        kind: str = "simple_investment",
     ) -> PdfExportResult:
         """生成真实 PDF 字节，并返回浏览器可下载的文件名。"""
         normalized_kind = _normalize_pdf_kind(kind)
@@ -116,7 +124,7 @@ class PdfExportService:
                 raise PdfExportUnavailable("PDF 渲染完成但没有生成文件。")
             return pdf_path.read_bytes()
 
-    def _build_filename(self, result: dict[str, Any], *, kind: str = "investment") -> str:
+    def _build_filename(self, result: dict[str, Any], *, kind: str = "simple_investment") -> str:
         """生成稳定、浏览器友好的 PDF 文件名。"""
         report_briefing = _record(result.get("report_briefing"))
         meta = _record(report_briefing.get("meta"))
@@ -124,16 +132,30 @@ class PdfExportService:
         if not date_part:
             date_part = _text(meta.get("generated_at"), "")[:10]
         suffix = date_part if re.match(r"^\d{4}-\d{2}-\d{2}$", date_part) else "latest"
-        prefix = "development-report" if kind == "development" else "investment-report"
+        if kind == "development":
+            prefix = "development-report"
+        elif kind == "professional_investment":
+            prefix = "professional-investment-report"
+        else:
+            prefix = "simple-investment-report"
         return f"{prefix}-{suffix}.pdf"
 
 
 def _normalize_pdf_kind(kind: str) -> str:
     """规范化 PDF 报告类型。"""
-    normalized = _text(kind, "investment").lower()
-    if normalized not in {"investment", "development"}:
-        raise PdfExportUnavailable("PDF kind 只支持 investment 或 development。")
+    normalized = _text(kind, "simple_investment").lower()
+    if normalized == "investment":
+        return "simple_investment"
+    if normalized not in {"simple_investment", "professional_investment", "development"}:
+        raise PdfExportUnavailable("PDF kind 只支持 simple_investment、professional_investment、investment 或 development。")
     return normalized
+
+
+def _select_investment_output(report_outputs: dict[str, Any], kind: str) -> dict[str, Any]:
+    """按报告类型读取输出，并兼容旧 run 的 investment 字段。"""
+    if kind == "professional_investment":
+        return _record(report_outputs.get("professional_investment")) or _record(report_outputs.get("investment"))
+    return _record(report_outputs.get("simple_investment")) or _record(report_outputs.get("investment"))
 
 
 def _build_investment_report_html(
@@ -246,7 +268,7 @@ def _build_investment_report_html(
 <body>
   <main class="page">
     <section class="hero">
-      <p class="eyebrow">Investment report PDF</p>
+      <p class="eyebrow">Simple Investment Report PDF</p>
       <h1>{_esc(title)}</h1>
       <p class="hero-summary">{_esc(executive.get("display_call") or executive.get("primary_call"))}</p>
       <p class="hero-summary">{_esc(executive.get("display_action_summary") or executive.get("action_summary"))}</p>
@@ -414,6 +436,96 @@ def _build_evidence_appendix(items: list[dict[str, Any]], evidence_summary: dict
         return f"<ul>{''.join(rows)}</ul>"
     summary_points = [*_strings(evidence_summary.get("items")), *_strings(evidence_summary.get("source_points"))]
     return _bullet_list(summary_points) or '<p class="muted">No evidence appendix is available for this run.</p>'
+
+
+def _build_professional_investment_report_html(
+    *,
+    run_id: str,
+    result: dict[str, Any],
+    report_briefing: dict[str, Any],
+    investment_output: dict[str, Any],
+    backtest_payload: Any,
+) -> str:
+    """渲染机构研究型专业投资报告 PDF。"""
+    meta = _record(report_briefing.get("meta"))
+    markdown = _text(investment_output.get("markdown"), "")
+    if not markdown:
+        markdown = _text(result.get("final_report"), "# Professional Investment Report\n\nNo professional report is available for this run.")
+    query = _text(result.get("query"), "No original request.")
+    generated_at = _text(meta.get("generated_at") or result.get("updated_at"), "")
+    effective_charts = _effective_investment_charts(_record(investment_output.get("charts")), backtest_payload)
+    chart_block = _build_investment_chart_block(effective_charts, backtest_payload)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Professional Investment Report</title>
+  <style>
+    @page {{ size: A4; margin: 15mm 13mm 17mm; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: #f6f2ea;
+      color: #172033;
+      font-family: "Aptos", "Segoe UI", "Noto Sans", sans-serif;
+      font-size: 12px;
+      line-height: 1.62;
+    }}
+    .page {{ max-width: 980px; margin: 0 auto; padding: 26px 22px 40px; }}
+    .hero {{
+      color: #f9efe0;
+      background: linear-gradient(135deg, #111827 0%, #243b53 54%, #8a5a24 100%);
+      border-radius: 26px;
+      padding: 30px;
+      margin-bottom: 18px;
+    }}
+    .eyebrow {{ margin: 0 0 9px; letter-spacing: .22em; text-transform: uppercase; font-size: 10px; opacity: .82; }}
+    h1 {{ margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 30px; line-height: 1.08; }}
+    h2 {{ margin: 20px 0 10px; font-family: Georgia, "Times New Roman", serif; font-size: 20px; color: #13243d; }}
+    h3 {{ margin: 16px 0 8px; font-size: 15px; color: #13243d; }}
+    .section {{
+      background: #fffaf2;
+      border: 1px solid #e2d5bf;
+      border-radius: 20px;
+      padding: 18px;
+      margin-bottom: 14px;
+      break-inside: avoid;
+    }}
+    .question {{ padding: 13px 15px; background: #f0eadf; border-radius: 14px; font-size: 13px; }}
+    .muted {{ color: #66758a; }}
+    ul {{ margin: 8px 0 0; padding-left: 18px; }}
+    li {{ margin: 4px 0; }}
+    .chart-stack {{ display: grid; gap: 12px; }}
+    .ticker-card {{ border: 1px solid #ded2bf; border-radius: 16px; padding: 14px; background: #fffdf8; }}
+    .chart {{ width: 100%; height: auto; display: block; max-height: 260px; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ padding: 9px 8px; border-bottom: 1px solid #e5dccd; text-align: left; vertical-align: top; }}
+    th {{ color: #6f5b3e; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }}
+    @media print {{
+      body {{ background: #ffffff; }}
+      .page {{ padding: 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Professional Investment Report PDF</p>
+      <h1>Professional Investment Report</h1>
+      <p>Run {_esc(run_id)} · {_esc(generated_at)}</p>
+    </section>
+    <section class="section">
+      <h2>Original request</h2>
+      <div class="question">{_esc(query)}</div>
+    </section>
+    {chart_block}
+    <section class="section">
+      {_markdown_to_html(markdown)}
+    </section>
+  </main>
+</body>
+</html>"""
 
 
 def _build_development_report_html(

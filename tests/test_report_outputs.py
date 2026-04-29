@@ -1,11 +1,11 @@
-"""双报告输出测试：验证投资报告和开发报告来自同一次结构化结果。"""
+"""三报告输出测试：验证简单版、专业版和开发者报告来自同一次结构化结果。"""
 from __future__ import annotations
 
 from app.services.report_outputs import build_dual_report_outputs
 
 
 def test_dual_report_outputs_keep_final_report_compatible() -> None:
-    """投资报告应成为兼容旧前端的 final_report 来源。"""
+    """简单版报告应成为兼容旧前端的 final_report 来源。"""
     bundle = _sample_bundle()
     outputs = build_dual_report_outputs(
         bundle=bundle,
@@ -15,12 +15,23 @@ def test_dual_report_outputs_keep_final_report_compatible() -> None:
         research_plan=_sample_research_plan(),
     )
 
-    assert set(outputs) == {"investment", "development"}
-    assert outputs["investment"]["markdown"].startswith("# Institutional Investment Research Report")
-    assert "## Executive Summary" in outputs["investment"]["markdown"]
-    assert "## Core Holdings Deep Dive" in outputs["investment"]["markdown"]
-    assert "## Satellite / Watchlist Brief Review" in outputs["investment"]["markdown"]
-    assert "MSFT" in outputs["investment"]["markdown"]
+    assert set(outputs) == {"simple_investment", "professional_investment", "investment", "development"}
+    assert outputs["investment"] == outputs["simple_investment"]
+    assert outputs["simple_investment"]["markdown"].startswith("# Simple Investment Report")
+    assert "## One-line Verdict" in outputs["simple_investment"]["markdown"]
+    assert "## Recommended Portfolio" in outputs["simple_investment"]["markdown"]
+    assert "## Why These Holdings" in outputs["simple_investment"]["markdown"]
+    assert "## Source Memo Reference" not in outputs["simple_investment"]["markdown"]
+    assert "Agent Workflow" not in outputs["simple_investment"]["markdown"]
+    assert outputs["professional_investment"]["markdown"].startswith("# Professional Investment Report")
+    assert "## Executive Summary" in outputs["professional_investment"]["markdown"]
+    assert "## Core Holdings Deep Dive" in outputs["professional_investment"]["markdown"]
+    assert "## Satellite / Watchlist Brief Review" in outputs["professional_investment"]["markdown"]
+    assert "## Valuation View" in outputs["professional_investment"]["markdown"]
+    assert "## Quality & Growth Analysis" in outputs["professional_investment"]["markdown"]
+    assert "## Scenario Analysis" in outputs["professional_investment"]["markdown"]
+    assert "## Methodology and Data Notes" in outputs["professional_investment"]["markdown"]
+    assert "MSFT" in outputs["professional_investment"]["markdown"]
     assert "Agent Workflow" in outputs["development"]["markdown"]
     assert "EvidenceAgent" in outputs["development"]["markdown"]
     assert outputs["development"]["diagnostics"]["agent_count"] == 2
@@ -46,15 +57,15 @@ def test_core_holdings_count_follows_risk_profile_and_single_stock_request() -> 
     single["report_briefing"]["meta"]["user_profile"]["explicit_tickers"] = ["AAPL"]
     single_outputs = build_dual_report_outputs(bundle=single, query="Should I buy AAPL?", language_code="en")
 
-    assert len(low_outputs["investment"]["core_holdings"]) >= 3
-    assert 1 <= len(high_outputs["investment"]["core_holdings"]) <= 3
-    assert [item["ticker"] for item in single_outputs["investment"]["core_holdings"]] == ["AAPL"]
+    assert len(low_outputs["simple_investment"]["core_holdings"]) >= 3
+    assert 1 <= len(high_outputs["simple_investment"]["core_holdings"]) <= 3
+    assert [item["ticker"] for item in single_outputs["simple_investment"]["core_holdings"]] == ["AAPL"]
 
 
 def test_investment_chart_payloads_have_four_named_sections() -> None:
     """投资报告第一版应提供四类图表数据，并在缺回测时写明缺口。"""
     outputs = build_dual_report_outputs(bundle=_sample_bundle(), query="Find quality stocks.", language_code="en")
-    charts = outputs["investment"]["charts"]
+    charts = outputs["simple_investment"]["charts"]
 
     assert set(charts) == {
         "portfolio_allocation",
@@ -77,7 +88,7 @@ def test_backtest_chart_payload_preserves_points_and_summary() -> None:
         language_code="en",
         backtest=_sample_backtest(),
     )
-    backtest_chart = outputs["investment"]["charts"]["portfolio_vs_benchmark_backtest"]
+    backtest_chart = outputs["simple_investment"]["charts"]["portfolio_vs_benchmark_backtest"]
 
     assert backtest_chart["status"] == "available"
     assert backtest_chart["summary"]["entry_date"] == "2026-01-16"
@@ -86,7 +97,7 @@ def test_backtest_chart_payload_preserves_points_and_summary() -> None:
 
 
 def _sample_bundle() -> dict:
-    """构造覆盖双报告输出的最小 bundle。"""
+    """构造覆盖三报告输出的最小 bundle。"""
     return {
         "runtime": {"provider": "mock", "route_mode": "fallback-ready"},
         "report_mode": "fallback",

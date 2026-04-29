@@ -98,8 +98,27 @@ const demoResult = {
   },
   final_report: "Full memo text for the PDF export test.",
   report_outputs: {
+    simple_investment: {
+      markdown: "# Simple Investment Report\n\n## One-line Verdict\n\nFocus on MSFT first.\n\n## Recommended Portfolio\n\n- MSFT: 70%",
+      charts: {
+        portfolio_allocation: { status: "ready", items: [{ ticker: "MSFT", weight: 70 }] },
+        candidate_score_comparison: { status: "ready", items: [{ ticker: "MSFT", composite: 88 }] },
+        portfolio_vs_benchmark_backtest: { status: "missing", message: "Data is insufficient; this chart was not generated." },
+        risk_contribution: { status: "ready", items: [{ name: "Valuation", value: 60 }] },
+      },
+    },
     investment: {
-      markdown: "# Institutional Investment Research Report\n\n## Executive Summary\n\nFocus on MSFT first.",
+      markdown: "# Simple Investment Report\n\n## One-line Verdict\n\nFocus on MSFT first.\n\n## Recommended Portfolio\n\n- MSFT: 70%",
+      charts: {
+        portfolio_allocation: { status: "ready", items: [{ ticker: "MSFT", weight: 70 }] },
+        candidate_score_comparison: { status: "ready", items: [{ ticker: "MSFT", composite: 88 }] },
+        portfolio_vs_benchmark_backtest: { status: "missing", message: "Data is insufficient; this chart was not generated." },
+        risk_contribution: { status: "ready", items: [{ name: "Valuation", value: 60 }] },
+      },
+    },
+    professional_investment: {
+      markdown:
+        "# Professional Investment Report\n\n## Executive Summary\n\nFocus on MSFT first.\n\n## Candidate Scorecard\n\nMSFT leads the screen.\n\n## Risk Register\n\nValuation risk matters.\n\n## Source Memo Reference\n\nFull memo text for the PDF export test.",
       charts: {
         portfolio_allocation: { status: "ready", items: [{ ticker: "MSFT", weight: 70 }] },
         candidate_score_comparison: { status: "ready", items: [{ ticker: "MSFT", composite: 88 }] },
@@ -188,16 +207,16 @@ const staleRunningDetail = {
   },
 };
 
-const activeStructuredRunningDetail = {
+const marketDataRunningDetail = {
   run: runningRun,
   steps: [
     { step_key: "intent_analysis", label: "Intent", status: "completed", position: 1, created_at: now, updated_at: now },
     { step_key: "research_plan", label: "Plan", status: "completed", position: 2, created_at: now, updated_at: now },
-    { step_key: "structured_analysis", label: "Analysis", status: "running", position: 3, created_at: now, updated_at: now },
   ],
   artifacts: [],
   result: {
-    query: "Actively aggregating market data.",
+    ...demoResult,
+    query: "Keep market data aggregation moving.",
   },
 };
 
@@ -425,36 +444,41 @@ test("terminal shows a first-run product guide and can replay it", async ({ page
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
 });
 
-test("running research shows a numeric animated percent once report generation starts", async ({ page }) => {
+test("running research jumps above 59 percent once report generation starts", async ({ page }) => {
   await mockTerminalApis(page, { detailOverride: runningDetail, historyItems: [runningRun] });
 
   await page.goto("/terminal?run=demo-run");
   await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
   await expect(page.getByText("Task progress")).toBeVisible();
-  await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
-  const percent = page.locator(".terminal-progress-percent").first();
-  await expect(percent).toHaveText(/^\d+%$/);
-  await expect(percent).not.toHaveText("Running");
-  await expect.poll(async () => Number((await percent.textContent())?.replace("%", "") || "0")).toBeGreaterThan(0);
-  await expect(page.getByText("84%")).toHaveCount(0);
   await expect(page.getByText("Current stage: Building the final report")).toBeVisible();
-  await expect(page.getByText("59%")).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        page.locator(".terminal-progress-percent").evaluate((node) => {
+          const value = Number.parseInt(node.textContent || "0", 10);
+          return Number.isFinite(value) ? value : 0;
+        }),
+      { timeout: 4000, intervals: [300, 500, 800] },
+    )
+    .toBeGreaterThan(59);
 });
 
-test("running market data step advances beyond the stale 58 percent plateau", async ({ page }) => {
-  await mockTerminalApis(page, { detailOverride: activeStructuredRunningDetail as typeof demoDetail, historyItems: [runningRun] });
+test("running progress keeps moving while market data aggregation is still active", async ({ page }) => {
+  await mockTerminalApis(page, { detailOverride: marketDataRunningDetail as typeof demoDetail, historyItems: [runningRun] });
 
   await page.goto("/terminal?run=demo-run");
   await expect(page.getByText("Task progress")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Aggregating market data" })).toBeVisible();
-  await expect(page.locator(".terminal-progress-track-strong.is-running")).toBeVisible();
-  const percent = page.locator(".terminal-progress-percent").first();
-  await expect(percent).toHaveText(/^\d+%$/);
-  await expect(percent).not.toHaveText("Running");
-  await expect.poll(async () => Number((await percent.textContent())?.replace("%", "") || "0")).toBeGreaterThan(0);
-  await expect(page.getByText("66%")).toHaveCount(0);
-  await expect(page.getByText("58%")).toHaveCount(0);
-  await expect(page.getByText("59%")).toHaveCount(0);
+  await expect(page.getByText("Current stage: Aggregating market data")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        page.locator(".terminal-progress-percent").evaluate((node) => {
+          const value = Number.parseInt(node.textContent || "0", 10);
+          return Number.isFinite(value) ? value : 0;
+        }),
+      { timeout: 4000, intervals: [300, 500, 800] },
+    )
+    .toBeGreaterThan(58);
 });
 
 test("run event refreshes running detail from the server instead of stale cache", async ({ page }) => {
@@ -572,21 +596,26 @@ test("terminal PDF export uses the backend PDF endpoint", async ({ page }) => {
   await mockTerminalApis(page, { capturePdfRequests: pdfRequests });
 
   await page.goto("/terminal/conclusion?run=demo-run");
-  await expect(page.getByRole("button", { name: "Export Investment PDF" })).toBeVisible();
-  await page.getByRole("button", { name: "Export Investment PDF" }).click();
+  await expect(page.getByRole("button", { name: "Export Simple PDF" })).toBeVisible();
+  await page.getByRole("button", { name: "Export Simple PDF" }).click();
 
   await expect.poll(() => pdfRequests.length).toBe(1);
   expect(pdfRequests[0]).toContain("/api/v1/runs/demo-run/export/pdf");
-  expect(pdfRequests[0]).toContain("kind=investment");
+  expect(pdfRequests[0]).toContain("kind=simple_investment");
 });
 
-test("terminal conclusion page switches between investment and development reports", async ({ page }) => {
+test("terminal conclusion page switches between simple professional and development reports", async ({ page }) => {
   const pdfRequests: string[] = [];
   await mockTerminalApis(page, { capturePdfRequests: pdfRequests });
 
   await page.goto("/terminal/conclusion?run=demo-run");
-  await expect(page.getByRole("tab", { name: "Investment Report" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Simple Report" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Recommended Portfolio Allocation")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Professional Report" }).click();
+  await expect(page.getByRole("tab", { name: "Professional Report" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Candidate Scorecard")).toBeVisible();
+  await expect(page.getByText("Risk Register", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: "Development Report" }).click();
   await expect(page.getByRole("tab", { name: "Development Report" })).toHaveAttribute("aria-selected", "true");
@@ -598,12 +627,18 @@ test("terminal conclusion page switches between investment and development repor
   await page.getByRole("button", { name: "Export Development PDF" }).click();
   await expect.poll(() => pdfRequests.length).toBe(1);
   expect(pdfRequests[0]).toContain("kind=development");
+
+  await page.getByRole("tab", { name: "Professional Report" }).click();
+  await page.getByRole("button", { name: "Export Professional PDF" }).click();
+  await expect.poll(() => pdfRequests.length).toBe(2);
+  expect(pdfRequests[1]).toContain("kind=professional_investment");
 });
 
 test("full memo content mounts only after the memo section is expanded", async ({ page }) => {
   await mockTerminalApis(page);
 
   await page.goto("/terminal/conclusion?run=demo-run");
+  await page.getByRole("tab", { name: "Professional Report" }).click();
   await expect(page.getByRole("heading", { name: "Focus on MSFT", exact: true })).toBeVisible();
   await expect(page.getByText("Full memo text for the PDF export test.")).toHaveCount(0);
 

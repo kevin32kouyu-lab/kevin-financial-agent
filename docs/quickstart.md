@@ -26,13 +26,7 @@ npx playwright install chromium
 
 ## 3. 配置环境变量
 
-复制 `.env.example` 为 `.env`，至少配置一个模型 Key：
-
-```powershell
-$env:ARK_API_KEY="your-key"
-```
-
-如果使用备用模型，可以配置：
+复制 `.env.example` 为 `.env`，至少配置 DeepSeek 模型 Key：
 
 ```powershell
 $env:DEEPSEEK_API_KEY="your-deepseek-key"

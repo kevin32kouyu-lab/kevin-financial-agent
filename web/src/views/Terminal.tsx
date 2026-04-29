@@ -57,6 +57,46 @@ function toText(value: unknown, fallback = "N/A"): string {
   return text ? text : fallback;
 }
 
+/** 让运行中的进度持续前进，避免长任务阶段看起来卡死。 */
+function useAnimatedTerminalProgress(
+  progress: ReturnType<typeof computeTerminalProgress>,
+  runId: string | null,
+  status: string | undefined,
+) {
+  const [displayPercent, setDisplayPercent] = useState(progress.percent);
+  const runKey = `${runId || "none"}:${status || "idle"}`;
+  const lastRunKeyRef = useRef(runKey);
+
+  useEffect(() => {
+    if (lastRunKeyRef.current !== runKey) {
+      lastRunKeyRef.current = runKey;
+      setDisplayPercent(status === "queued" || status === "running" ? 0 : progress.percent);
+      return;
+    }
+    if (status !== "queued" && status !== "running") {
+      setDisplayPercent(progress.percent);
+    }
+  }, [progress.percent, runKey, status]);
+
+  useEffect(() => {
+    if (status !== "queued" && status !== "running") return;
+    const cap = status === "queued" ? 18 : 98;
+    const timer = window.setInterval(() => {
+      setDisplayPercent((current) => {
+        if (current >= cap) return cap;
+        const step = current < 60 ? 6 : current < 85 ? 2 : 0.7;
+        return Math.min(cap, current + step);
+      });
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [runKey, status]);
+
+  if (status === "queued" || status === "running") {
+    return { ...progress, percent: Math.round(displayPercent) };
+  }
+  return progress;
+}
+
 /** 把内部字段名转换成用户可读名称。 */
 function readableField(locale: "zh" | "en", value: string) {
   const zhMap: Record<string, string> = {
@@ -255,9 +295,6 @@ function ConclusionSummary({
   queryText,
   contextChips,
   progress,
-  progressValue,
-  progressLabel,
-  hasRunningTask,
   uiStage,
   statusCopy,
   runUpdatedAt,
@@ -272,9 +309,6 @@ function ConclusionSummary({
   queryText: string;
   contextChips: string[];
   progress: { percent: number; tone: string; textKey: string };
-  progressValue: number;
-  progressLabel: string;
-  hasRunningTask: boolean;
   uiStage: string;
   statusCopy: string;
   runUpdatedAt: string;
@@ -443,19 +477,19 @@ function ConclusionSummary({
           </div>
         </article>
 
-        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}${hasRunningTask ? " is-running" : ""}`} data-tour-id="terminal-progress-card">
+        <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
           <div className="section-head tight">
             <div>
               <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
               <h2>{uiStage}</h2>
             </div>
-            <strong className="terminal-progress-percent">{progressLabel}</strong>
+            <strong className="terminal-progress-percent">{progress.percent}%</strong>
           </div>
           <div className="terminal-progress-stage-row">
             <span>{locale === "zh" ? "当前阶段" : "Current stage"}</span>
             <strong>{uiStage}</strong>
           </div>
-          <Progress value={progressValue} className={`terminal-progress-track-strong${hasRunningTask ? " is-running" : ""}`} />
+          <Progress value={progress.percent} className="terminal-progress-track-strong" />
           <p className="section-note terminal-progress-copy">{statusCopy}</p>
           <div className="terminal-progress-meta">
             <span>{locale === "zh" ? "最新更新时间" : "Latest update"}</span>
@@ -1045,40 +1079,9 @@ export function TerminalView() {
     void refreshHistory();
   }, [terminalPage, filters.mode, filters.status, filters.search, refreshHistory]);
 
-  const progress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
+  const computedProgress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
+  const progress = useAnimatedTerminalProgress(computedProgress, activeRunId, runDetail?.run.status);
   const hasRunningTask = runDetail?.run.status === "queued" || runDetail?.run.status === "running";
-  const [animatedProgressPercent, setAnimatedProgressPercent] = useState(hasRunningTask ? 0 : progress.percent);
-  const animatedProgressRef = useRef<{ runKey: string; startedAt: number } | null>(null);
-  useEffect(() => {
-    if (!hasRunningTask) {
-      animatedProgressRef.current = null;
-      setAnimatedProgressPercent(progress.percent);
-      return;
-    }
-
-    const runKey = activeRunId || "pending-run";
-    if (!animatedProgressRef.current || animatedProgressRef.current.runKey !== runKey) {
-      animatedProgressRef.current = { runKey, startedAt: Date.now() };
-      setAnimatedProgressPercent(0);
-    }
-
-    const tick = () => {
-      const startedAt = animatedProgressRef.current?.startedAt || Date.now();
-      const elapsedMs = Math.max(0, Date.now() - startedAt);
-      // 运行中采用前端平滑进度：先较快滚到 88%，之后慢慢靠近 98%，完成时再跳到 100%。
-      const nextPercent =
-        elapsedMs < 30_000
-          ? Math.min(88, Math.floor(elapsedMs / 340))
-          : Math.min(98, 88 + Math.floor((elapsedMs - 30_000) / 6_000));
-      setAnimatedProgressPercent(nextPercent);
-    };
-
-    tick();
-    const timer = window.setInterval(tick, 500);
-    return () => window.clearInterval(timer);
-  }, [activeRunId, hasRunningTask, progress.percent]);
-  const progressValue = hasRunningTask ? animatedProgressPercent : progress.percent;
-  const progressLabel = `${progressValue}%`;
   const friendlyError = pickFriendlyError(errorText, locale);
   const uiStage = resolveTerminalStage(runDetail?.run.status, runDetail?.steps || [], locale);
   const result = runDetail?.result || null;
@@ -1463,19 +1466,19 @@ export function TerminalView() {
             </article>
 
             <aside className="terminal-side-stack">
-              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}${hasRunningTask ? " is-running" : ""}`} data-tour-id="terminal-progress-card">
+              <article className={`panel-surface terminal-progress-panel progress-${progress.tone}`} data-tour-id="terminal-progress-card">
                 <div className="section-head tight">
                   <div>
                     <p className="eyebrow">{locale === "zh" ? "任务进度" : "Task progress"}</p>
                     <h2>{uiStage}</h2>
                   </div>
-                  <strong className="terminal-progress-percent">{progressLabel}</strong>
+                  <strong className="terminal-progress-percent">{progress.percent}%</strong>
                 </div>
                 <div className="terminal-progress-stage-row">
                   <span>{locale === "zh" ? "当前阶段" : "Current stage"}</span>
                   <strong>{uiStage}</strong>
                 </div>
-                <Progress value={progressValue} className={`terminal-progress-track-strong${hasRunningTask ? " is-running" : ""}`} />
+                <Progress value={progress.percent} className="terminal-progress-track-strong" />
                 <p className="section-note terminal-progress-copy">{statusCopy}</p>
                 <div className="terminal-progress-meta">
                   <span>{locale === "zh" ? "最新更新时间" : "Latest update"}</span>
@@ -1542,9 +1545,6 @@ export function TerminalView() {
                 queryText={queryText}
                 contextChips={contextChips}
                 progress={progress}
-                progressValue={progressValue}
-                progressLabel={progressLabel}
-                hasRunningTask={hasRunningTask}
                 uiStage={uiStage}
                 statusCopy={statusCopy}
                 runUpdatedAt={runUpdatedAt}

@@ -24,7 +24,6 @@ const EVENT_TYPES = [
   "run.started",
   "run.resumed",
   "artifact.updated",
-  "step.started",
   "step.completed",
   "run.completed",
   "run.failed",

@@ -6,7 +6,7 @@ import type { BacktestDetail, Locale } from "./types";
 
 type GenericRecord = Record<string, unknown>;
 export type ReportExportFormat = "markdown" | "html" | "json" | "pdf";
-export type ReportKind = "investment" | "development";
+export type ReportKind = "simple_investment" | "professional_investment" | "investment" | "development";
 
 function asRecord(value: unknown): GenericRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as GenericRecord) : null;
@@ -70,7 +70,7 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 
 async function downloadPdfFromBackend(runId: string, fallbackName: string, kind: ReportKind) {
   const clientId = getClientId();
-  const response = await fetch(`/api/v1/runs/${encodeURIComponent(runId)}/export/pdf?kind=${encodeURIComponent(kind)}`, {
+  const response = await fetch(`/api/v1/runs/${encodeURIComponent(runId)}/export/pdf?kind=${encodeURIComponent(normalizeReportKind(kind))}`, {
     headers: {
       ...(clientId ? { "X-Client-Id": clientId } : {}),
     },
@@ -96,7 +96,11 @@ function buildBulletLines(value: unknown): string[] {
 }
 
 function getOutputMarkdown(result: Record<string, unknown>, kind: ReportKind): string {
-  return repairText(getReportOutputByKind(result, kind)?.markdown, "");
+  return repairText(getReportOutputByKind(result, normalizeReportKind(kind))?.markdown, "");
+}
+
+function normalizeReportKind(kind: ReportKind): "simple_investment" | "professional_investment" | "development" {
+  return kind === "investment" ? "simple_investment" : kind;
 }
 
 function markdownToHtml(markdown: string): string {
@@ -180,10 +184,11 @@ function buildEffectiveChartNotes(result: Record<string, unknown>, locale: Local
   ];
 }
 
-function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
+function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "simple_investment"): string {
   const outputMarkdown = getOutputMarkdown(result, kind);
+  const normalizedKind = normalizeReportKind(kind);
   if (outputMarkdown) {
-    const appended = kind === "investment" ? [...buildEffectiveChartNotes(result, locale, backtest), ...buildBacktestSummary(backtest, locale)] : [];
+    const appended = normalizedKind === "simple_investment" || normalizedKind === "professional_investment" ? [...buildEffectiveChartNotes(result, locale, backtest), ...buildBacktestSummary(backtest, locale)] : [];
     return appended.length ? [outputMarkdown, "", ...appended].join("\n") : outputMarkdown;
   }
   const finalReport = repairText(result.final_report, "");
@@ -271,13 +276,16 @@ function buildReportMarkdown(result: Record<string, unknown>, locale: Locale, ba
   return lines.join("\n");
 }
 
-function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "investment"): string {
+function buildReportHtml(result: Record<string, unknown>, locale: Locale, backtest?: BacktestDetail | null, kind: ReportKind = "simple_investment"): string {
   const outputMarkdown = getOutputMarkdown(result, kind);
   if (outputMarkdown) {
     const renderedMarkdown = buildReportMarkdown(result, locale, backtest, kind);
-    const title = kind === "development"
+    const normalizedKind = normalizeReportKind(kind);
+    const title = normalizedKind === "development"
       ? locale === "zh" ? "开发报告" : "Development Report"
-      : locale === "zh" ? "投资报告" : "Investment Report";
+      : normalizedKind === "professional_investment"
+        ? locale === "zh" ? "专业版投资报告" : "Professional Investment Report"
+        : locale === "zh" ? "简单版投资报告" : "Simple Investment Report";
     return `<!doctype html>
 <html lang="${locale}">
 <head>
@@ -523,13 +531,19 @@ export function exportReport(
   format: ReportExportFormat,
   backtest?: BacktestDetail | null,
   runId?: string,
-  kind: ReportKind = "investment",
+  kind: ReportKind = "simple_investment",
 ) {
   const reportBriefing = asRecord(result.report_briefing);
   const meta = asRecord(reportBriefing?.meta);
+  const normalizedKind = normalizeReportKind(kind);
   const html = buildReportHtml(result, locale, backtest, kind);
-  const fallbackTitle = kind === "development" ? "development-report" : locale === "zh" ? "投资研究报告" : "investment-report";
-  const baseName = `${slugify(repairText(meta?.title, fallbackTitle))}-${kind}-${timestampStamp()}`;
+  const fallbackTitle =
+    normalizedKind === "development"
+      ? "development-report"
+      : normalizedKind === "professional_investment"
+        ? "professional-investment-report"
+        : "simple-investment-report";
+  const baseName = `${slugify(repairText(meta?.title, fallbackTitle))}-${normalizedKind}-${timestampStamp()}`;
 
   if (format === "markdown") {
     downloadBlob(`${baseName}.md`, buildReportMarkdown(result, locale, backtest, kind), "text/markdown;charset=utf-8");

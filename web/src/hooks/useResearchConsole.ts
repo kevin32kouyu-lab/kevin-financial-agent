@@ -681,7 +681,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     if (status !== "queued" && status !== "running") return;
     const timer = window.setInterval(() => {
       void loadRunBundle(activeRunId);
-    }, 2500);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [activeRunId, runDetail?.run.status]);
 

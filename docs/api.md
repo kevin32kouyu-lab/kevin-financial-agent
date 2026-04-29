@@ -57,10 +57,12 @@
 
 可选查询参数：
 
-- `kind=investment`：默认值，导出面向投资者的正式投资报告。
-- `kind=development`：导出面向开源项目读者的开发报告，说明 Agent、RAG、校验、回测和降级路径如何支撑结论。
+- `kind=simple_investment`：默认值，导出面向普通用户的简单版投资报告。
+- `kind=professional_investment`：导出面向专业读者的机构研究型投资报告。
+- `kind=investment`：历史兼容别名，行为等同 `simple_investment`。
+- `kind=development`：导出开发者报告，说明 Agent、RAG、校验、回测和降级路径如何支撑结论。
 
-两种 PDF 都来自同一个 run 的 `report_outputs`，不会重新执行研究流程。
+三种 PDF 都来自同一个 run 的 `report_outputs`，不会重新执行研究流程。
 
 ## 回测
 
@@ -108,11 +110,13 @@
 
 - `research_plan`：本次研究目标、数据需求、工具候选、降级策略和预期产物。
 - `agent_trace`：各 agent 的状态、耗时、输入摘要、输出摘要、证据数量和警告。
-- `report_outputs.investment.markdown`：面向投资者的正式投资报告正文。
-- `report_outputs.investment.charts`：投资报告的四类图表数据，包括推荐仓位、候选评分、回测曲线和风险贡献。
-- `report_outputs.development.markdown`：面向开源项目读者的开发报告正文。
+- `report_outputs.simple_investment.markdown`：面向普通用户的简单版投资报告正文。
+- `report_outputs.simple_investment.charts`：投资报告的四类图表数据，包括推荐仓位、候选评分、回测曲线和风险贡献。
+- `report_outputs.professional_investment.markdown`：面向专业读者的机构研究型投资报告正文。
+- `report_outputs.investment`：历史兼容别名，指向 `simple_investment`。
+- `report_outputs.development.markdown`：开发者报告正文。
 - `report_outputs.development.diagnostics`：Agent、RAG、校验、回测、fallback 等支撑摘要。
-- `final_report`：兼容旧前端，继续指向投资报告正文。
+- `final_report`：兼容旧前端，继续指向简单版投资报告正文。
 - `retrieved_evidence`：RAG 检索到的证据摘要、来源、时间和链接。
 - `citation_map`：报告段落与证据之间的引用映射。
 - `validation_checks`：结论、评分、风险、数据降级和时间范围的一致性校验。

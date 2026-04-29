@@ -1,4 +1,4 @@
-"""双报告输出构建：把同一次 run 的结构化结果整理成投资报告和开发报告。"""
+"""三报告输出构建：把同一次 run 的结构化结果整理成两类投资报告和开发报告。"""
 from __future__ import annotations
 
 from typing import Any
@@ -16,7 +16,7 @@ def build_dual_report_outputs(
     research_plan: GenericRecord | None = None,
     backtest: Any = None,
 ) -> GenericRecord:
-    """生成投资报告和开发报告，且两份报告共用同一份结构化数据。"""
+    """生成简单版、专业版和开发者报告，且三份报告共用同一份结构化数据。"""
     report_briefing = _record(bundle.get("report_briefing"))
     meta = _record(report_briefing.get("meta"))
     core_holdings = _select_core_holdings(report_briefing)
@@ -29,7 +29,14 @@ def build_dual_report_outputs(
         backtest=backtest,
     )
 
-    investment_markdown = _build_investment_markdown(
+    simple_markdown = _build_simple_investment_markdown(
+        query=query,
+        language_code=language_code,
+        bundle=bundle,
+        core_holdings=core_holdings,
+        charts=charts,
+    )
+    professional_markdown = _build_professional_investment_markdown(
         query=query,
         language_code=language_code,
         bundle=bundle,
@@ -46,10 +53,26 @@ def build_dual_report_outputs(
     )
 
     return {
+        "simple_investment": {
+            "kind": "simple_investment",
+            "title": _label(language_code, "简单版投资报告", "Simple Investment Report"),
+            "markdown": simple_markdown,
+            "charts": charts,
+            "core_holdings": core_holdings,
+            "satellite_holdings": satellite_holdings,
+        },
+        "professional_investment": {
+            "kind": "professional_investment",
+            "title": _label(language_code, "专业版投资报告", "Professional Investment Report"),
+            "markdown": professional_markdown,
+            "charts": charts,
+            "core_holdings": core_holdings,
+            "satellite_holdings": satellite_holdings,
+        },
         "investment": {
-            "kind": "investment",
-            "title": _text(meta.get("title"), _label(language_code, "投资研究报告", "Institutional Investment Research Report")),
-            "markdown": investment_markdown,
+            "kind": "simple_investment",
+            "title": _label(language_code, "简单版投资报告", "Simple Investment Report"),
+            "markdown": simple_markdown,
             "charts": charts,
             "core_holdings": core_holdings,
             "satellite_holdings": satellite_holdings,
@@ -72,7 +95,7 @@ def attach_dual_report_outputs(
     research_plan: GenericRecord | None = None,
     backtest: Any = None,
 ) -> GenericRecord:
-    """把双报告输出写回 bundle，并保持 final_report 兼容旧入口。"""
+    """把三报告输出写回 bundle，并保持 final_report 兼容旧入口。"""
     outputs = build_dual_report_outputs(
         bundle=bundle,
         query=query,
@@ -82,11 +105,114 @@ def attach_dual_report_outputs(
         backtest=backtest,
     )
     bundle["report_outputs"] = outputs
-    bundle["final_report"] = outputs["investment"]["markdown"]
+    bundle["final_report"] = outputs["simple_investment"]["markdown"]
     return outputs
 
 
-def _build_investment_markdown(
+def _build_simple_investment_markdown(
+    *,
+    query: str,
+    language_code: str,
+    bundle: GenericRecord,
+    core_holdings: list[GenericRecord],
+    charts: GenericRecord,
+) -> str:
+    """构建给普通用户快速决策的简单版投资报告。"""
+    report_briefing = _record(bundle.get("report_briefing"))
+    meta = _record(report_briefing.get("meta"))
+    executive = _record(report_briefing.get("executive"))
+    risk_register = _records(report_briefing.get("risk_register"))
+    evidence = _records(meta.get("retrieved_evidence"))
+    evidence_summary = _record(meta.get("evidence_summary"))
+
+    title = _label(language_code, "简单版投资报告", "Simple Investment Report")
+    verdict_label = _label(language_code, "一句话结论", "One-line Verdict")
+    portfolio_label = _label(language_code, "推荐组合与权重", "Recommended Portfolio")
+    why_label = _label(language_code, "为什么选这些标的", "Why These Holdings")
+    risk_label = _label(language_code, "最大 3 条关键风险", "Top 3 Key Risks")
+    fit_label = _label(language_code, "适合什么用户", "Investor Fit")
+    execution_label = _label(language_code, "怎么执行", "Execution Plan")
+    evidence_label = _label(language_code, "关键依据", "Key Evidence")
+    chart_label = _label(language_code, "核心图表", "Core Charts")
+    disclaimer_label = _label(language_code, "简短免责声明", "Short Disclaimer")
+
+    lines = [
+        f"# {title}",
+        "",
+        f"## {verdict_label}",
+        f"- {_text(executive.get('display_call') or executive.get('primary_call'), _label(language_code, '暂无结论。', 'No conclusion available.'))}",
+        "",
+        f"## {portfolio_label}",
+    ]
+
+    allocation = _records(executive.get("allocation_plan"))
+    if allocation:
+        for item in allocation[:5]:
+            lines.append(f"- {_text(item.get('ticker'))}: {_text(item.get('weight'), 'N/A')}% · {_text(item.get('verdict'), _label(language_code, '建议关注', 'Review'))}")
+    elif core_holdings:
+        for item in core_holdings[:5]:
+            lines.append(f"- {_text(item.get('ticker'))}: {_text(item.get('verdict_label'), _label(language_code, '核心观察', 'Core candidate'))}")
+    else:
+        lines.append(_label(language_code, "- 暂无可执行仓位建议。", "- No actionable allocation is available yet."))
+
+    lines.extend(["", f"## {why_label}"])
+    for item in core_holdings[:5]:
+        lines.append(f"- {_text(item.get('ticker'))}: {_text(item.get('thesis') or item.get('fit_reason'), _label(language_code, '暂无核心理由。', 'No core reason available.'))}")
+    if not core_holdings:
+        lines.append(_label(language_code, "- 当前候选数据不足，暂不做强推荐。", "- Candidate data is insufficient, so no strong recommendation is made."))
+
+    lines.extend(["", f"## {risk_label}"])
+    if risk_register:
+        for item in risk_register[:3]:
+            prefix = _text(item.get("category"), "Risk")
+            if item.get("ticker"):
+                prefix = f"{prefix} / {_text(item.get('ticker'))}"
+            lines.append(f"- {prefix}: {_text(item.get('summary'))}")
+    else:
+        lines.append(_label(language_code, "- 暂无明确风险登记。", "- No specific risk register is available."))
+
+    lines.extend(
+        [
+            "",
+            f"## {fit_label}",
+            f"- {_text(meta.get('mandate_summary') or _record(meta.get('user_profile')).get('summary'), _label(language_code, '适合愿意按风险提示分批执行的用户。', 'Suitable for users who can follow staged execution and risk limits.'))}",
+            "",
+            f"## {execution_label}",
+            f"- {_text(executive.get('display_action_summary') or executive.get('action_summary'), _label(language_code, '分批执行，并在关键数据更新后复盘。', 'Build gradually and review after key data updates.'))}",
+            "",
+            f"## {evidence_label}",
+        ]
+    )
+    evidence_points = _strings(evidence_summary.get("items")) or _strings(evidence_summary.get("source_points"))
+    if evidence:
+        for item in evidence[:5]:
+            source = _text(item.get("source_name") or item.get("source_type"), "Source")
+            date = _text(item.get("published_at") or item.get("as_of_date"), "")
+            title_text = _text(item.get("title") or item.get("summary"), "Evidence")
+            lines.append(f"- {title_text} — {source}{f' · {date}' if date else ''}")
+    elif evidence_points:
+        lines.extend(f"- {item}" for item in evidence_points[:5])
+    else:
+        lines.append(_label(language_code, "- 暂无可引用依据。", "- No evidence item is available."))
+
+    lines.extend(
+        [
+            "",
+            f"## {chart_label}",
+            f"- {_chart_status_text(charts, language_code)}",
+            "",
+            f"## {disclaimer_label}",
+            _label(
+                language_code,
+                "本报告仅用于研究辅助，不构成财务、法律或税务建议。",
+                "This report is for research support only and is not financial, legal, or tax advice.",
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _build_professional_investment_markdown(
     *,
     query: str,
     language_code: str,
@@ -95,7 +221,7 @@ def _build_investment_markdown(
     satellite_holdings: list[GenericRecord],
     charts: GenericRecord,
 ) -> str:
-    """构建投资者阅读的一份正式投资报告。"""
+    """构建机构研究型专业投资报告。"""
     report_briefing = _record(bundle.get("report_briefing"))
     meta = _record(report_briefing.get("meta"))
     executive = _record(report_briefing.get("executive"))
@@ -108,7 +234,7 @@ def _build_investment_markdown(
 
     if language_code == "zh":
         lines = [
-            f"# {_text(meta.get('title'), '机构级投资研究报告')}",
+            "# 专业版投资报告",
             "",
             "## Executive Summary",
             f"- 原始问题：{query or '未提供'}",
@@ -129,7 +255,7 @@ def _build_investment_markdown(
         ]
     else:
         lines = [
-            f"# {_text(meta.get('title'), 'Institutional Investment Research Report')}",
+            "# Professional Investment Report",
             "",
             "## Executive Summary",
             f"- Original request: {query or 'Not provided'}",
@@ -171,6 +297,12 @@ def _build_investment_markdown(
     for item in core_holdings:
         lines.extend(_holding_deep_dive_lines(item, language_code))
 
+    lines.extend(["", "## Valuation View"])
+    lines.extend(_score_dimension_lines(scoreboard, "valuation_score", language_code, _label(language_code, "估值", "valuation")))
+
+    lines.extend(["", "## Quality & Growth Analysis"])
+    lines.extend(_score_dimension_lines(scoreboard, "quality_score", language_code, _label(language_code, "质量与成长", "quality and growth")))
+
     lines.extend(["", "## Satellite / Watchlist Brief Review"])
     if satellite_holdings:
         lines.append("| Ticker | Role | Why not core | Current action | Main risk |")
@@ -211,6 +343,8 @@ def _build_investment_markdown(
         lines.append(_label(language_code, "- 暂无风险登记。", "- No risk register available."))
 
     lines.extend(["", "## Backtest Summary", _backtest_summary_text(charts, language_code)])
+    lines.extend(["", "## Scenario Analysis"])
+    lines.extend(_scenario_lines(core_holdings, risk_register, language_code))
     lines.extend(["", "## Evidence Appendix"])
     if evidence:
         for item in evidence[:12]:
@@ -223,6 +357,22 @@ def _build_investment_markdown(
 
     if source_memo:
         lines.extend(["", "## Source Memo Reference", source_memo])
+
+    lines.extend(["", "## Methodology and Data Notes"])
+    lines.extend(
+        [
+            _label(
+                language_code,
+                "- 本报告使用同一次 run 的评分表、证据、校验结果和回测摘要生成；不重新执行研究。",
+                "- This report is generated from the same run-level scorecard, evidence, validation checks and backtest summary; it does not rerun research.",
+            ),
+            _label(
+                language_code,
+                "- 数据不足或降级时应优先阅读风险登记、证据附录和校验提示。",
+                "- When data is missing or degraded, prioritize the risk register, evidence appendix and validation notes.",
+            ),
+        ]
+    )
 
     lines.extend(
         [
@@ -559,6 +709,50 @@ def _backtest_summary_text(charts: GenericRecord, language_code: str) -> str:
             f"- Period: {_text(summary.get('entry_date'))} to {_text(summary.get('end_date'))}",
         ]
     )
+
+
+def _chart_status_text(charts: GenericRecord, language_code: str) -> str:
+    """给简单版报告说明三张核心图表是否可用。"""
+    backtest = _record(charts.get("portfolio_vs_benchmark_backtest"))
+    third_chart = (
+        _label(language_code, "组合 vs 基准回测曲线", "portfolio vs benchmark backtest")
+        if backtest.get("status") == "available"
+        else _label(language_code, "风险贡献图", "risk contribution")
+    )
+    return _label(
+        language_code,
+        f"本报告优先展示推荐仓位、候选评分对比和{third_chart}。",
+        f"This report prioritizes recommended allocation, candidate score comparison and {third_chart}.",
+    )
+
+
+def _score_dimension_lines(scoreboard: list[GenericRecord], key: str, language_code: str, label: str) -> list[str]:
+    """按评分维度生成专业版的排序观察。"""
+    rows = [item for item in scoreboard if _optional_number(item.get(key)) is not None]
+    if not rows:
+        return [_label(language_code, f"- 暂无{label}评分。", f"- No {label} score is available.")]
+    sorted_rows = sorted(rows, key=lambda item: _number(item.get(key)), reverse=True)[:5]
+    return [
+        f"- {_text(item.get('ticker'))}: {_text(item.get(key))} · {_text(item.get('verdict_label'))}"
+        for item in sorted_rows
+    ]
+
+
+def _scenario_lines(core_holdings: list[GenericRecord], risk_register: list[GenericRecord], language_code: str) -> list[str]:
+    """生成不编造预测的基础场景分析。"""
+    holdings = ", ".join(_text(item.get("ticker")) for item in core_holdings) or "N/A"
+    main_risk = _text(risk_register[0].get("summary"), _label(language_code, "暂无主要风险。", "No primary risk available.")) if risk_register else _label(language_code, "暂无主要风险。", "No primary risk available.")
+    if language_code == "zh":
+        return [
+            f"- 基准情景：核心持仓 {holdings} 延续当前评分优势，按建议仓位分批执行。",
+            f"- 下行情景：若出现 {main_risk}，应降低仓位或转入观察。",
+            "- 上行情景：若证据新鲜度、盈利质量和回测表现同步改善，可考虑提高核心持仓权重。",
+        ]
+    return [
+        f"- Base case: core holdings {holdings} keep their current score advantage and are built gradually.",
+        f"- Downside case: if {main_risk}, reduce sizing or move the idea to watchlist.",
+        "- Upside case: if evidence freshness, earnings quality and backtest behavior improve together, consider higher core sizing.",
+    ]
 
 
 def _merge_card(item: GenericRecord | None, card_by_ticker: dict[str, GenericRecord]) -> GenericRecord:

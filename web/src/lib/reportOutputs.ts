@@ -1,7 +1,7 @@
-/** 报告输出辅助：统一读取双报告产物、诊断字段和有效图表。 */
+/** 报告输出辅助：统一读取三报告产物、诊断字段和有效图表。 */
 import type { BacktestDetail } from "./types";
 
-export type ReportOutputKind = "investment" | "development";
+export type ReportOutputKind = "simple_investment" | "professional_investment" | "investment" | "development";
 export type GenericRecord = Record<string, unknown>;
 
 /** 把未知值安全转换成对象。 */
@@ -12,7 +12,12 @@ export function asReportRecord(value: unknown): GenericRecord | null {
 /** 读取指定类型的报告输出。 */
 export function getReportOutput(result: Record<string, unknown> | GenericRecord, kind: ReportOutputKind): GenericRecord | null {
   const outputs = asReportRecord(result.report_outputs);
-  return asReportRecord(outputs?.[kind]);
+  const direct = asReportRecord(outputs?.[kind]);
+  if (direct) return direct;
+  if (kind === "simple_investment" || kind === "professional_investment") {
+    return asReportRecord(outputs?.investment);
+  }
+  return null;
 }
 
 /** 统一读取开发报告诊断字段，并兼容旧字段别名。 */
@@ -32,7 +37,7 @@ export function getEffectiveInvestmentCharts(
   result: Record<string, unknown> | GenericRecord,
   backtest?: BacktestDetail | null,
 ): GenericRecord | null {
-  const investmentOutput = getReportOutput(result, "investment");
+  const investmentOutput = getReportOutput(result, "simple_investment");
   const baseCharts = asReportRecord(investmentOutput?.charts);
   if (!backtest?.summary || !Array.isArray(backtest.points) || !backtest.points.length) {
     return baseCharts;

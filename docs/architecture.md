@@ -6,7 +6,7 @@
 - `app/main.py`：注册页面路由、API 路由、健康检查和全局异常处理，并放行 `/terminal` 的子路由页面。
 - `app/core/runtime.py`：把仓储、服务和工作流装配成可运行的应用运行时。
 - `app/core/auth.py`：处理 API Key、账户会话、管理员权限，并读取浏览器侧传来的 `X-Client-Id`。
-- `app/integrations/llm_client.py`：封装火山主源、DeepSeek 备用源和自动回退请求。
+- `app/integrations/llm_client.py`：封装 DeepSeek 模型配置、公开运行视图和报告生成请求。
 - `app/api/runs.py`：处理 run 的创建、查询、重试、撤回和事件流。
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
 - `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
@@ -22,8 +22,8 @@
 - `app/tools/fetchers.py`：对接外部数据源并提供主源/备用源回退。
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：提供报告包构建、RAG 证据接入、正式报告生成和最终校验入口。
-- `app/services/report_outputs.py`：把同一次 run 的结构化结果整理成投资报告和开发报告，并让 `final_report` 继续兼容投资报告正文。
-- `app/services/pdf_export_service.py`：按 `kind=investment/development` 把 run 的完整报告数据整理成打印版 HTML，并调用 Playwright 生成真实 PDF。
+- `app/services/report_outputs.py`：把同一次 run 的结构化结果整理成简单版投资报告、专业版投资报告和开发者报告，并让 `final_report` 继续兼容简单版正文。
+- `app/services/pdf_export_service.py`：按 `kind=simple_investment/professional_investment/development` 把 run 的报告数据整理成打印版 HTML，并调用 Playwright 生成真实 PDF；旧 `kind=investment` 继续映射到简单版。
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，并标记证据时效、来源可靠性和引用映射。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、数据降级和时间范围。
 - `app/services/tool_registry.py`：提供受控工具注册、权限检查、超时、重试、缓存和调用审计的基础层。
@@ -46,12 +46,12 @@
 - `web/src/lib/terminalExperience.ts`：生成开始研究页的结构化补充 chips、四步预览、可信度摘要和继续跟进文案。
 - `web/src/lib/followedRuns.ts`：在浏览器本地保存持续跟踪列表，让旧研究可以被快速找回和继续跟进。
 - `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准示例问题，并支持按语言清空本地轻量记忆。
-- `web/src/lib/reportOutputs.ts`：统一读取双报告输出、开发报告 diagnostics 字段，并在前端把已加载回测临时合成到结论页图表里。
+- `web/src/lib/reportOutputs.ts`：统一读取三报告输出、开发报告 diagnostics 字段，并在前端把已加载回测临时合成到结论页图表里。
 - `web/src/lib/clientIdentity.ts`：为每个浏览器生成并持久化 `client_id`，作为长期记忆的隔离单位。
 - `web/src/components/ProfileMemoryCard.tsx`：调试或旧入口可复用的长期偏好编辑卡片。
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
 - `web/src/components/TerminalTrustPanels.tsx`：旧版可信度概览组件，用户终端前台不再直接使用。
-- `web/src/components/ReportPanel.tsx`：展示投资报告 / 开发报告双标签、结论依据、证据引用、校验摘要和导出操作。
+- `web/src/components/ReportPanel.tsx`：展示简单版投资报告 / 专业版投资报告 / 开发者报告三标签、结论依据、证据引用、校验摘要和导出操作。
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 交接时间线、耗时、证据数量和警告。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格、税费/分红/再平衡和本次回测口径。
 - `web/e2e/terminal-smoke.spec.ts`：用 Playwright 验证 Terminal 四个主路由、首次用户引导、内部切换、回测延迟加载和 PDF 后端导出。
@@ -66,8 +66,8 @@
 2. `/terminal` 默认进入开始研究页，只展示提问入口、进度和必要操作。
 3. Terminal 顶部的 `AccountPanel` 会读取当前用户状态，并允许把浏览器记忆同步到账户。
 4. `ProductTour` 会在用户首次进入终端时展示欢迎弹窗，并用分步浮层指向开始研究、进度、结论、回测、历史和账户入口；完成或跳过后写入本地状态。
-5. 开始研究页会通过 `terminalExperience.ts` 提供三种起点、结构化补充 chips 和“四步预览”，让用户在点击前就知道系统会筛选、取数、校验并生成双报告。
-6. 研究完成后自动跳到 `/terminal/conclusion?run=<id>`，结论页默认展示投资报告，并可切换到开发报告。
+5. 开始研究页会通过 `terminalExperience.ts` 提供三种起点、结构化补充 chips 和“四步预览”，让用户在点击前就知道系统会筛选、取数、校验并生成三份报告。
+6. 研究完成后自动跳到 `/terminal/conclusion?run=<id>`，结论页默认展示简单版投资报告，并可切换到专业版投资报告和开发者报告。
 7. 结论页首屏会先展示可信度摘要和推荐持仓预览；如果用户希望持续关注，可把当前研究加入本地持续跟踪列表。
 8. 回测页通过 `/terminal/backtest` 独立查看组合与单股回测。
 9. 历史页通过 `/terminal/archive` 独立查看最近报告、持续跟踪列表，并把旧研究一键带回提问页继续跟进。
@@ -86,7 +86,7 @@
 22. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
 23. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
 24. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
-25. `report_outputs.py` 基于同一份 run 生成两份输出：投资报告给普通用户阅读，开发报告给开源项目读者理解 Agent、RAG、校验和回测支撑链路。
+25. `report_outputs.py` 基于同一份 run 生成三份输出：简单版投资报告给普通用户快速决策，专业版投资报告保留机构研究深度，开发者报告说明 Agent、RAG、校验和回测支撑链路。
 26. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
 27. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
 28. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
@@ -115,13 +115,13 @@
 - 多智能体采用“可控多角色”而不是完全自治辩论：每个 agent 有固定职责和交接记录，稳定性优先。
 - `agent_trace` 记录时间、状态、证据数量和错误原因：这样 debug 能看到每个环节是否真的执行，以及慢点或失败点在哪里。
 - 保留 `AgentService` 兼容导入：旧 workflow 和外部调用不用跟着重命名，实际执行已经切到 `AgentCoordinator`。
-- LLM 路由采用“火山主源 + DeepSeek 备用源”：火山接口失败时自动回退，避免报告生成直接中断。
+- LLM 路由统一使用 DeepSeek：减少供应商分叉，避免报告生成时出现主备模型口径不一致。
 - 容器启动改为读取环境变量里的 `PORT`，并增加 `/healthz`：这样更适合 Railway、Render 这类平台做自动探活和公网发布。
 - 可信度信息优先放到结论页前台，而不是只埋在正式报告里：让用户第一眼先判断“结论靠什么支撑、哪些地方要保守”。
 - `ValidatorAgent` 统一计算 `confidence_level`：避免多个模块各写各的可信度，减少前后不一致。
 - 澄清机制采用“一句短追问”而不是长段解释：减少用户把补充信息步骤误解成系统报错。
 - 结论、依据、校验、安全摘要共用同一份结构化数据：保证页面、历史记录和导出内容一致。
-- 双报告输出共用同一次 run：投资报告和开发报告不会各跑一遍研究，避免结论互相打架。
+- 三报告输出共用同一次 run：简单版、专业版和开发者报告不会各跑一遍研究，避免结论互相打架。
 - 开发报告 diagnostics 采用“主字段 + 历史别名兼容”：新前端优先读 `evidence_count`、`validation_check_count`，历史 run 仍可回退旧字段。
 - 结论页回测图采用“前端临时合成”而不是回写 run：这样不会偷偷改历史 run，又能让页面、导出和回测页尽量一致。
 - 终端进度采用“阶段加权”而不是“步数占比”：因为 run 的 step 只在阶段结束后落库，直接按数量算会让用户误以为系统卡住。

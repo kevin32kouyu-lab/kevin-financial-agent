@@ -89,13 +89,9 @@ class AgentCoordinator:
         status: str,
         summary: str,
     ) -> None:
-        """追加或更新阶段并同步快照。"""
+        """追加阶段并同步快照。"""
         stage = _build_stage(key, label, elapsed_ms, status, summary)
-        existing_index = next((index for index, item in enumerate(response["stages"]) if item.get("key") == key), None)
-        if existing_index is None:
-            response["stages"].append(stage)
-        else:
-            response["stages"][existing_index] = stage
+        response["stages"].append(stage)
         if hooks is not None:
             await _maybe_call(hooks.stage_callback, copy.deepcopy(stage))
         await self._publish_snapshot(hooks, response)
@@ -231,15 +227,6 @@ class AgentCoordinator:
 
         data_started_at = utc_now_iso()
         data_started = perf_counter()
-        await self._append_stage(
-            hooks,
-            response,
-            key="structured_analysis",
-            label="结构化分析",
-            elapsed_ms=0.0,
-            status="running",
-            summary="正在聚合行情、基本面、新闻和评分数据。",
-        )
         data = await self.data_agent.run(intent=intake.parsed_intent, payload=payload)
         self._finish_trace(data.trace, started_at=data_started_at, started_perf=data_started)
         response["analysis"] = data.analysis
@@ -257,15 +244,6 @@ class AgentCoordinator:
 
         evidence_started_at = utc_now_iso()
         evidence_started = perf_counter()
-        await self._append_stage(
-            hooks,
-            response,
-            key="evidence_retrieval",
-            label="证据检索",
-            elapsed_ms=0.0,
-            status="running",
-            summary="正在检索和整理可引用证据。",
-        )
         evidence = self.evidence_agent.run(
             query=intake.normalized_query,
             intent=intake.parsed_intent,
@@ -292,15 +270,6 @@ class AgentCoordinator:
 
         report_started_at = utc_now_iso()
         report_started = perf_counter()
-        await self._append_stage(
-            hooks,
-            response,
-            key="final_report",
-            label="最终报告",
-            elapsed_ms=0.0,
-            status="running",
-            summary="正在生成投资报告和开发报告。",
-        )
         report = await self.report_agent.run(
             query=intake.normalized_query,
             intent=intake.parsed_intent,
@@ -334,15 +303,6 @@ class AgentCoordinator:
 
         validation_started_at = utc_now_iso()
         validation_started = perf_counter()
-        await self._append_stage(
-            hooks,
-            response,
-            key="validation",
-            label="结论校验",
-            elapsed_ms=0.0,
-            status="running",
-            summary="正在检查结论、证据、评分和风险是否一致。",
-        )
         validation = self.validator_agent.run(bundle=report.bundle, language_code=intake.parsed_intent.system_context.language)
         self._finish_trace(validation.trace, started_at=validation_started_at, started_perf=validation_started)
         response["report_briefing"] = validation.bundle["report_briefing"]

@@ -138,7 +138,9 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
     assert response["report_briefing"]["meta"]["retrieved_evidence"][0]["citation_key"] == "E1"
     assert response["report_briefing"]["meta"]["validation_checks"][0]["status"] == "pass"
     assert "report_outputs" in response
-    assert response["report_outputs"]["investment"]["markdown"] == response["final_report"]
+    assert response["report_outputs"]["simple_investment"]["markdown"] == response["final_report"]
+    assert response["report_outputs"]["investment"] == response["report_outputs"]["simple_investment"]
+    assert "Professional Investment Report" in response["report_outputs"]["professional_investment"]["markdown"]
     assert "Agent Workflow" in response["report_outputs"]["development"]["markdown"]
 
     agent_names = [item["agent_name"] for item in response["agent_trace"]]
@@ -177,30 +179,6 @@ async def test_agent_coordinator_emits_research_plan_and_agent_trace():
     assert ("derived", "agent_trace") in artifact_names
     assert ("derived", "memory_resolution") in artifact_names
     assert ("report", "outputs") in artifact_names
-
-
-@pytest.mark.asyncio
-async def test_agent_coordinator_publishes_running_stage_before_long_data_step():
-    """长耗时阶段开始时应先发布 running，避免前端停在旧进度。"""
-    stages: list[dict[str, Any]] = []
-
-    async def on_stage(stage: dict[str, Any]) -> None:
-        """收集 coordinator 发布的阶段状态。"""
-        stages.append(stage)
-
-    coordinator = AgentCoordinator(FakeAnalysisService(), FakeReportService())
-    payload = AgentRunRequest(query="Find low risk quality tech stocks for 10000 USD")
-    response = await coordinator.run(payload, hooks=AgentRunHooks(stage_callback=on_stage))
-
-    assert response["status"] == "completed"
-    structured_events = [
-        (index, item["status"])
-        for index, item in enumerate(stages)
-        if item["key"] == "structured_analysis"
-    ]
-    assert structured_events[0][1] == "running"
-    assert structured_events[-1][1] == "completed"
-    assert structured_events[0][0] < structured_events[-1][0]
 
 
 @pytest.mark.asyncio

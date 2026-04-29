@@ -15,10 +15,34 @@ def _sample_report_result() -> dict:
     return {
         "query": "Find a conservative long-term investment between AAPL and MSFT.",
         "research_context": {"research_mode": "realtime"},
-        "final_report": "Full memo body with portfolio action plan and risk notes.",
+        "final_report": "# Simple Investment Report\n\n## One-line Verdict\n\nPrefer AAPL first.",
         "report_outputs": {
+            "simple_investment": {
+                "markdown": "# Simple Investment Report\n\n## One-line Verdict\n\nPrefer AAPL first.",
+                "charts": {
+                    "portfolio_allocation": {"status": "ready", "items": [{"ticker": "AAPL", "weight": 60}]},
+                    "candidate_score_comparison": {"status": "ready", "items": [{"ticker": "AAPL", "composite": 82}]},
+                    "portfolio_vs_benchmark_backtest": {"status": "missing", "message": "No backtest available."},
+                    "risk_contribution": {"status": "ready", "items": [{"name": "Valuation", "value": 55}]},
+                },
+            },
             "investment": {
-                "markdown": "# Institutional Investment Research Report\n\nFull memo body with portfolio action plan and risk notes.",
+                "markdown": "# Simple Investment Report\n\n## One-line Verdict\n\nPrefer AAPL first.",
+                "charts": {
+                    "portfolio_allocation": {"status": "ready", "items": [{"ticker": "AAPL", "weight": 60}]},
+                    "candidate_score_comparison": {"status": "ready", "items": [{"ticker": "AAPL", "composite": 82}]},
+                    "portfolio_vs_benchmark_backtest": {"status": "missing", "message": "No backtest available."},
+                    "risk_contribution": {"status": "ready", "items": [{"name": "Valuation", "value": 55}]},
+                },
+            },
+            "professional_investment": {
+                "markdown": (
+                    "# Professional Investment Report\n\n"
+                    "## Executive Summary\n\nPrefer AAPL with valuation discipline.\n\n"
+                    "## Valuation View\n\nAAPL is not cheap.\n\n"
+                    "## Quality & Growth Analysis\n\nCash generation is resilient.\n\n"
+                    "## Scenario Analysis\n\nBase case remains selective."
+                ),
                 "charts": {
                     "portfolio_allocation": {"status": "ready", "items": [{"ticker": "AAPL", "weight": 60}]},
                     "candidate_score_comparison": {"status": "ready", "items": [{"ticker": "AAPL", "composite": 82}]},
@@ -127,11 +151,12 @@ def _sample_backtest() -> dict:
     }
 
 
-def test_pdf_export_html_uses_balanced_investment_layout():
-    """投资 PDF 应更精简，保留关键图表但不再重复完整长正文。"""
+def test_pdf_export_html_uses_simple_investment_layout_by_default():
+    """默认 PDF 应使用简单版投资报告，保留关键图表但不重复长正文。"""
     service = PdfExportService(settings=AppSettings())
     html = service.build_report_html(run_id="run-001", result=_sample_report_result(), backtest=None)
 
+    assert "Simple Investment Report" in html
     assert "Find a conservative long-term investment" in html
     assert "Prefer AAPL" in html
     assert "Apple Inc." in html
@@ -144,6 +169,22 @@ def test_pdf_export_html_uses_balanced_investment_layout():
     assert "Ticker research cards" not in html
     assert "系统理解" not in html
     assert "长期记忆" not in html
+
+
+def test_pdf_export_professional_kind_uses_professional_report():
+    """专业版 PDF 应读取 professional_investment 输出。"""
+    service = PdfExportService(settings=AppSettings())
+    html = service.build_report_html(
+        run_id="run-001",
+        result=_sample_report_result(),
+        backtest=None,
+        kind="professional_investment",
+    )
+
+    assert "Professional Investment Report" in html
+    assert "Valuation View" in html
+    assert "Quality &amp; Growth Analysis" in html or "Quality & Growth Analysis" in html
+    assert "Simple Investment Report" not in html
 
 
 def test_pdf_export_html_prefers_backtest_chart_when_backtest_is_available():
@@ -187,7 +228,44 @@ async def test_pdf_export_returns_real_pdf_bytes(monkeypatch):
     assert exported.media_type == "application/pdf"
     assert exported.content.startswith(b"%PDF")
     assert exported.filename.endswith(".pdf")
-    assert "investment-report" in exported.filename
+    assert exported.filename.startswith("simple-investment-report-")
+
+
+@pytest.mark.asyncio
+async def test_pdf_export_investment_kind_aliases_simple_filename(monkeypatch):
+    """旧 kind=investment 应兼容映射到简单版。"""
+    service = PdfExportService(settings=AppSettings())
+
+    async def fake_renderer(html: str) -> bytes:
+        assert "Simple Investment Report" in html
+        return b"%PDF-1.4\n% test pdf\n"
+
+    monkeypatch.setattr(service, "_render_html_to_pdf", fake_renderer)
+
+    exported = await service.export_report_pdf(run_id="run-001", result=_sample_report_result(), backtest=None, kind="investment")
+
+    assert exported.filename.startswith("simple-investment-report-")
+
+
+@pytest.mark.asyncio
+async def test_pdf_export_professional_kind_uses_professional_filename(monkeypatch):
+    """kind=professional_investment 时文件名应标识专业版。"""
+    service = PdfExportService(settings=AppSettings())
+
+    async def fake_renderer(html: str) -> bytes:
+        assert "Professional Investment Report" in html
+        return b"%PDF-1.4\n% test pdf\n"
+
+    monkeypatch.setattr(service, "_render_html_to_pdf", fake_renderer)
+
+    exported = await service.export_report_pdf(
+        run_id="run-001",
+        result=_sample_report_result(),
+        backtest=None,
+        kind="professional_investment",
+    )
+
+    assert exported.filename.startswith("professional-investment-report-")
 
 
 @pytest.mark.asyncio
@@ -224,8 +302,8 @@ async def test_pdf_export_endpoint_returns_download_response():
 
     class FakePdfService:
         async def export_report_pdf(self, *, run_id: str, result: dict, backtest=None, kind: str = "investment"):
-            assert kind == "investment"
-            return PdfExportResult(filename="investment-report-latest.pdf", content=b"%PDF-1.4\n")
+            assert kind == "simple_investment"
+            return PdfExportResult(filename="simple-investment-report-latest.pdf", content=b"%PDF-1.4\n")
 
     fake_runtime = SimpleNamespace(
         run_service=FakeRunService(),
@@ -248,7 +326,7 @@ async def test_pdf_export_endpoint_returns_download_response():
 
     assert response.media_type == "application/pdf"
     assert response.body.startswith(b"%PDF")
-    assert response.headers["content-disposition"] == 'attachment; filename="investment-report-latest.pdf"'
+    assert response.headers["content-disposition"] == 'attachment; filename="simple-investment-report-latest.pdf"'
     assert audit_events[0]["action"] == "run.export_pdf"
 
 
@@ -271,7 +349,7 @@ async def test_pdf_export_endpoint_passes_kind_to_service():
     class FakePdfService:
         async def export_report_pdf(self, *, run_id: str, result: dict, backtest=None, kind: str = "investment"):
             captured["kind"] = kind
-            return PdfExportResult(filename="development-report-latest.pdf", content=b"%PDF-1.4\n")
+            return PdfExportResult(filename="professional-investment-report-latest.pdf", content=b"%PDF-1.4\n")
 
     fake_runtime = SimpleNamespace(
         run_service=FakeRunService(),
@@ -285,13 +363,13 @@ async def test_pdf_export_endpoint_passes_kind_to_service():
             "type": "http",
             "method": "GET",
             "path": "/api/v1/runs/run-001/export/pdf",
-            "query_string": b"kind=development",
+            "query_string": b"kind=professional_investment",
             "headers": [(b"x-client-id", b"browser-001")],
             "app": fake_app,
         }
     )
 
-    response = await export_run_pdf(request, "run-001", kind="development")
+    response = await export_run_pdf(request, "run-001", kind="professional_investment")
 
-    assert response.headers["content-disposition"] == 'attachment; filename="development-report-latest.pdf"'
-    assert captured == {"kind": "development", "audit_kind": "development"}
+    assert response.headers["content-disposition"] == 'attachment; filename="professional-investment-report-latest.pdf"'
+    assert captured == {"kind": "professional_investment", "audit_kind": "professional_investment"}

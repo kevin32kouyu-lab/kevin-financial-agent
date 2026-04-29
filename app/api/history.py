@@ -38,11 +38,13 @@ async def get_run_audit_summary(request: Request, run_id: str) -> dict:
 
 @router.get("/{run_id}/export/pdf")
 @router.get("/{run_id}/export.pdf")
-async def export_run_pdf(request: Request, run_id: str, kind: str = "investment") -> Response:
+async def export_run_pdf(request: Request, run_id: str, kind: str = "simple_investment") -> Response:
     """把指定 run 的完整报告导出为后端生成的真实 PDF。"""
     normalized_kind = kind.strip().lower()
-    if normalized_kind not in {"investment", "development"}:
-        raise HTTPException(status_code=400, detail="PDF kind 只支持 investment 或 development。")
+    if normalized_kind == "investment":
+        normalized_kind = "simple_investment"
+    if normalized_kind not in {"simple_investment", "professional_investment", "development"}:
+        raise HTTPException(status_code=400, detail="PDF kind 只支持 simple_investment、professional_investment、investment 或 development。")
     runtime = get_runtime(request.app)
     user = get_current_user(request)
     client_id = get_client_id(request)
