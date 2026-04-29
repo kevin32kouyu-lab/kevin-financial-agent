@@ -12,6 +12,7 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_PARTS = {".git", ".venv", "node_modules", "dist", "__pycache__", ".pytest_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".sqlite3", ".db"}
+EXCLUDED_LOCAL_ENV_FILES = {".env", ".env.local"}
 PLACEHOLDER_MARKERS = ("replace-with", "your-", "example", "placeholder", "dummy", "changeme")
 SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{24,}"),
@@ -37,12 +38,20 @@ def iter_scannable_files(root: Path = ROOT) -> list[Path]:
         relative_parts = set(path.relative_to(root).parts)
         if relative_parts & EXCLUDED_PARTS:
             continue
+        if _is_local_env_file(path):
+            continue
         if "runtime" in relative_parts and "data" in relative_parts:
             continue
         if path.suffix.lower() in EXCLUDED_SUFFIXES:
             continue
         files.append(path)
     return files
+
+
+def _is_local_env_file(path: Path) -> bool:
+    """跳过本机环境变量文件，只扫描会进入仓库的示例配置。"""
+    name = path.name
+    return name in EXCLUDED_LOCAL_ENV_FILES or (name.startswith(".env.") and name.endswith(".local"))
 
 
 def find_secret_candidates(paths: Iterable[Path]) -> list[SecretFinding]:

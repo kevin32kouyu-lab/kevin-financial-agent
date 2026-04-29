@@ -1,6 +1,8 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 本轮完成项目结构整理和冗余文件清理：移除了旧前端备份、旧测试结果记录、临时目录和缓存文件。
+- 模型配置说明已统一为 DeepSeek-only，`.env.example` 不再保留旧备用模型说明。
 - 已把 `C:\Users\1\.codex\worktrees\5ebb\Financial-agent` 里的当前进度同步回主目录 `E:\Msc project\Financial-agent` 的 `main` 工作区。
 - 当前主线是三报告版本：简单版投资报告、专业版投资报告和开发者报告。
 - LLM 路由已统一切到 DeepSeek，旧模型供应商依赖和文档入口已移除。
@@ -8,6 +10,9 @@
 - 本轮重点是让普通用户默认先看到简单版结论，同时保留专业机构版深度和开发者报告，不重复执行研究。
 
 ## 上次停在哪个位置
+- 已删除 `web/archive/` 旧 Hook 备份和 `test-results/` 旧 Playwright 失败记录，并把 `test-results/` 加入 `.gitignore`。
+- 已清理 `tmp/`、`.pytest_cache/` 和项目源码下的 `__pycache__`；未删除 `.env`、`.venv`、`node_modules`、`data/runtime`、`.worktrees`。
+- 已同步清理 `pyproject.toml` 里的旧模型 SDK 依赖记录，改为保留当前代码实际使用的 `requests`。
 - 已完成双报告输出、研究结论页双标签、真实 PDF 导出和四页终端主流程。
 - 已修复开发报告字段不一致、风险图缺少数值、结论页拿不到已加载回测图的问题。
 - 这轮已把研究进度改成按真实阶段推断，不再长时间停在 `59%`。
@@ -22,6 +27,8 @@
 - 已把报告生成模型统一到 DeepSeek：后端不再导入旧供应商 SDK，不再保留主备模型回退链路，环境变量示例和部署文档也改为只配置 `DEEPSEEK_API_KEY`。
 
 ## 近期关键决定与原因
+- `legacy/` 暂时保留：当前 `app/analysis_runtime/live_data.py` 和部分测试仍引用其中的数据函数，直接删除会影响运行。
+- 清理只处理旧备份、测试产物、临时目录和缓存，不处理运行数据库、真实环境变量、本地依赖和项目 worktree，避免影响本地运行。
 - 账户系统先做本地邮箱密码，不接第三方 OAuth：实现快，适合单服务 Railway 部署。
 - 税费只做简化 flat-rate，不做具体地区税务建议。
 - 分红只在数据里有现金分红列时纳入，否则明确写入限制说明。

@@ -18,6 +18,7 @@ __pycache__/
 
 # 测试与覆盖率
 .pytest_cache/
+test-results/
 .coverage
 htmlcov/
 .tox/
