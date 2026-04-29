@@ -34,6 +34,13 @@ import {
   logoutAccount,
   updateProfilePreferences,
 } from "../lib/api";
+import {
+  DEMO_GUIDE_RUN_ID,
+  createDemoGuideAuditSummary,
+  createDemoGuideBacktest,
+  createDemoGuideRunDetail,
+  getDemoGuideQuery,
+} from "../lib/demoResearch";
 import { splitLines } from "../lib/format";
 import { getLocalePack } from "../lib/i18n";
 import { readLocale, syncDocumentLocale, writeLocale } from "../lib/locale";
@@ -372,6 +379,12 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   });
 
   const loadBacktest = useEffectEvent(async (runId: string, force = false) => {
+    if (runId === DEMO_GUIDE_RUN_ID) {
+      const demoBacktest = createDemoGuideBacktest(locale);
+      backtestCacheRef.current.set(runId, demoBacktest);
+      startTransition(() => setBacktestDetail(demoBacktest));
+      return demoBacktest;
+    }
     if (!force && backtestCacheRef.current.has(runId)) {
       const cached = backtestCacheRef.current.get(runId) ?? null;
       startTransition(() => setBacktestDetail(cached));
@@ -406,6 +419,13 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     ) => {
       const targetRunId = runId || activeRunId;
       if (!targetRunId) return null;
+      if (targetRunId === DEMO_GUIDE_RUN_ID) {
+        const demoBacktest = createDemoGuideBacktest(locale);
+        backtestCacheRef.current.set(targetRunId, demoBacktest);
+        startTransition(() => setBacktestDetail(demoBacktest));
+        setStatusText(locale === "zh" ? "示例回测已载入。" : "Demo backtest loaded.");
+        return demoBacktest;
+      }
       const modeSelected = modeOverride || (terminalMode === "historical" ? "replay" : "reference");
       const entryDate = entryDateOverride ?? (modeSelected === "reference" ? referenceStartDate : null);
       const endDate = endDateOverride ?? (modeSelected === "replay" ? historicalBacktestEndDate : todayIso());
@@ -488,7 +508,47 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     }
   });
 
+  const installDemoGuideRun = useEffectEvent(() => {
+    const detail = createDemoGuideRunDetail(locale);
+    const backtest = createDemoGuideBacktest(locale);
+    const audit = createDemoGuideAuditSummary(locale);
+    const artifacts: ArtifactRecord[] = [];
+    runBundleCacheRef.current.set(DEMO_GUIDE_RUN_ID, {
+      detail,
+      artifacts,
+      auditSummary: audit,
+      supplementalLoaded: true,
+    });
+    backtestCacheRef.current.set(DEMO_GUIDE_RUN_ID, backtest);
+    closeEventSource();
+    startTransition(() => {
+      setActiveRunId(DEMO_GUIDE_RUN_ID);
+      setRunDetail(detail);
+      setArtifacts(artifacts);
+      setAuditSummary(audit);
+      setSelectedArtifactId(null);
+      setSelectedArtifactKind("all");
+      setBacktestDetail(backtest);
+      setMode("agent");
+      setTerminalMode("realtime");
+      setAgentFormState((current) => ({
+        ...current,
+        query: getDemoGuideQuery(locale),
+        fetchLiveData: true,
+        maxResults: 3,
+        allocationMode: "score_weighted",
+        customWeights: "",
+      }));
+    });
+    setErrorText("");
+    setStatusText(locale === "zh" ? "示例报告已载入，可以继续查看结论和回测。" : "Demo report loaded. You can continue to the conclusion and backtest.");
+    return detail;
+  });
+
   const loadRunBundle = useEffectEvent(async (runId: string) => {
+    if (runId === DEMO_GUIDE_RUN_ID) {
+      return installDemoGuideRun();
+    }
     const cached = runBundleCacheRef.current.get(runId);
     const cachedStatus = cached?.detail.run.status;
     if (cached && cachedStatus && TERMINAL_STATUSES.has(cachedStatus)) {
@@ -624,6 +684,11 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
   });
 
   const openRun = useEffectEvent(async (runId: string) => {
+    if (runId === DEMO_GUIDE_RUN_ID) {
+      installDemoGuideRun();
+      setStatusText(locale === "zh" ? "正在查看示例报告。" : "Viewing the demo report.");
+      return;
+    }
     setActiveRunId(runId);
     setStatusText(copy.status.openingRun(runId));
     setErrorText("");
@@ -1125,6 +1190,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     runBacktest,
     continueFromRun,
     applySampleScenario,
+    prepareDemoGuideRun: () => installDemoGuideRun().run.id,
     fillAgentSample: () => applySampleScenario(sampleScenarios[0]?.id || "steady-income"),
     fillStructuredSample: () =>
       setStructuredFormState({

@@ -159,7 +159,7 @@ export function LandingView() {
                 </a>
               </Button>
               <Button variant="secondary" size="lg" className="landing-secondary-cta" asChild>
-                <a href="/terminal#terminal-modes">{copy.ctaSecondary}</a>
+                <a href="/terminal?guide=demo">{copy.ctaSecondary}</a>
               </Button>
             </div>
             <div className="landing-hero-metrics surface-appear" data-delay="6">

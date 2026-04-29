@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { formatDateTime, formatRunStatus, formatRunTitle } from "../lib/format";
 import { isFollowedRun, readFollowedRuns, toggleFollowedRun, type FollowedRunEntry } from "../lib/followedRuns";
 import { markUiInteraction } from "../lib/interactionPerf";
+import { DEMO_GUIDE_RUN_ID } from "../lib/demoResearch";
 import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 import { computeTerminalProgress, resolveTerminalStage } from "../lib/terminalProgress";
 import {
@@ -677,8 +678,8 @@ function ArchivePage({
   const boundQuery = extractBoundQuery(result, "", locale);
 
   return (
-    <section className="terminal-route-stack" data-tour-id="terminal-archive-page">
-      <article className="panel-surface terminal-route-header">
+    <section className="terminal-route-stack">
+      <article className="panel-surface terminal-route-header" data-tour-id="terminal-archive-page">
         <div className="section-head">
           <div>
             <p className="eyebrow">{locale === "zh" ? "历史页" : "Archive"}</p>
@@ -976,12 +977,15 @@ export function TerminalView() {
     runBacktest,
     continueFromRun,
     applySampleScenario,
+    prepareDemoGuideRun,
   } = useResearchConsole("agent");
   const { terminalPage, routeRunId, navigateTerminal, replaceTerminalRun } = useTerminalNavigation(activeRunId);
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => readMotionEnabled());
   const [motionLevel, setMotionLevel] = useState<"high" | "low">("low");
-  const [isRouteTransitioning, setIsRouteTransitioning] = useState(false);
-  const [productTourReplaySignal, setProductTourReplaySignal] = useState(0);
+  const [productTourReplaySignal, setProductTourReplaySignal] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return new URLSearchParams(window.location.search).get("guide") === "demo" ? 1 : 0;
+  });
   const [, setUiFeedbackState] = useState<
     "idle" | "queued" | "running" | "completed" | "failed" | "cancelled" | "needs_clarification"
   >("idle");
@@ -990,6 +994,7 @@ export function TerminalView() {
   const [followedRuns, setFollowedRuns] = useState<FollowedRunEntry[]>(() => readFollowedRuns());
   const [researchEntryMode, setResearchEntryMode] = useState<ResearchEntryMode>("single");
   const previousRunStatusRef = useRef<string | null>(null);
+  const guideRequestHandledRef = useRef(false);
 
   useEffect(() => {
     document.title = copy.terminal.title;
@@ -1003,11 +1008,15 @@ export function TerminalView() {
   }, [motionEnabled]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setIsRouteTransitioning(true);
-    const timer = window.setTimeout(() => setIsRouteTransitioning(false), 160);
-    return () => window.clearTimeout(timer);
-  }, [terminalPage]);
+    if (typeof window === "undefined" || guideRequestHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("guide") !== "demo") return;
+    guideRequestHandledRef.current = true;
+    params.delete("guide");
+    const nextSearch = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
+    setProductTourReplaySignal((value) => (value > 0 ? value : value + 1));
+  }, []);
 
   useEffect(() => {
     const status = runDetail?.run.status;
@@ -1076,8 +1085,9 @@ export function TerminalView() {
 
   useEffect(() => {
     if (terminalPage !== "archive") return;
+    if (activeRunId === DEMO_GUIDE_RUN_ID) return;
     void refreshHistory();
-  }, [terminalPage, filters.mode, filters.status, filters.search, refreshHistory]);
+  }, [terminalPage, activeRunId, filters.mode, filters.status, filters.search, refreshHistory]);
 
   const computedProgress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
   const progress = useAnimatedTerminalProgress(computedProgress, activeRunId, runDetail?.run.status);
@@ -1174,7 +1184,7 @@ export function TerminalView() {
     setFollowedRuns(next);
   }
 
-  const terminalMotionLevel = isRouteTransitioning ? "low" : motionLevel;
+  const terminalMotionLevel = motionLevel;
 
   return (
     <div className="terminal-route-shell">
@@ -1560,7 +1570,7 @@ export function TerminalView() {
                 </div>
               ) : null}
 
-              <div className="terminal-report-block">
+              <div className="terminal-report-block" data-tour-id="terminal-report-block">
                 <ReportPanel
                   locale={locale}
                   copy={copy}
@@ -1615,6 +1625,7 @@ export function TerminalView() {
         activeRunId={activeRunId}
         replaySignal={productTourReplaySignal}
         onNavigate={navigateTerminal}
+        onPrepareDemoRun={prepareDemoGuideRun}
       />
     </div>
   );

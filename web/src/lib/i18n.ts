@@ -262,10 +262,11 @@ export interface LocalePack {
       steps: {
         ask: { title: string; body: string };
         progress: { title: string; body: string };
+        reportReady: { title: string; body: string };
         conclusion: { title: string; body: string };
         backtest: { title: string; body: string };
         archive: { title: string; body: string };
-        account: { title: string; body: string };
+        account?: { title: string; body: string };
       };
     };
     uiNotice: {
@@ -629,7 +630,7 @@ const zh: LocalePack = {
     productGuide: {
       eyebrow: "首次使用引导",
       welcomeTitle: "认识你的金融研究助手",
-      welcomeBody: "输入一个投资问题，系统会整理结论、风险、依据和可导出的报告。",
+      welcomeBody: "这次会先放入一份示例报告，再带你看提问、结论、三报告和回测页。",
       start: "开始了解",
       skip: "跳过",
       prev: "上一步",
@@ -644,28 +645,28 @@ const zh: LocalePack = {
       ],
       steps: {
         ask: {
-          title: "从问题开始",
-          body: "在这里直接写下你的投资目标，也可以点快速条件补充风险、期限和偏好。",
+          title: "先把问题说清楚",
+          body: "这里写资金、风险、期限和关注标的。你也可以点快速条件，让系统更快理解你的投资目标。",
         },
         progress: {
-          title: "查看研究进度",
-          body: "任务运行时，这里会显示当前阶段、进度和最近更新时间。",
+          title: "再看研究进度",
+          body: "真实任务运行时，这里会显示当前阶段、进度和最近更新时间。示例报告已经准备好，下一步会直接进入生成后的结论页。",
+        },
+        reportReady: {
+          title: "示例报告已生成",
+          body: "现在你看到的是报告生成后的结论页。正式使用时，任务完成后也会自动跳到这里，先给出最终建议和风险摘要。",
         },
         conclusion: {
-          title: "阅读研究结论",
-          body: "研究完成后看这里：最终建议、投资报告、开发报告和 PDF 导出都在结论页。",
+          title: "读结论和三份报告",
+          body: "结论页先给优先标的、仓位、风险和依据；下面可以切换简单版、专业版和开发报告，也能导出 PDF。",
         },
         backtest: {
-          title: "用回测验证",
-          body: "这里用历史数据检查推荐组合和基准的表现，帮助你判断结论是否稳健。",
+          title: "再用回测复核",
+          body: "回测页会比较推荐组合和 SPY 基准，展示组合收益、最大回撤、单股贡献和本次回测口径。",
         },
         archive: {
-          title: "回到历史研究",
-          body: "这里保存过去的研究，可以重新打开报告，也可以基于旧问题继续跟进。",
-        },
-        account: {
-          title: "同步你的记忆",
-          body: "登录后可以把浏览器里的偏好同步到账户，方便跨设备继续使用。",
+          title: "最后回看和同步",
+          body: "历史页用来打开过去的研究并继续跟进；右上角账户入口可以把浏览器偏好同步到账户。",
         },
       },
     },
@@ -1039,7 +1040,7 @@ const en: LocalePack = {
     productGuide: {
       eyebrow: "First-time guide",
       welcomeTitle: "Meet your Financial Agent",
-      welcomeBody: "It turns your question into a verdict, risks, evidence, and a downloadable report.",
+      welcomeBody: "This guide loads a demo report first, then walks through the ask page, conclusion, reports, and backtest.",
       start: "Start Guide",
       skip: "Skip",
       prev: "Previous",
@@ -1054,28 +1055,28 @@ const en: LocalePack = {
       ],
       steps: {
         ask: {
-          title: "Start with your question",
-          body: "Write the investment goal here, or tap quick hints for risk, horizon, and preferences.",
+          title: "Start with a clear question",
+          body: "Write capital, risk, horizon, and focus tickers here. Quick hints help the system understand your mandate faster.",
         },
         progress: {
-          title: "Track the run",
-          body: "When research is running, this card shows the current stage, progress, and latest update time.",
+          title: "Track the research run",
+          body: "During a real run, this card shows the current stage, progress, and latest update. The demo report is ready, so the next step opens the completed conclusion page.",
+        },
+        reportReady: {
+          title: "Demo report is ready",
+          body: "You are now seeing the completed conclusion page. In normal use, a finished run lands here first with the verdict and risk summary.",
         },
         conclusion: {
-          title: "Read the conclusion",
-          body: "After completion, this page holds the recommendation, investment report, development report, and PDF export.",
+          title: "Read the conclusion and reports",
+          body: "The conclusion page shows the top pick, sizing, risk, and evidence. The report area lets you switch between simple, professional, and development reports, with PDF export.",
         },
         backtest: {
           title: "Validate with backtest",
-          body: "Use historical data to compare the recommended portfolio against the benchmark.",
+          body: "The backtest page compares the recommended basket with SPY and shows portfolio return, drawdown, per-stock contribution, and assumptions.",
         },
         archive: {
-          title: "Return to past research",
-          body: "Open previous reports here, or continue from an older question without starting over.",
-        },
-        account: {
-          title: "Sync your memory",
-          body: "Sign in to sync browser preferences into an account for use across devices.",
+          title: "Return and sync",
+          body: "Use the archive to reopen past research or continue an older question. The account entry syncs browser preferences across devices.",
         },
       },
     },

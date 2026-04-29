@@ -224,6 +224,7 @@ async function mockTerminalApis(
   page: Page,
   options: {
     emptyBacktests?: boolean;
+    captureRunPosts?: string[];
     captureBacktestPosts?: string[];
     capturePdfRequests?: string[];
     authEmail?: string | null;
@@ -313,6 +314,10 @@ async function mockTerminalApis(
     options.captureHistoryRequests?.push(route.request().url());
     await route.fulfill({ json: { items: activeHistory } });
   });
+  await page.route("**/api/runs", async (route) => {
+    options.captureRunPosts?.push(route.request().method());
+    await route.fulfill({ json: { run_id: "demo-run", title: "Demo research", status: "queued" } });
+  });
   let detailRequestCount = 0;
   await page.route("**/api/runs/demo-run", (route) => {
     const sequenceDetail = options.detailSequence?.[Math.min(detailRequestCount, options.detailSequence.length - 1)];
@@ -366,6 +371,44 @@ test("landing page presents a concise user-first entry", async ({ page }) => {
   await expect(page.getByText(/project|PPT|presentation/i)).toHaveCount(0);
 });
 
+test("landing example opens a static guided demo report", async ({ page }) => {
+  const runPosts: string[] = [];
+  const backtestPosts: string[] = [];
+  await mockTerminalApis(page, { captureRunPosts: runPosts, captureBacktestPosts: backtestPosts });
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "See example" }).click();
+
+  const tour = page.getByRole("dialog");
+  await expect(tour.getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+  await tour.getByRole("button", { name: "Start Guide" }).click();
+  await expect(page).toHaveURL(/\/terminal\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Start with a clear question" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ask your investment question directly" })).toBeVisible();
+
+  const overlayFilter = await page.locator(".product-tour-overlay").evaluate((element) => getComputedStyle(element).backdropFilter);
+  expect(overlayFilter).toBe("none");
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Track the research run" })).toBeVisible();
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/conclusion\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Demo report is ready" })).toBeVisible();
+  await expect(page.getByText("Focus on MSFT", { exact: false }).first()).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Read the conclusion and reports" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Simple Report" })).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/backtest\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Validate with backtest" })).toBeVisible();
+  await expect(page.getByText("Portfolio return", { exact: true })).toBeVisible();
+
+  expect(runPosts).toEqual([]);
+  expect(backtestPosts).toEqual([]);
+});
+
 test("ask page shows mandate chips and a clear four-step preview", async ({ page }) => {
   await mockTerminalApis(page);
   await page.goto("/terminal");
@@ -400,7 +443,8 @@ test("terminal loads history only when the archive page is opened", async ({ pag
 });
 
 test("terminal shows a first-run product guide and can replay it", async ({ page }) => {
-  await mockTerminalApis(page);
+  const historyRequests: string[] = [];
+  await mockTerminalApis(page, { captureHistoryRequests: historyRequests });
 
   await page.goto("/");
   await page.evaluate((storageKey) => {
@@ -410,30 +454,32 @@ test("terminal shows a first-run product guide and can replay it", async ({ page
   await page.goto("/terminal");
   const tour = page.getByRole("dialog");
   await expect(tour.getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
-  await expect(tour.getByText("It turns your question into a verdict, risks, evidence, and a downloadable report.")).toBeVisible();
+  await expect(tour.getByText("This guide loads a demo report first, then walks through the ask page, conclusion, reports, and backtest.")).toBeVisible();
 
   await tour.getByRole("button", { name: "Start Guide" }).click();
-  await expect(tour.getByRole("heading", { name: "Start with your question" })).toBeVisible();
+  await expect(page).toHaveURL(/\/terminal\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Start with a clear question" })).toBeVisible();
   await expect(page.locator('[data-tour-id="terminal-ask-panel"]')).toBeVisible();
 
   await tour.getByRole("button", { name: "Next" }).click();
-  await expect(tour.getByRole("heading", { name: "Track the run" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Track the research run" })).toBeVisible();
   await expect(page.locator('[data-tour-id="terminal-progress-card"]')).toBeVisible();
 
   await tour.getByRole("button", { name: "Next" }).click();
-  await expect(page).toHaveURL(/\/terminal\/conclusion/);
-  await expect(tour.getByRole("heading", { name: "Read the conclusion" })).toBeVisible();
+  await expect(page).toHaveURL(/\/terminal\/conclusion\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Demo report is ready" })).toBeVisible();
 
   await tour.getByRole("button", { name: "Next" }).click();
-  await expect(page).toHaveURL(/\/terminal\/backtest/);
+  await expect(tour.getByRole("heading", { name: "Read the conclusion and reports" })).toBeVisible();
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(/\/terminal\/backtest\?run=demo-guide-run/);
   await expect(tour.getByRole("heading", { name: "Validate with backtest" })).toBeVisible();
 
   await tour.getByRole("button", { name: "Next" }).click();
-  await expect(page).toHaveURL(/\/terminal\/archive/);
-  await expect(tour.getByRole("heading", { name: "Return to past research" })).toBeVisible();
-
-  await tour.getByRole("button", { name: "Next" }).click();
-  await expect(tour.getByRole("heading", { name: "Sync your memory" })).toBeVisible();
+  await expect(page).toHaveURL(/\/terminal\/archive\?run=demo-guide-run/);
+  await expect(tour.getByRole("heading", { name: "Return and sync" })).toBeVisible();
+  expect(historyRequests).toEqual([]);
   await tour.getByRole("button", { name: "Finish" }).click();
   await expect(tour).toHaveCount(0);
 

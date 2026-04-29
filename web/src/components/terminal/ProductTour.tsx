@@ -13,6 +13,7 @@ interface ProductTourProps {
   activeRunId: string | null;
   replaySignal: number;
   onNavigate: (page: TerminalPage, runId?: string | null, replace?: boolean) => void;
+  onPrepareDemoRun: () => string | null;
 }
 
 interface TargetBox {
@@ -47,25 +48,27 @@ function buildCardStyle(target: TargetBox | null): CSSProperties {
 }
 
 /** 渲染首次欢迎与分步功能区引导。 */
-export function ProductTour({ copy, activeRunId, replaySignal, onNavigate }: ProductTourProps) {
+export function ProductTour({ copy, activeRunId, replaySignal, onNavigate, onPrepareDemoRun }: ProductTourProps) {
   const [mode, setMode] = useState<"hidden" | "welcome" | "steps">("hidden");
   const [stepIndex, setStepIndex] = useState(0);
   const [targetBox, setTargetBox] = useState<TargetBox | null>(null);
+  const [tourRunId, setTourRunId] = useState<string | null>(null);
   const titleId = useId();
 
   const steps = useMemo<StepView[]>(
     () => [
       { id: "ask", page: "ask", targetId: "terminal-ask-panel", ...copy.steps.ask },
       { id: "progress", page: "ask", targetId: "terminal-progress-card", ...copy.steps.progress },
-      { id: "conclusion", page: "conclusion", targetId: "terminal-conclusion-page", ...copy.steps.conclusion },
+      { id: "reportReady", page: "conclusion", targetId: "terminal-conclusion-page", ...copy.steps.reportReady },
+      { id: "conclusion", page: "conclusion", targetId: "terminal-report-block", ...copy.steps.conclusion },
       { id: "backtest", page: "backtest", targetId: "terminal-backtest-page", ...copy.steps.backtest },
       { id: "archive", page: "archive", targetId: "terminal-archive-page", ...copy.steps.archive },
-      { id: "account", page: "archive", targetId: "terminal-account-entry", ...copy.steps.account },
     ],
     [copy.steps],
   );
 
   const activeStep = steps[stepIndex];
+  const runIdForTour = tourRunId || activeRunId;
 
   useEffect(() => {
     if (!hasCompletedProductTour()) {
@@ -76,14 +79,15 @@ export function ProductTour({ copy, activeRunId, replaySignal, onNavigate }: Pro
   useEffect(() => {
     if (replaySignal > 0) {
       setStepIndex(0);
+      setTourRunId(null);
       setMode("welcome");
     }
   }, [replaySignal]);
 
   useEffect(() => {
     if (mode !== "steps" || !activeStep) return;
-    onNavigate(activeStep.page, activeRunId, true);
-  }, [activeRunId, activeStep, mode, onNavigate]);
+    onNavigate(activeStep.page, runIdForTour, true);
+  }, [activeStep, mode, onNavigate, runIdForTour]);
 
   useEffect(() => {
     if (mode !== "steps" || !activeStep) {
@@ -153,6 +157,8 @@ export function ProductTour({ copy, activeRunId, replaySignal, onNavigate }: Pro
 
   /** 从欢迎弹窗进入第一步。 */
   function startSteps() {
+    const preparedRunId = onPrepareDemoRun();
+    setTourRunId(preparedRunId);
     setStepIndex(0);
     setMode("steps");
   }
