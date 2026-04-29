@@ -1,5 +1,6 @@
 /** 用户研究终端：提供四页化的正式研究前台。 */
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { HelpCircle, History as HistoryIcon, Home, PlayCircle, Sparkles } from "lucide-react";
 
 import { BacktestPanel } from "../components/BacktestPanel";
 import { MotionBackdrop } from "../components/MotionBackdrop";
@@ -534,6 +535,7 @@ function ConclusionEmptyState({
                 onNavigate("ask", null);
               }}
             >
+              <PlayCircle aria-hidden="true" />
               {locale === "zh" ? "去开始研究" : "Go to start research"}
             </a>
           </Button>
@@ -546,6 +548,7 @@ function ConclusionEmptyState({
                 onNavigate("archive", null);
               }}
             >
+              <HistoryIcon aria-hidden="true" />
               {locale === "zh" ? "打开历史页" : "Open archive"}
             </a>
           </Button>
@@ -676,6 +679,8 @@ function ArchivePage({
 }) {
   const result = runDetail?.result || null;
   const boundQuery = extractBoundQuery(result, "", locale);
+  const hasHistoryItems = history.length > 0;
+  const showInitialHistoryLoading = historyLoading && !hasHistoryItems;
 
   return (
     <section className="terminal-route-stack">
@@ -695,9 +700,9 @@ function ArchivePage({
 
       <section className="terminal-archive-layout">
       <article className="panel-surface terminal-archive-page">
-        {historyLoading ? (
+        {showInitialHistoryLoading ? (
           <div className="empty-state small">{locale === "zh" ? "正在读取历史记录..." : "Loading archive..."}</div>
-        ) : history.length ? (
+        ) : hasHistoryItems ? (
           <div className="terminal-archive-list">
             {history.map((item) => (
               <article
@@ -1087,7 +1092,7 @@ export function TerminalView() {
     if (terminalPage !== "archive") return;
     if (activeRunId === DEMO_GUIDE_RUN_ID) return;
     void refreshHistory();
-  }, [terminalPage, activeRunId, filters.mode, filters.status, filters.search, refreshHistory]);
+  }, [terminalPage, activeRunId, filters.mode, filters.status, filters.search]);
 
   const computedProgress = computeTerminalProgress(runDetail?.run.status, runDetail?.steps || []);
   const progress = useAnimatedTerminalProgress(computedProgress, activeRunId, runDetail?.run.status);
@@ -1197,7 +1202,10 @@ export function TerminalView() {
         </div>
         <div className="front-topbar-actions">
           <Button variant="secondary" size="sm" asChild>
-            <a href="/">{locale === "zh" ? "返回首页" : "Home"}</a>
+            <a href="/">
+              <Home aria-hidden="true" />
+              {locale === "zh" ? "返回首页" : "Home"}
+            </a>
           </Button>
           <label className="field compact-field front-locale-field">
             <span>{copy.meta.languageLabel}</span>
@@ -1207,6 +1215,7 @@ export function TerminalView() {
             </select>
           </label>
           <Button variant="secondary" size="sm" className="compact-action" onClick={toggleMotion}>
+            <Sparkles aria-hidden="true" />
             {locale === "zh" ? `动效${motionEnabled ? "开启" : "关闭"}` : `Motion ${motionEnabled ? "On" : "Off"}`}
           </Button>
           <Button
@@ -1216,6 +1225,7 @@ export function TerminalView() {
             className="compact-action"
             onClick={() => setProductTourReplaySignal((value) => value + 1)}
           >
+            <HelpCircle aria-hidden="true" />
             {copy.terminal.productGuide.reopen}
           </Button>
           <div data-tour-id="terminal-account-entry">

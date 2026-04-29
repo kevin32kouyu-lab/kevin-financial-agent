@@ -91,6 +91,150 @@ button:active {
   transform: translateY(1px) scale(0.985);
 }
 
+.app-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    filter 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-button:hover {
+  text-decoration: none;
+}
+
+.app-button:hover:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(-1px);
+}
+
+.app-button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(1px) scale(0.985);
+}
+
+.app-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(143, 226, 216, 0.18),
+    0 0 0 1px rgba(143, 226, 216, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.app-button:disabled,
+.app-button[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.52;
+}
+
+.app-button svg {
+  flex: 0 0 auto;
+  width: 1.05em;
+  height: 1.05em;
+  stroke-width: 1.9;
+}
+
+.app-button-default {
+  border-color: rgba(198, 232, 245, 0.36);
+  background:
+    linear-gradient(180deg, rgba(236, 254, 255, 0.42), rgba(236, 254, 255, 0) 42%),
+    linear-gradient(135deg, #9ee8e0 0%, #8fcde9 52%, #78aee7 100%);
+  color: #051425;
+  box-shadow:
+    0 18px 38px rgba(52, 130, 182, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -1px 0 rgba(8, 27, 47, 0.12);
+}
+
+.app-button-default:hover:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(1.04);
+}
+
+.app-button-secondary {
+  border-color: rgba(176, 213, 255, 0.18);
+  background: rgba(10, 23, 39, 0.82);
+  color: rgba(245, 249, 255, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 10px 24px rgba(2, 8, 18, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.app-button-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: rgba(176, 213, 255, 0.3);
+  background: rgba(15, 33, 55, 0.9);
+  color: #f8fbff;
+}
+
+.app-button-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: rgba(223, 234, 247, 0.84);
+}
+
+.app-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fbff;
+}
+
+.app-button-destructive {
+  border-color: rgba(255, 138, 126, 0.24);
+  background: linear-gradient(135deg, rgba(164, 44, 34, 0.92), rgba(127, 26, 26, 0.94));
+  color: #fff;
+  box-shadow:
+    0 18px 38px rgba(83, 18, 18, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.app-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(1.05);
+}
+
+.app-button-size-default {
+  min-height: 42px;
+  padding: 0 16px;
+}
+
+.app-button-size-sm {
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.app-button-size-lg {
+  min-height: 54px;
+  padding: 0 22px;
+  border-radius: 20px;
+  font-size: 15px;
+}
+
+.app-button-size-icon {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+}
+
 input,
 textarea,
 select {
@@ -975,9 +1119,15 @@ select:focus {
 }
 
 .primary-button {
-  background: linear-gradient(135deg, var(--navy), var(--navy-2));
-  color: #f8fafc;
+  border-color: rgba(198, 232, 245, 0.34);
+  background:
+    linear-gradient(180deg, rgba(236, 254, 255, 0.44), rgba(236, 254, 255, 0) 42%),
+    linear-gradient(135deg, #9ee8e0 0%, #8fcde9 52%, #78aee7 100%);
+  color: #051425;
   padding: 12px 18px;
+  box-shadow:
+    0 18px 38px rgba(52, 130, 182, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
 .secondary-button {
@@ -1100,6 +1250,18 @@ select:focus {
 .negative {
   background: var(--negative-soft);
   color: var(--danger);
+}
+
+.chart-legend.portfolio {
+  border-color: rgba(152, 225, 214, 0.32);
+  background: rgba(152, 225, 214, 0.16);
+  color: #98e1d6;
+}
+
+.chart-legend.benchmark {
+  border-color: rgba(151, 184, 255, 0.34);
+  background: rgba(151, 184, 255, 0.16);
+  color: #97b8ff;
 }
 
 .status-needs_clarification {
@@ -2504,13 +2666,15 @@ body::before {
   overflow: hidden;
   min-width: 220px;
   min-height: 54px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(198, 232, 245, 0.34);
   background:
-    linear-gradient(135deg, rgba(165, 229, 220, 0.98), rgba(130, 182, 255, 0.95));
-  color: #04101f;
+    linear-gradient(180deg, rgba(236, 254, 255, 0.44), rgba(236, 254, 255, 0) 42%),
+    linear-gradient(135deg, #9ee8e0 0%, #8fcde9 52%, #78aee7 100%);
+  color: #051425;
   box-shadow:
-    0 26px 54px rgba(66, 140, 214, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.46);
+    0 18px 38px rgba(52, 130, 182, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -1px 0 rgba(8, 27, 47, 0.12);
 }
 
 .landing-primary-cta::after,
@@ -2519,7 +2683,7 @@ body::before {
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0.36), transparent 46%);
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.26), transparent 38%, rgba(255, 255, 255, 0.12) 78%);
   pointer-events: none;
 }
 
@@ -3564,6 +3728,12 @@ body::before {
     width: 100%;
   }
 
+  .front-topbar-actions > [data-tour-id="terminal-account-entry"],
+  .front-topbar-actions > [data-tour-id="terminal-account-entry"] .account-panel,
+  .front-topbar-actions > [data-tour-id="terminal-account-entry"] .compact-action {
+    width: 100%;
+  }
+
   .landing-primary-cta,
   .landing-secondary-cta,
   .terminal-primary-cta,
@@ -3610,10 +3780,12 @@ body::before {
 }
 
 .terminal-route-tab.active {
-  color: #081424;
-  border-color: transparent;
-  background: linear-gradient(135deg, rgba(160, 228, 218, 0.96), rgba(136, 190, 248, 0.94));
-  box-shadow: 0 18px 40px rgba(8, 22, 40, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  color: #061525;
+  border-color: rgba(183, 235, 235, 0.54);
+  background: #9ddfe3;
+  box-shadow:
+    0 14px 30px rgba(54, 134, 154, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
 }
 
 .product-tour-overlay {

@@ -383,7 +383,7 @@ export interface LocalePack {
 const zh: LocalePack = {
   locale: "zh",
   meta: {
-    brand: "ROSE Capital Research",
+    brand: "Financial Agent",
     title: "金融研究前台",
     subtitle: "把投资目标、结论、风险与执行建议放在同一个终端里。",
     languageLabel: "界面语言",
@@ -793,7 +793,7 @@ const zh: LocalePack = {
 const en: LocalePack = {
   locale: "en",
   meta: {
-    brand: "ROSE Capital Research",
+    brand: "Financial Agent",
     title: "Investment Research Frontend",
     subtitle: "Bring mandate, verdict, risk and execution into one surface.",
     languageLabel: "UI language",

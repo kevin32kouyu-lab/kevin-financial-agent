@@ -10,7 +10,7 @@ import { readMotionEnabled, writeMotionEnabled } from "../lib/motion";
 
 const LANDING_COPY = {
   zh: {
-    brand: "ROSE Capital Research",
+    brand: "Financial Agent",
     title: "问一句，得到可验证的投资研究",
     subtitle: "输入你的资金、风险和关注标的，系统会给出结论、风险、依据和可导出的正式报告。",
     ctaPrimary: "开始研究",
@@ -44,7 +44,7 @@ const LANDING_COPY = {
     sceneTickets: ["需求已解析", "覆盖已同步", "风险已锁定", "回放已就绪"],
   },
   en: {
-    brand: "ROSE Capital Research",
+    brand: "Financial Agent",
     title: "Ask once, get verifiable investment research",
     subtitle: "Share your capital, risk, and target names. The system returns a verdict, risk view, evidence trail, and export-ready report.",
     ctaPrimary: "Open Research Terminal",

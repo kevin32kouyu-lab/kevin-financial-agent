@@ -1,5 +1,6 @@
 /** 账户面板：在终端前台提供登录、注册、退出和记忆同步入口。 */
 import { useMemo, useState } from "react";
+import { UserCircle } from "lucide-react";
 import type { AuthUser, Locale } from "../../lib/types";
 import { Button } from "../ui/button";
 
@@ -82,6 +83,7 @@ export function AccountPanel({
         className="compact-action"
         onClick={() => setOpen((value) => !value)}
       >
+        <UserCircle aria-hidden="true" />
         {copy.toggle}
       </Button>
 

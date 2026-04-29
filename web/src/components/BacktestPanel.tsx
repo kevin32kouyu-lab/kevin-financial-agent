@@ -433,8 +433,8 @@ export function BacktestPanel({
               <path d={benchmarkGeometry.path} className="backtest-line benchmark" />
             </svg>
             <div className="chip-row">
-              <span className="chip positive">{copy.backtest.portfolio}</span>
-              <span className="chip neutral">{summary.benchmark_ticker}</span>
+              <span className="chip chart-legend portfolio">{copy.backtest.portfolio}</span>
+              <span className="chip chart-legend benchmark">{summary.benchmark_ticker}</span>
             </div>
           </div>
 
