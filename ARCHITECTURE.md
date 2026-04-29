@@ -47,6 +47,7 @@
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 时间线、工具调用、正反论证、checkpoint 和恢复按钮。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格和本次回测口径。
 - `web/src/lib/motion.ts`：动效偏好读写（本地记忆 + 系统低动态检测）。
+- `docs/data_flow.md`：用 Mermaid 维护完整数据流，说明前端、API、workflow、agent、工具、数据源、RAG、回测、PDF 和持久化之间的数据走向。
 - `Dockerfile`：把前端和后端一起打包成单服务容器，并在启动时读取平台注入的 `PORT`。
 
 ## 模块调用关系
