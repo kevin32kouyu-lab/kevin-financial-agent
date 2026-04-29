@@ -41,6 +41,7 @@ read.md
 # 浏览器自动化与本地工具
 .playwright-cli/
 .claude/
+.worktrees/
 
 # IDE
 .vscode/
