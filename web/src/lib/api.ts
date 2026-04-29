@@ -3,6 +3,7 @@ import type {
   BacktestDetail,
   BacktestListResponse,
   AuthSessionResponse,
+  AgentResumeRequest,
   DataStatus,
   DataRefreshJobsResponse,
   DeleteRunsResponse,
@@ -134,6 +135,13 @@ export function createRun(payload: RunCreateRequest) {
 export function retryRun(runId: string) {
   return requestJson<RunDetailResponse>(`/api/runs/${runId}/retry`, {
     method: "POST",
+  });
+}
+
+export function resumeRunFromAgent(runId: string, payload: AgentResumeRequest) {
+  return requestJson<RunDetailResponse>(`/api/runs/${runId}/resume-from-agent`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

@@ -5,6 +5,7 @@ import { AgentTracePanel } from "../components/AgentTracePanel";
 import { BacktestPanel } from "../components/BacktestPanel";
 import { ReportPanel } from "../components/ReportPanel";
 import { StagePanel } from "../components/StagePanel";
+import { resumeRunFromAgent } from "../lib/api";
 import { formatDateTime, formatJson, formatRunStatus, formatRunTitle } from "../lib/format";
 import { useResearchConsole } from "../hooks";
 
@@ -80,6 +81,24 @@ export function WorkbenchView() {
   const backtestMeta = asRecord(backtestDetail?.meta);
   const warningFlags = Array.isArray(debugSummary?.warning_flags) ? debugSummary?.warning_flags.join(", ") : "N/A";
   const [debugTab, setDebugTab] = useState<"overview" | "agents" | "stages" | "artifacts" | "raw">("overview");
+  const [resumeBusyAgent, setResumeBusyAgent] = useState<string | null>(null);
+
+  const handleResumeFromAgent = async (agentName: string) => {
+    if (!activeRunId || resumeBusyAgent) {
+      return;
+    }
+    setResumeBusyAgent(agentName);
+    try {
+      const detail = await resumeRunFromAgent(activeRunId, {
+        agent_name: agentName,
+        reason: "debug resume from agent trace",
+      });
+      await openRun(detail.run.id);
+      setDebugTab("agents");
+    } finally {
+      setResumeBusyAgent(null);
+    }
+  };
 
   return (
     <div className="workspace-shell">
@@ -369,7 +388,15 @@ export function WorkbenchView() {
 
           {debugTab === "stages" ? <StagePanel locale={locale} copy={copy} steps={runDetail?.steps || []} /> : null}
 
-          {debugTab === "agents" ? <AgentTracePanel locale={locale} trace={result?.agent_trace} /> : null}
+          {debugTab === "agents" ? (
+            <AgentTracePanel
+              locale={locale}
+              trace={result?.agent_trace}
+              runId={activeRunId}
+              resumeBusyAgent={resumeBusyAgent}
+              onResumeFromAgent={handleResumeFromAgent}
+            />
+          ) : null}
 
           {debugTab === "artifacts" ? (
             <ArtifactPanel

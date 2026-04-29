@@ -199,6 +199,11 @@ export interface RunCreateRequest {
   structured?: StructuredRunRequest;
 }
 
+export interface AgentResumeRequest {
+  agent_name: string;
+  reason: string;
+}
+
 export interface AgentRunRequest {
   query: string;
   options: {

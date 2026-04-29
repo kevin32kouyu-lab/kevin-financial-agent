@@ -8,7 +8,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from app.agent_runtime.models import AgentMemoryContext
-from app.domain.contracts import PreferenceUpdateRequest
+from app.domain.contracts import AgentResumeRequest, PreferenceUpdateRequest
 from app.domain.contracts import RunCreateRequest
 from app.domain.contracts import AuthUser
 from app.repositories.sqlite_run_repository import SqliteRunRepository
@@ -341,6 +341,70 @@ class RunService:
         original_run = self.get_run_or_404(run_id)
         client_id = str((original_run.metadata or {}).get("client_id") or "default")
         return await self.create_run(payload, parent_run_id=run_id, client_id=client_id, user=user)
+
+    async def cancel_run_or_404(self, run_id: str, *, user: AuthUser | None = None, client_id: str | None = None) -> dict[str, Any]:
+        self.assert_run_visible(run_id, user=user, client_id=client_id)
+
+    async def resume_from_agent_or_404(
+        self,
+        run_id: str,
+        payload: AgentResumeRequest,
+        *,
+        client_id: str = "default",
+        user: AuthUser | None = None,
+    ) -> dict[str, Any]:
+        self.assert_run_visible(run_id, user=user, client_id=client_id)
+        original_run = self.get_run_or_404(run_id)
+        if original_run.mode != "agent":
+            raise HTTPException(status_code=400, detail="只有自然语言研究 run 支持按 agent 恢复。")
+        payload_data = self.repository.get_artifact_content(run_id, kind="input", name="request")
+        if payload_data is None:
+            raise HTTPException(status_code=404, detail="未找到该 run 的原始输入，无法恢复。")
+        previous_result = (
+            self.repository.get_artifact_content(run_id, kind="output", name="final_response")
+            or self.repository.get_artifact_content(run_id, kind="snapshot", name="current")
+        )
+        if not isinstance(previous_result, dict):
+            raise HTTPException(status_code=400, detail="未找到可复用的运行快照。")
+        checkpoints = previous_result.get("agent_checkpoints") or self.repository.get_artifact_content(run_id, kind="derived", name="agent_checkpoints") or []
+        if not any(
+            isinstance(item, dict) and item.get("agent_name") == payload.agent_name and item.get("rerunnable")
+            for item in checkpoints
+        ):
+            raise HTTPException(status_code=400, detail="未找到该 agent 的 checkpoint。")
+
+        request_payload = RunCreateRequest.model_validate(payload_data)
+        new_run_id = uuid4().hex
+        self.repository.create_run(
+            run_id=new_run_id,
+            mode="agent",
+            workflow_key="agent",
+            title=f"{self._make_title(request_payload)} · resume {payload.agent_name}",
+            parent_run_id=run_id,
+            metadata={
+                "source": "resume_from_agent",
+                "mode": "agent",
+                "client_id": client_id,
+                "user_id": user.id if user else None,
+                "source_run_id": run_id,
+                "resume_from_agent": payload.agent_name,
+                "resume_reason": payload.reason,
+            },
+        )
+        self.repository.replace_artifact(new_run_id, kind="input", name="request", content=request_payload.model_dump())
+        self.repository.replace_artifact(
+            new_run_id,
+            kind="input",
+            name="resume_context",
+            content={"source_run_id": run_id, "agent_name": payload.agent_name, "reason": payload.reason},
+        )
+        self.repository.add_event(
+            new_run_id,
+            event_type="run.created",
+            payload={"run_id": new_run_id, "mode": "agent", "resume_from_agent": payload.agent_name},
+        )
+        self.runner.schedule(new_run_id)
+        return self.get_run_detail_or_404(new_run_id, user=user, client_id=client_id)
 
     async def cancel_run_or_404(self, run_id: str, *, user: AuthUser | None = None, client_id: str | None = None) -> dict[str, Any]:
         self.assert_run_visible(run_id, user=user, client_id=client_id)

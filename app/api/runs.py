@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.auth import get_api_key, get_client_id, get_current_user
 from app.core.runtime import get_runtime
-from app.domain.contracts import RunCreateRequest
+from app.domain.contracts import AgentResumeRequest, RunCreateRequest
 
 
 router = APIRouter(prefix="/api/runs", tags=["runs"], dependencies=[Depends(get_api_key)])
@@ -77,6 +77,18 @@ async def get_run_artifacts(request: Request, run_id: str) -> dict:
 async def retry_run(request: Request, run_id: str) -> dict:
     runtime = get_runtime(request.app)
     return await runtime.run_service.retry_run_or_404(run_id, user=get_current_user(request), client_id=get_client_id(request))
+
+
+@router.post("/{run_id}/resume-from-agent")
+async def resume_run_from_agent(request: Request, run_id: str, payload: AgentResumeRequest) -> dict:
+    runtime = get_runtime(request.app)
+    client_id = get_client_id(request)
+    return await runtime.run_service.resume_from_agent_or_404(
+        run_id,
+        payload,
+        client_id=client_id,
+        user=get_current_user(request),
+    )
 
 
 @router.post("/{run_id}/cancel")

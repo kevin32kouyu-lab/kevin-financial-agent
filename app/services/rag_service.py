@@ -75,6 +75,12 @@ class KnowledgeRagService:
         meta = report_briefing.setdefault("meta", {})
         meta["retrieved_evidence"] = public_evidence
         meta["citation_map"] = citation_map
+        gaps = self._historical_archive_gaps(report_briefing, public_evidence, research_mode=research_mode)
+        if gaps:
+            meta["historical_archive_gaps"] = gaps
+            existing_flags = [str(item) for item in meta.get("coverage_flags") or []]
+            gap_flags = [f"historical_archive_gap:{item['source_type']}:{item['ticker']}" for item in gaps]
+            meta["coverage_flags"] = self._dedupe_texts(existing_flags + gap_flags)
         return {"retrieved_evidence": public_evidence, "citation_map": citation_map}
 
     def apply_validation(
@@ -264,6 +270,24 @@ class KnowledgeRagService:
                 )
             )
 
+        smart_money_summary = self._text(card.get("smart_money_positioning"))
+        if smart_money_summary and not self._is_unavailable_marker(smart_money_summary):
+            documents.append(
+                KnowledgeDocument(
+                    ticker=ticker,
+                    source_type="smart_money",
+                    source_name=self._text(card.get("smart_money_source"), "Public positioning proxy"),
+                    title=f"{ticker} smart money positioning signal",
+                    url=self._first_url(card, preferred_keys=("smart_money_url", "url", "link")),
+                    published_at=as_of_date,
+                    as_of_date=as_of_date,
+                    research_mode=research_mode,
+                    summary=smart_money_summary,
+                    content=f"{query}\n{smart_money_summary}",
+                    metadata={"card_field": "smart_money_positioning"},
+                )
+            )
+
     def _with_citation_keys(self, evidence: list[RetrievedEvidence], *, as_of_date: str | None) -> list[dict[str, Any]]:
         """给证据条目增加引用编号、时效和来源质量说明。"""
         items: list[dict[str, Any]] = []
@@ -300,7 +324,7 @@ class KnowledgeRagService:
         normalized = str(source_type or "").strip().lower()
         if normalized in {"sec", "score_fact", "macro", "data_source"}:
             return "high"
-        if normalized in {"research_card", "news"}:
+        if normalized in {"research_card", "news", "smart_money"}:
             return "medium"
         return "low"
 
@@ -315,8 +339,63 @@ class KnowledgeRagService:
             "macro": ["macro", "risk_register"],
             "data_source": ["evidence_summary", "validation"],
             "research_card": ["ticker_cards", "executive"],
+            "smart_money": ["ticker_cards", "risk_register"],
         }
         return mapping.get(normalized, ["ticker_cards"])
+
+    def _historical_archive_gaps(
+        self,
+        report_briefing: dict[str, Any],
+        evidence: list[dict[str, Any]],
+        *,
+        research_mode: str | None,
+    ) -> list[dict[str, Any]]:
+        """历史模式下显式记录新闻、资金面或 SEC 资料缺口。"""
+        if research_mode != "historical":
+            return []
+        evidence_by_ticker: dict[str, set[str]] = {}
+        for item in evidence:
+            ticker = self._text(item.get("ticker")).upper()
+            source_type = self._text(item.get("source_type")).lower()
+            if ticker and source_type:
+                evidence_by_ticker.setdefault(ticker, set()).add(source_type)
+
+        gaps: list[dict[str, Any]] = []
+        for card in self._as_list(report_briefing.get("ticker_cards")):
+            ticker = self._text(card.get("ticker")).upper()
+            if not ticker:
+                continue
+            available_sources = evidence_by_ticker.get(ticker, set())
+            if "news" not in available_sources or self._is_unavailable_marker(card.get("news_label")):
+                gaps.append(self._gap(ticker, "news", "历史新闻归档不足，报告会更多依赖评分和价格类资料。"))
+            if "smart_money" not in available_sources or self._is_unavailable_marker(card.get("smart_money_positioning")):
+                gaps.append(self._gap(ticker, "smart_money", "历史资金面代理资料不足，机构持仓和空头信号不能完整回放。"))
+            if "sec" not in available_sources and self._is_unavailable_marker(card.get("audit_summary")):
+                gaps.append(self._gap(ticker, "sec", "历史 SEC 摘要归档不足，审计和偿债信号需要谨慎阅读。"))
+        return gaps
+
+    @staticmethod
+    def _gap(ticker: str, source_type: str, message: str) -> dict[str, Any]:
+        """构造统一的历史资料缺口记录。"""
+        return {"ticker": ticker, "source_type": source_type, "message": message}
+
+    @staticmethod
+    def _is_unavailable_marker(value: Any) -> bool:
+        """识别不可用、历史不可用和无覆盖等降级描述。"""
+        text = str(value or "").strip().lower()
+        if not text:
+            return True
+        markers = [
+            "unavailable",
+            "historical unavailable",
+            "historical_data_unavailable",
+            "no coverage",
+            "none",
+            "不可用",
+            "历史不可用",
+            "暂无覆盖",
+        ]
+        return any(marker in text for marker in markers)
 
     @staticmethod
     def _parse_date(value: Any) -> date | None:
