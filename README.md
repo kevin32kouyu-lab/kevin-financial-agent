@@ -216,52 +216,39 @@ Financial Agent 是一个面向美股研究场景的双语投研 Agent。它把�
 Financial-agent/
 ├── app/                     # FastAPI backend
 │   ├── api/                 # API routes
-│   ├── agent_runtime/       # Controlled agents and memory
-│   ├── analysis_runtime/    # Screening and scoring
-│   ├── assets/              # Backend static assets
-│   ├── common/              # Shared backend helpers
-│   ├── core/                # Settings, auth, runtime assembly
-│   ├── domain/              # Request and response contracts
-│   ├── integrations/        # LLM and external clients
-│   ├── repositories/        # SQLite run, market, profile, RAG stores
-│   ├── services/            # Reports, RAG, PDF, profiles, backtests
+│   ├── agent_runtime/       # Multi-agent runtime and memory
+│   ├── analysis_runtime/    # Screening and scoring logic
+│   ├── core/                # Settings, auth, runtime setup
+│   ├── domain/              # Shared data contracts
+│   ├── integrations/        # LLM client integrations
+│   ├── repositories/        # SQLite persistence layer
+│   ├── services/            # Reports, RAG, PDF, backtests
 │   ├── tools/               # Market data fetchers
 │   └── workflows/           # Research workflow orchestration
 ├── web/                     # React frontend
-│   ├── e2e/                 # Playwright browser tests
+│   ├── e2e/                 # Browser tests
 │   └── src/
-│       ├── assets/          # Frontend static assets
-│       ├── components/      # UI, report, backtest, profile panels
-│       ├── hooks/           # State and API orchestration
-│       ├── lib/             # API, i18n, identity, memory helpers
-│       ├── styles/          # Shared frontend styles
-│       └── views/           # Landing, terminal, backtest, archive
+│       ├── components/      # UI and report panels
+│       ├── hooks/           # Frontend state logic
+│       ├── lib/             # API, i18n, memory helpers
+│       └── views/           # Main product pages
 ├── data/
 │   ├── seed/                # Seed stock universe
 │   └── runtime/             # Local DB/cache, ignored by Git
-├── docs/                    # Architecture and project docs
+├── docs/                    # Architecture and deployment docs
 │   ├── deployment/          # Railway deployment notes
-│   ├── history/             # Historical notes
 │   ├── plans/               # Roadmaps and plans
-│   ├── reports/             # Course and thesis materials
-│   ├── superpowers/         # Local workflow guidance
-│   ├── api.md               # API documentation
+│   ├── reports/             # Report working materials
 │   ├── architecture.md      # Module responsibilities
-│   ├── data_flow.md         # Full data-flow diagram
-│   ├── production_governance.md  # Production governance notes
-│   ├── quickstart.md        # Local setup guide
-│   └── rag_evaluation.md    # RAG evaluation notes
-├── scripts/                 # Maintenance and report scripts
+│   └── data_flow.md         # Full data-flow diagram
+├── scripts/                 # Utility scripts
 ├── tests/                   # Backend and workflow tests
-├── legacy/                  # Archived legacy experiments
-├── .github/                 # GitHub Actions
-├── Dockerfile               # Railway/Docker single-service deployment
-├── docker-compose.yml       # Local container run helper
+├── Dockerfile               # Single-service deployment
+├── docker-compose.yml       # Local container helper
 ├── main.py                  # Local backend entry point
-├── package.json             # Frontend tooling and scripts
-├── pyproject.toml           # Python tooling configuration
-├── requirements.txt         # Backend runtime dependencies
-└── README.md                # Project overview and operating guide
+├── package.json             # Frontend scripts
+├── pyproject.toml           # Python tooling
+└── README.md                # Project overview
 ```
 
 ## 系统架构图
