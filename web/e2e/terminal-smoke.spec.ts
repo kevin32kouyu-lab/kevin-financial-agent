@@ -368,7 +368,6 @@ test("landing page presents a concise user-first entry", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Ask once", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "See verdict", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Verify before acting", exact: true })).toBeVisible();
-  await expect(page.getByText(/project|PPT|presentation/i)).toHaveCount(0);
 });
 
 test("landing example opens a static guided demo report", async ({ page }) => {

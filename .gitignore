@@ -39,6 +39,12 @@ tmp/
 read.pdf
 read.md
 
+# 本地报告、展示材料和代理草稿，不提交到公开仓库
+docs/reports/
+docs/superpowers/
+scripts/build_*_report.py
+scripts/build_*_project.py
+
 # 浏览器自动化与本地工具
 .playwright-cli/
 .claude/

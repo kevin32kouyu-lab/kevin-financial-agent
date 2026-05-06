@@ -10,10 +10,9 @@ from app.common.executors import get_shared_executor
 
 router = APIRouter()
 
-# 🛡️ SEC 官方通行证：使用你的 CUHK 邮箱，声明学术量化研究身份
-SEC_HEADERS = {
-    "User-Agent": "CUHK_Quant_Research 1155247304@link.cuhk.edu.hk"
-}
+# SEC 请求需要明确的联系信息，默认值只用于本地开发示例。
+SEC_CONTACT_EMAIL = os.getenv("SEC_CONTACT_EMAIL", "contact@example.com")
+SEC_HEADERS = {"User-Agent": f"FinancialAgent/1.0 ({SEC_CONTACT_EMAIL})"}
 
 # 全局缓存 CIK 字典（带线程安全锁）
 CIK_MAPPING_CACHE = {}
