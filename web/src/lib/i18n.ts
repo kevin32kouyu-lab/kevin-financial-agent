@@ -383,7 +383,7 @@ export interface LocalePack {
 const zh: LocalePack = {
   locale: "zh",
   meta: {
-    brand: "Financial Agent",
+    brand: "GenAI based Agentic Financial Analyzer and Investment Advisor",
     title: "金融研究前台",
     subtitle: "把投资目标、结论、风险与执行建议放在同一个终端里。",
     languageLabel: "界面语言",
@@ -793,7 +793,7 @@ const zh: LocalePack = {
 const en: LocalePack = {
   locale: "en",
   meta: {
-    brand: "Financial Agent",
+    brand: "GenAI based Agentic Financial Analyzer and Investment Advisor",
     title: "Investment Research Frontend",
     subtitle: "Bring mandate, verdict, risk and execution into one surface.",
     languageLabel: "UI language",
@@ -1039,7 +1039,7 @@ const en: LocalePack = {
     },
     productGuide: {
       eyebrow: "First-time guide",
-      welcomeTitle: "Meet your Financial Agent",
+      welcomeTitle: "Meet your GenAI based Agentic Financial Analyzer and Investment Advisor",
       welcomeBody: "This guide loads a demo report first, then walks through the ask page, conclusion, reports, and backtest.",
       start: "Start Guide",
       skip: "Skip",

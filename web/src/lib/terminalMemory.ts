@@ -35,12 +35,19 @@ function normalizeMemory(memory: StoredIntentMemory | null): StoredIntentMemory 
   return {
     locale: memory.locale,
     capital_amount: memory.capital_amount || null,
+    capital_range_min: memory.capital_range_min || null,
+    capital_range_max: memory.capital_range_max || null,
     currency: memory.currency || null,
     risk_tolerance: memory.risk_tolerance || null,
+    investment_goal: memory.investment_goal || null,
     investment_horizon: memory.investment_horizon || null,
     investment_style: memory.investment_style || null,
+    default_market: memory.default_market || null,
     preferred_sectors: Array.from(new Set(asStringArray(memory.preferred_sectors))),
     preferred_industries: Array.from(new Set(asStringArray(memory.preferred_industries))),
+    excluded_sectors: Array.from(new Set(asStringArray(memory.excluded_sectors))),
+    excluded_industries: Array.from(new Set(asStringArray(memory.excluded_industries))),
+    excluded_tickers: Array.from(new Set(asStringArray(memory.excluded_tickers))),
     explicit_tickers: Array.from(new Set(asStringArray(memory.explicit_tickers))),
     savedAt: memory.savedAt,
   };
@@ -97,23 +104,37 @@ export function buildMemoryFromParsedIntent(parsedIntent: unknown, locale: Local
   const memory: StoredIntentMemory = {
     locale,
     capital_amount: Number(portfolioSizing?.capital_amount || 0) || null,
+    capital_range_min: Number(portfolioSizing?.capital_range_min || 0) || null,
+    capital_range_max: Number(portfolioSizing?.capital_range_max || 0) || null,
     currency: String(portfolioSizing?.currency || "").trim() || null,
     risk_tolerance: String(riskProfile?.tolerance_level || "").trim() || null,
+    investment_goal: String(strategy?.goal || strategy?.investment_goal || "").trim() || null,
     investment_horizon: String(strategy?.horizon || "").trim() || null,
     investment_style: String(strategy?.style || "").trim() || null,
+    default_market: String(strategy?.default_market || intent?.default_market || "").trim() || null,
     preferred_sectors: asStringArray(strategy?.preferred_sectors),
     preferred_industries: asStringArray(strategy?.preferred_industries),
+    excluded_sectors: asStringArray(strategy?.excluded_sectors),
+    excluded_industries: asStringArray(strategy?.excluded_industries),
+    excluded_tickers: asStringArray(explicitTargets?.excluded_tickers),
     explicit_tickers: asStringArray(explicitTargets?.tickers),
     savedAt: new Date().toISOString(),
   };
 
   if (
     !memory.capital_amount &&
+    !memory.capital_range_min &&
+    !memory.capital_range_max &&
     !memory.risk_tolerance &&
+    !memory.investment_goal &&
     !memory.investment_horizon &&
     !memory.investment_style &&
+    !memory.default_market &&
     !(memory.preferred_sectors || []).length &&
     !(memory.preferred_industries || []).length &&
+    !(memory.excluded_sectors || []).length &&
+    !(memory.excluded_industries || []).length &&
+    !(memory.excluded_tickers || []).length &&
     !(memory.explicit_tickers || []).length
   ) {
     return null;

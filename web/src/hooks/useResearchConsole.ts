@@ -115,12 +115,22 @@ interface RunBundleCacheEntry {
 
 const EMPTY_PROFILE: UserProfile = {
   capital_amount: null,
+  capital_range_min: null,
+  capital_range_max: null,
   currency: null,
   risk_tolerance: null,
+  investment_goal: null,
   investment_horizon: null,
   investment_style: null,
+  default_market: null,
   preferred_sectors: [],
   preferred_industries: [],
+  excluded_sectors: [],
+  excluded_industries: [],
+  excluded_tickers: [],
+  explicit_tickers: [],
+  confirmed_fields: [],
+  pending_confirmations: {},
 };
 
 function todayIso() {
@@ -144,7 +154,23 @@ function cloneProfile(profile: UserProfile): UserProfile {
     ...profile,
     preferred_sectors: [...profile.preferred_sectors],
     preferred_industries: [...profile.preferred_industries],
+    excluded_sectors: [...profile.excluded_sectors],
+    excluded_industries: [...profile.excluded_industries],
+    excluded_tickers: [...profile.excluded_tickers],
+    explicit_tickers: [...profile.explicit_tickers],
+    confirmed_fields: [...profile.confirmed_fields],
+    pending_confirmations: { ...profile.pending_confirmations },
   };
+}
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function toPlainRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
 }
 
 function toOptionalNumber(value: string): number | null {
@@ -174,12 +200,19 @@ function toMemoryRequest(memory: ReturnType<typeof readIntentMemory>): AgentMemo
   if (!memory) return null;
   return {
     capital_amount: memory.capital_amount || null,
+    capital_range_min: memory.capital_range_min || null,
+    capital_range_max: memory.capital_range_max || null,
     currency: memory.currency || null,
     risk_tolerance: memory.risk_tolerance || null,
+    investment_goal: memory.investment_goal || null,
     investment_horizon: memory.investment_horizon || null,
     investment_style: memory.investment_style || null,
+    default_market: memory.default_market || null,
     preferred_sectors: memory.preferred_sectors || [],
     preferred_industries: memory.preferred_industries || [],
+    excluded_sectors: memory.excluded_sectors || [],
+    excluded_industries: memory.excluded_industries || [],
+    excluded_tickers: memory.excluded_tickers || [],
     explicit_tickers: memory.explicit_tickers || [],
   };
 }
@@ -196,13 +229,20 @@ function toStoredMemoryFromPreferences(
   return {
     locale,
     capital_amount: Number(values.capital_amount || 0) || null,
+    capital_range_min: Number(values.capital_range_min || 0) || null,
+    capital_range_max: Number(values.capital_range_max || 0) || null,
     currency: String(values.currency || "").trim() || null,
     risk_tolerance: String(values.risk_tolerance || "").trim() || null,
+    investment_goal: String(values.investment_goal || "").trim() || null,
     investment_horizon: String(values.investment_horizon || "").trim() || null,
     investment_style: String(values.investment_style || "").trim() || null,
-    preferred_sectors: Array.isArray(values.preferred_sectors) ? values.preferred_sectors.map(String) : [],
-    preferred_industries: Array.isArray(values.preferred_industries) ? values.preferred_industries.map(String) : [],
-    explicit_tickers: Array.isArray(values.explicit_tickers) ? values.explicit_tickers.map(String) : [],
+    default_market: String(values.default_market || "").trim() || null,
+    preferred_sectors: toStringArray(values.preferred_sectors),
+    preferred_industries: toStringArray(values.preferred_industries),
+    excluded_sectors: toStringArray(values.excluded_sectors),
+    excluded_industries: toStringArray(values.excluded_industries),
+    excluded_tickers: toStringArray(values.excluded_tickers),
+    explicit_tickers: toStringArray(values.explicit_tickers),
     savedAt: String(payload.updated_at || new Date().toISOString()),
   };
 }
@@ -211,12 +251,22 @@ function toUserProfile(payload: UserPreferenceSummary | null): UserProfile {
   const values = payload?.values || {};
   return {
     capital_amount: Number(values.capital_amount || 0) || null,
+    capital_range_min: Number(values.capital_range_min || 0) || null,
+    capital_range_max: Number(values.capital_range_max || 0) || null,
     currency: String(values.currency || "").trim() || null,
     risk_tolerance: String(values.risk_tolerance || "").trim() || null,
+    investment_goal: String(values.investment_goal || "").trim() || null,
     investment_horizon: String(values.investment_horizon || "").trim() || null,
     investment_style: String(values.investment_style || "").trim() || null,
-    preferred_sectors: Array.isArray(values.preferred_sectors) ? values.preferred_sectors.map(String) : [],
-    preferred_industries: Array.isArray(values.preferred_industries) ? values.preferred_industries.map(String) : [],
+    default_market: String(values.default_market || "").trim() || null,
+    preferred_sectors: toStringArray(values.preferred_sectors),
+    preferred_industries: toStringArray(values.preferred_industries),
+    excluded_sectors: toStringArray(values.excluded_sectors),
+    excluded_industries: toStringArray(values.excluded_industries),
+    excluded_tickers: toStringArray(values.excluded_tickers),
+    explicit_tickers: toStringArray(values.explicit_tickers),
+    confirmed_fields: toStringArray(values.confirmed_fields),
+    pending_confirmations: toPlainRecord(values.pending_confirmations),
   };
 }
 
@@ -616,7 +666,7 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         }
       }
       if ((nextMemoryFromServer || nextMemory) && detailResponse.run.mode === "agent" && (detailResponse.run.status === "completed" || detailResponse.run.status === "needs_clarification")) {
-        const finalMemory = nextMemoryFromServer || nextMemory;
+        const finalMemory = currentAccount ? nextMemoryFromServer || nextMemory : nextMemory || nextMemoryFromServer;
         if (finalMemory) {
           writeIntentMemory(finalMemory);
           startTransition(() => {
@@ -933,12 +983,21 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
     try {
       const response = await updateProfilePreferences({
         capital_amount: profileDraft.capital_amount,
+        capital_range_min: profileDraft.capital_range_min,
+        capital_range_max: profileDraft.capital_range_max,
         currency: profileDraft.currency,
         risk_tolerance: profileDraft.risk_tolerance,
+        investment_goal: profileDraft.investment_goal,
         investment_horizon: profileDraft.investment_horizon,
         investment_style: profileDraft.investment_style,
+        default_market: profileDraft.default_market,
         preferred_sectors: profileDraft.preferred_sectors,
         preferred_industries: profileDraft.preferred_industries,
+        excluded_sectors: profileDraft.excluded_sectors,
+        excluded_industries: profileDraft.excluded_industries,
+        excluded_tickers: profileDraft.excluded_tickers,
+        explicit_tickers: profileDraft.explicit_tickers,
+        confirmed_fields: profileDraft.confirmed_fields,
         locale,
       });
       applyProfileResponse(response);
@@ -1165,6 +1224,14 @@ export function useResearchConsole(defaultMode: RunMode = "agent") {
         ...patch,
         preferred_sectors: patch.preferred_sectors ? [...patch.preferred_sectors] : current.preferred_sectors,
         preferred_industries: patch.preferred_industries ? [...patch.preferred_industries] : current.preferred_industries,
+        excluded_sectors: patch.excluded_sectors ? [...patch.excluded_sectors] : current.excluded_sectors,
+        excluded_industries: patch.excluded_industries ? [...patch.excluded_industries] : current.excluded_industries,
+        excluded_tickers: patch.excluded_tickers ? [...patch.excluded_tickers] : current.excluded_tickers,
+        explicit_tickers: patch.explicit_tickers ? [...patch.explicit_tickers] : current.explicit_tickers,
+        confirmed_fields: patch.confirmed_fields ? [...patch.confirmed_fields] : current.confirmed_fields,
+        pending_confirmations: patch.pending_confirmations
+          ? { ...patch.pending_confirmations }
+          : current.pending_confirmations,
       })),
     setStructuredForm: (patch: Partial<StructuredFormState>) =>
       setStructuredFormState((current) => ({ ...current, ...patch })),

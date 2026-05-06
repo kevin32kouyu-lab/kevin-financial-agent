@@ -10,12 +10,19 @@ export type AllocationMode = "score_weighted" | "equal_weight" | "custom_weight"
 
 export interface AgentMemoryContext {
   capital_amount?: number | null;
+  capital_range_min?: number | null;
+  capital_range_max?: number | null;
   currency?: string | null;
   risk_tolerance?: string | null;
+  investment_goal?: string | null;
   investment_horizon?: string | null;
   investment_style?: string | null;
+  default_market?: string | null;
   preferred_sectors?: string[];
   preferred_industries?: string[];
+  excluded_sectors?: string[];
+  excluded_industries?: string[];
+  excluded_tickers?: string[];
   explicit_tickers?: string[];
 }
 
@@ -307,23 +314,42 @@ export interface RunDetailResponse {
 
 export interface PreferenceValues {
   capital_amount?: number | null;
+  capital_range_min?: number | null;
+  capital_range_max?: number | null;
   currency?: string | null;
   risk_tolerance?: string | null;
+  investment_goal?: string | null;
   investment_horizon?: string | null;
   investment_style?: string | null;
+  default_market?: string | null;
   preferred_sectors?: string[];
   preferred_industries?: string[];
+  excluded_sectors?: string[];
+  excluded_industries?: string[];
+  excluded_tickers?: string[];
   explicit_tickers?: string[];
+  confirmed_fields?: string[];
+  pending_confirmations?: Record<string, unknown>;
 }
 
 export interface UserProfile {
   capital_amount: number | null;
+  capital_range_min: number | null;
+  capital_range_max: number | null;
   currency: string | null;
   risk_tolerance: string | null;
+  investment_goal: string | null;
   investment_horizon: string | null;
   investment_style: string | null;
+  default_market: string | null;
   preferred_sectors: string[];
   preferred_industries: string[];
+  excluded_sectors: string[];
+  excluded_industries: string[];
+  excluded_tickers: string[];
+  explicit_tickers: string[];
+  confirmed_fields: string[];
+  pending_confirmations: Record<string, unknown>;
 }
 
 export interface UserPreferenceSummary {
@@ -337,7 +363,7 @@ export interface UserPreferenceSummary {
   values: PreferenceValues;
 }
 
-export interface PreferenceUpdateRequest extends PreferenceValues {
+export interface PreferenceUpdateRequest extends Omit<PreferenceValues, "pending_confirmations"> {
   locale?: string;
   research_mode?: string | null;
   source_query?: string | null;

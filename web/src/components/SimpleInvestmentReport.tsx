@@ -232,7 +232,12 @@ function ShowcaseChart({ locale, slot, charts, backtest }: { locale: Locale; slo
           <path d={portfolioPath} fill="none" stroke="#17645e" strokeWidth="4" strokeLinecap="round" />
           <path d={benchmarkPath} fill="none" stroke="#a05d25" strokeWidth="3" strokeDasharray="8 6" strokeLinecap="round" />
         </svg>
-        <div className="showcase-legend"><span className="portfolio" />{locale === "zh" ? "组合" : "Portfolio"}<span className="benchmark" />SPY</div>
+        <div className="showcase-legend">
+          <span className="portfolio" />
+          <span>{locale === "zh" ? "组合" : "Portfolio"}</span>
+          <span className="benchmark" />
+          <span>{locale === "zh" ? "基准" : "Benchmark"}</span>
+        </div>
       </article>
     );
   }

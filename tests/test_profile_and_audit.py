@@ -22,6 +22,11 @@ def test_profile_service_persists_preferences(tmp_path):
             preferred_sectors=["Healthcare", "Consumer Defensive"],
             preferred_industries=["Beverages"],
             explicit_tickers=["JNJ", "KO"],
+            excluded_sectors=["Energy"],
+            excluded_tickers=["TSLA"],
+            default_market="US",
+            investment_goal="stable income",
+            confirmed_fields=["capital_amount", "risk_tolerance", "investment_goal"],
             locale="zh",
             research_mode="realtime",
             source_query="我有 50000 美元，想找适合长期持有的低风险分红股。",
@@ -32,6 +37,11 @@ def test_profile_service_persists_preferences(tmp_path):
     assert saved.values.currency == "USD"
     assert saved.values.risk_tolerance == "medium"
     assert saved.values.explicit_tickers == ["JNJ", "KO"]
+    assert saved.values.excluded_sectors == ["Energy"]
+    assert saved.values.excluded_tickers == ["TSLA"]
+    assert saved.values.default_market == "US"
+    assert saved.values.investment_goal == "stable income"
+    assert saved.values.confirmed_fields == ["capital_amount", "risk_tolerance", "investment_goal"]
     assert saved.research_mode == "realtime"
 
     restored = service.get_preferences()
@@ -39,7 +49,57 @@ def test_profile_service_persists_preferences(tmp_path):
     assert restored is not None
     assert restored.values.investment_style == "quality"
     assert restored.values.preferred_sectors == ["Healthcare", "Consumer Defensive"]
+    assert restored.values.excluded_sectors == ["Energy"]
     assert restored.source_query == "我有 50000 美元，想找适合长期持有的低风险分红股。"
+
+
+def test_profile_snapshot_requires_confirmation_for_critical_fields(tmp_path):
+    """自动学习不能静默覆盖资金、风险和投资目标。"""
+    repository = SqliteRunRepository(tmp_path / "runs.sqlite3")
+    repository.init_schema()
+    service = ProfileService(repository)
+    service.update_preferences(
+        PreferenceUpdateRequest(
+            capital_amount=50000,
+            currency="USD",
+            risk_tolerance="medium",
+            investment_goal="stable income",
+            investment_style="quality",
+            preferred_sectors=["Healthcare"],
+            confirmed_fields=["capital_amount", "risk_tolerance", "investment_goal"],
+        )
+    )
+
+    stored = service.save_snapshot(
+        run_id="run-002",
+        snapshot={
+            "query": "I have 100000 USD and want aggressive growth.",
+            "locale": "en",
+            "research_mode": "realtime",
+            "values": {
+                "capital_amount": 100000,
+                "currency": "USD",
+                "risk_tolerance": "high",
+                "investment_goal": "aggressive growth",
+                "investment_style": "Growth",
+                "preferred_sectors": ["Technology"],
+                "default_market": "US",
+            },
+        },
+    )
+
+    assert stored.values.capital_amount == 50000
+    assert stored.values.risk_tolerance == "medium"
+    assert stored.values.investment_goal == "stable income"
+    assert stored.values.investment_style == "Growth"
+    assert stored.values.preferred_sectors == ["Technology"]
+    assert stored.values.default_market == "US"
+    assert stored.values.confirmed_fields == ["capital_amount", "risk_tolerance", "investment_goal"]
+    assert stored.values.pending_confirmations == {
+        "capital_amount": 100000,
+        "risk_tolerance": "high",
+        "investment_goal": "aggressive growth",
+    }
 
 
 def test_run_audit_service_builds_user_readable_summary():

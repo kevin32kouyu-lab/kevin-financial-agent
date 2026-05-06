@@ -116,17 +116,31 @@ function formatMissingField(locale: Locale, value: string): string {
   const mappingZh: Record<string, string> = {
     capital_amount: "投入金额",
     risk_tolerance: "风险偏好",
+    investment_goal: "投资目标",
     investment_horizon: "投资期限",
     investment_style: "投资风格",
+    default_market: "默认市场",
     preferred_sectors: "偏好板块",
+    preferred_industries: "偏好行业",
+    excluded_sectors: "禁投方向",
+    excluded_industries: "不感兴趣行业",
+    excluded_tickers: "排除标的",
+    explicit_tickers: "关注标的",
     fundamental_filters: "筛选条件",
   };
   const mappingEn: Record<string, string> = {
     capital_amount: "capital",
     risk_tolerance: "risk preference",
+    investment_goal: "goal",
     investment_horizon: "horizon",
     investment_style: "investment style",
+    default_market: "default market",
     preferred_sectors: "sector preference",
+    preferred_industries: "industry preference",
+    excluded_sectors: "excluded sectors",
+    excluded_industries: "excluded industries",
+    excluded_tickers: "excluded tickers",
+    explicit_tickers: "focus tickers",
     fundamental_filters: "filters",
   };
   const mapping = locale === "zh" ? mappingZh : mappingEn;
@@ -146,6 +160,11 @@ function buildProfileFacts(locale: Locale, userProfile: GenericRecord | null): s
         ? `风险 ${toText(userProfile.risk_tolerance)}`
         : `Risk ${toText(userProfile.risk_tolerance)}`
       : "",
+    userProfile.investment_goal
+      ? locale === "zh"
+        ? `目标 ${toText(userProfile.investment_goal)}`
+        : `Goal ${toText(userProfile.investment_goal)}`
+      : "",
     userProfile.investment_horizon
       ? locale === "zh"
         ? `期限 ${toText(userProfile.investment_horizon)}`
@@ -155,6 +174,11 @@ function buildProfileFacts(locale: Locale, userProfile: GenericRecord | null): s
       ? locale === "zh"
         ? `风格 ${toText(userProfile.investment_style)}`
         : `Style ${toText(userProfile.investment_style)}`
+      : "",
+    userProfile.default_market
+      ? locale === "zh"
+        ? `市场 ${toText(userProfile.default_market)}`
+        : `Market ${toText(userProfile.default_market)}`
       : "",
   ].filter(Boolean);
 }
@@ -877,6 +901,14 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
   const safetySummary = asRecord(meta?.safety_summary);
   const retrievedEvidence = asArray(meta?.retrieved_evidence);
   const memorySummary = asRecord(result.memory_summary);
+  const memoryUsageSummary = asRecord(result.memory_usage_summary);
+  const memoryUsageNote = toText(memoryUsageSummary?.note, toText(memorySummary?.note, ""));
+  const memoryUsageFields = (
+    asStringArray(memoryUsageSummary?.applied_labels).length
+      ? asStringArray(memoryUsageSummary?.applied_labels)
+      : asStringArray(memoryUsageSummary?.applied_fields).map((item) => formatMissingField(locale, item))
+  );
+  const missingNotAssumed = asStringArray(memoryUsageSummary?.unused_missing_fields).map((item) => formatMissingField(locale, item));
   const profileFacts = buildProfileFacts(locale, userProfile);
   const headerTitle =
     activeReportKind === "development"
@@ -1082,7 +1114,20 @@ export function ReportPanel({ locale, copy, result, dataStatus, backtest = null,
                   ))}
                 </div>
               ) : null}
-              {hasText(memorySummary?.note) ? <p>{toText(memorySummary?.note)}</p> : null}
+              {hasText(memoryUsageNote) ? <p>{memoryUsageNote}</p> : null}
+              {memoryUsageFields.length ? (
+                <div className="chip-row">
+                  {memoryUsageFields.map((item) => (
+                    <span key={item} className="chip neutral">{item}</span>
+                  ))}
+                </div>
+              ) : null}
+              {missingNotAssumed.length ? (
+                <p>
+                  {locale === "zh" ? "本次没有自动假设：" : "Not assumed this run: "}
+                  {missingNotAssumed.join(", ")}
+                </p>
+              ) : null}
             </div>
             <div className="mini-card">
               <h3>{locale === "zh" ? "本次结论依据" : "Why this conclusion"}</h3>

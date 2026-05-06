@@ -379,7 +379,7 @@ test("landing example opens a static guided demo report", async ({ page }) => {
   await page.getByRole("link", { name: "See example" }).click();
 
   const tour = page.getByRole("dialog");
-  await expect(tour.getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Meet your GenAI based Agentic Financial Analyzer and Investment Advisor" })).toBeVisible();
   await tour.getByRole("button", { name: "Start Guide" }).click();
   await expect(page).toHaveURL(/\/terminal\?run=demo-guide-run/);
   await expect(tour.getByRole("heading", { name: "Start with a clear question" })).toBeVisible();
@@ -452,7 +452,7 @@ test("terminal shows a first-run product guide and can replay it", async ({ page
   }, productTourStorageKey);
   await page.goto("/terminal");
   const tour = page.getByRole("dialog");
-  await expect(tour.getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Meet your GenAI based Agentic Financial Analyzer and Investment Advisor" })).toBeVisible();
   await expect(tour.getByText("This guide loads a demo report first, then walks through the ask page, conclusion, reports, and backtest.")).toBeVisible();
 
   await tour.getByRole("button", { name: "Start Guide" }).click();
@@ -483,10 +483,10 @@ test("terminal shows a first-run product guide and can replay it", async ({ page
   await expect(tour).toHaveCount(0);
 
   await expect.poll(() => page.evaluate((storageKey) => window.localStorage.getItem(storageKey), productTourStorageKey)).toBe("done");
-  await expect(page.getByRole("heading", { name: "Meet your Financial Agent" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Meet your GenAI based Agentic Financial Analyzer and Investment Advisor" })).toHaveCount(0);
 
   await page.getByRole("button", { name: /Guide|引导/ }).click();
-  await expect(page.getByRole("dialog").getByRole("heading", { name: "Meet your Financial Agent" })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Meet your GenAI based Agentic Financial Analyzer and Investment Advisor" })).toBeVisible();
 });
 
 test("running research jumps above 59 percent once report generation starts", async ({ page }) => {

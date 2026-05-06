@@ -10,12 +10,60 @@ from typing import Any
 
 from .intent import (
     _build_missing_info,
+    _has_filter_value,
     _is_intent_clear,
     _is_intent_usable,
     _is_speculative,
     _localized_assumption,
 )
 from .models import AgentMemoryContext, ParsedIntent
+
+
+MEMORY_REFERENCE_HINTS = [
+    "previous",
+    "last time",
+    "saved",
+    "same preference",
+    "same preferences",
+    "same settings",
+    "my profile",
+    "my preferences",
+    "continue with previous",
+    "continue with saved",
+    "上次",
+    "之前",
+    "历史偏好",
+    "我的偏好",
+    "沿用",
+    "按上次",
+    "按之前",
+    "继续用",
+]
+
+ACTIONABLE_INVESTMENT_HINTS = [
+    "recommend",
+    "stock",
+    "stocks",
+    "equity",
+    "etf",
+    "portfolio",
+    "invest",
+    "investment",
+    "screen",
+    "analyze",
+    "research",
+    "allocation",
+    "股票",
+    "个股",
+    "投资",
+    "基金",
+    "组合",
+    "配置",
+    "推荐",
+    "筛选",
+    "分析",
+    "研究",
+]
 
 
 def _clean_list(values: list[str] | None) -> list[str]:
@@ -49,6 +97,28 @@ def _field_labels(language_code: str) -> dict[str, str]:
     }
 
 
+def _has_current_query_signal(intent: ParsedIntent, query: str) -> bool:
+    """判断当前问题是否足以安全复用历史偏好。"""
+    direct_signals = [
+        intent.portfolio_sizing.capital_amount is not None,
+        bool(intent.risk_profile.tolerance_level),
+        bool(intent.investment_strategy.horizon),
+        bool(intent.investment_strategy.style),
+        bool(intent.investment_strategy.preferred_sectors),
+        bool(intent.investment_strategy.preferred_industries),
+        bool(intent.explicit_targets.tickers),
+        _has_filter_value(intent.fundamental_filters),
+    ]
+    if any(direct_signals):
+        return True
+
+    lowered = query.lower()
+    if any(hint in lowered or hint in query for hint in ACTIONABLE_INVESTMENT_HINTS):
+        return True
+
+    return any(hint in lowered or hint in query for hint in MEMORY_REFERENCE_HINTS)
+
+
 def merge_memory_context(
     intent: ParsedIntent,
     *,
@@ -62,6 +132,15 @@ def merge_memory_context(
             "applied_fields": [],
             "applied_labels": [],
             "note": None,
+        }
+
+    if not _has_current_query_signal(intent, query):
+        return {
+            "used": False,
+            "applied_fields": [],
+            "applied_labels": [],
+            "note": None,
+            "skipped_reason": "current_query_too_vague",
         }
 
     applied_fields: list[str] = []
@@ -140,6 +219,7 @@ def build_preference_snapshot(
             "risk_tolerance": intent.risk_profile.tolerance_level,
             "investment_horizon": intent.investment_strategy.horizon,
             "investment_style": intent.investment_strategy.style,
+            "default_market": "US",
             "preferred_sectors": _clean_list(intent.investment_strategy.preferred_sectors),
             "preferred_industries": _clean_list(intent.investment_strategy.preferred_industries),
             "explicit_tickers": _clean_list(intent.explicit_targets.tickers),

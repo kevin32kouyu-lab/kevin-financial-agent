@@ -949,6 +949,12 @@ export function TerminalView() {
     setHistoricalBacktestEndDate,
     dataStatus,
     profilePreferences,
+    profile,
+    profileDraft,
+    profileUpdatedAt,
+    profileLoading,
+    profileSaving,
+    profileClearing,
     auditSummary,
     agentForm,
     history,
@@ -970,6 +976,10 @@ export function TerminalView() {
     historyLoading,
     runLoading,
     setAgentForm,
+    setProfileDraft,
+    saveProfileDraft,
+    resetProfileDraft,
+    clearStoredProfile,
     loginWithAccount,
     registerWithAccount,
     logoutCurrentAccount,
@@ -1232,9 +1242,18 @@ export function TerminalView() {
             <AccountPanel
               locale={locale}
               currentAccount={currentAccount}
-              loading={accountLoading}
+              loading={accountLoading || profileLoading}
               submitting={authSubmitting}
               notice={accountNotice}
+              profile={profile}
+              profileDraft={profileDraft}
+              profileUpdatedAt={profileUpdatedAt}
+              profileSaving={profileSaving}
+              profileClearing={profileClearing}
+              onProfileChange={setProfileDraft}
+              onProfileSave={saveProfileDraft}
+              onProfileReset={resetProfileDraft}
+              onProfileClear={clearStoredProfile}
               onLogin={loginWithAccount}
               onRegister={registerWithAccount}
               onLogout={logoutCurrentAccount}

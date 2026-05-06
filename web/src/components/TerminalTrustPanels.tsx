@@ -41,21 +41,56 @@ function formatMissingField(locale: Locale, value: string): string {
   const mappingZh: Record<string, string> = {
     capital_amount: "投入金额",
     risk_tolerance: "风险偏好",
+    investment_goal: "投资目标",
     investment_horizon: "投资期限",
     investment_style: "投资风格",
+    default_market: "默认市场",
     preferred_sectors: "偏好板块",
+    preferred_industries: "偏好行业",
+    excluded_sectors: "禁投方向",
+    excluded_industries: "不感兴趣行业",
+    excluded_tickers: "排除标的",
+    explicit_tickers: "关注标的",
     fundamental_filters: "筛选条件",
   };
   const mappingEn: Record<string, string> = {
     capital_amount: "capital",
     risk_tolerance: "risk preference",
+    investment_goal: "goal",
     investment_horizon: "horizon",
     investment_style: "style",
     preferred_sectors: "sectors",
+    preferred_industries: "industries",
+    default_market: "default market",
+    excluded_sectors: "excluded sectors",
+    excluded_industries: "excluded industries",
+    excluded_tickers: "excluded tickers",
+    explicit_tickers: "focus tickers",
     fundamental_filters: "filters",
   };
   const mapping = locale === "zh" ? mappingZh : mappingEn;
   return mapping[value] || value;
+}
+
+/** 说明本次记忆来源。 */
+function formatMemorySource(locale: Locale, value: string): string {
+  if (value === "account_or_browser_profile") {
+    return locale === "zh" ? "来源：账户档案或浏览器记忆" : "Source: account profile or browser memory";
+  }
+  if (value === "current_input_only") {
+    return locale === "zh" ? "来源：仅使用本次输入" : "Source: current input only";
+  }
+  return "";
+}
+
+/** 说明为什么没有使用长期记忆。 */
+function formatSkippedReason(locale: Locale, value: string): string {
+  if (value === "current_query_too_vague") {
+    return locale === "zh"
+      ? "本次问题过于模糊，系统没有用长期记忆直接补成投资建议。"
+      : "The request was too vague, so long-term memory was not used to produce an investment recommendation.";
+  }
+  return value;
 }
 
 /** 提取前台需要的用户目标快照。 */
@@ -149,8 +184,19 @@ export function TerminalTrustPanels({ locale, result, memoryPreview }: TerminalT
   const validationSummary = asRecord(meta?.validation_summary);
   const safetySummary = asRecord(meta?.safety_summary);
   const memorySummary = asRecord(asRecord(result)?.memory_summary);
+  const memoryUsageSummary = asRecord(asRecord(result)?.memory_usage_summary);
   const evidenceObjects = asRecordArray(meta?.evidence_items);
-  const memoryAppliedFields = asStringArray(asRecord(result)?.memory_applied_fields).map((item) => formatMissingField(locale, item));
+  const memoryAppliedLabels = asStringArray(memoryUsageSummary?.applied_labels);
+  const memoryAppliedFields = (
+    memoryAppliedLabels.length
+      ? memoryAppliedLabels
+      : asStringArray(memoryUsageSummary?.applied_fields).length
+        ? asStringArray(memoryUsageSummary?.applied_fields).map((item) => formatMissingField(locale, item))
+        : asStringArray(asRecord(result)?.memory_applied_fields).map((item) => formatMissingField(locale, item))
+  );
+  const missingNotAssumed = asStringArray(memoryUsageSummary?.unused_missing_fields).map((item) => formatMissingField(locale, item));
+  const memorySource = formatMemorySource(locale, String(memoryUsageSummary?.source || ""));
+  const memorySkippedReason = formatSkippedReason(locale, String(memoryUsageSummary?.skipped_reason || ""));
   const coverageFlags = asStringArray(meta?.coverage_flags);
   const confidenceLevel = toText(meta?.confidence_level, "");
   const followUpQuestion = toText(asRecord(result)?.follow_up_question, "");
@@ -162,9 +208,12 @@ export function TerminalTrustPanels({ locale, result, memoryPreview }: TerminalT
   const degradedModules = asStringArray(safetySummary?.degraded_modules);
   const usedSources = asStringArray(safetySummary?.used_sources);
   const memoryNote = toText(
-    memorySummary?.note,
-    buildMemoryFallback(locale, memoryPreview) ||
-      (locale === "zh" ? "如果问题缺少风险、期限或风格，系统会优先复用最近一次的偏好。" : "The system can reuse recent preferences when risk, horizon or style is omitted."),
+    memoryUsageSummary?.note,
+    toText(
+      memorySummary?.note,
+      buildMemoryFallback(locale, memoryPreview) ||
+        (locale === "zh" ? "如果问题缺少风险、期限或风格，系统会优先复用最近一次的偏好。" : "The system can reuse recent preferences when risk, horizon or style is omitted."),
+    ),
   );
 
   return (
@@ -320,6 +369,7 @@ export function TerminalTrustPanels({ locale, result, memoryPreview }: TerminalT
           </div>
         </div>
         <p className="terminal-trust-summary">{memoryNote}</p>
+        {memorySource ? <p className="terminal-trust-footnote">{memorySource}</p> : null}
         {usedSources.length ? (
           <div className="terminal-trust-source-list">
             {usedSources.map((item) => (
@@ -341,6 +391,19 @@ export function TerminalTrustPanels({ locale, result, memoryPreview }: TerminalT
             </div>
           </div>
         ) : null}
+        {missingNotAssumed.length ? (
+          <div className="terminal-trust-subnote">
+            <strong>{locale === "zh" ? "本次没有自动假设的信息" : "Missing details not assumed"}</strong>
+            <div className="chip-row terminal-chip-wrap">
+              {missingNotAssumed.map((item) => (
+                <Badge key={item} variant="outline" className="trust-chip">
+                  {item}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {memorySkippedReason ? <p className="terminal-trust-footnote">{memorySkippedReason}</p> : null}
         {confidenceLevel ? (
           <p className="terminal-trust-footnote">
             {locale === "zh" ? "当前可信度等级" : "Current confidence level"}: {confidenceLevel}

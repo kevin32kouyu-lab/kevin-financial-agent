@@ -9,14 +9,14 @@
 - `app/integrations/llm_client.py`：通过 OpenAI 兼容接口调用 DeepSeek 生成报告。
 - `app/api/runs.py`：处理 run 的创建、查询、重试、按 agent 恢复、撤回和事件流。
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
-- `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
+- `app/api/profile.py`：提供浏览器或账户长期偏好的读取、更新、清空和同步入口。
 - `app/api/history.py`：提供历史研究列表与单条研究审计摘要接口。
 - `app/services/run_service.py`：管理 run 生命周期（含取消和按 agent 恢复），并把任务交给对应 workflow。
 - `app/workflows/financial_agent.py`：执行自然语言研究流程，并在恢复任务时复用上游 checkpoint。
 - `app/agent_runtime/tool_registry.py`：注册内部工具，统一处理 agent 工具权限、重试、超时和调用审计。
 - `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个受限自治角色 agent，以及增强版计划和交接记录。
-- `app/agent_runtime/memory.py`：把最近一次会话里的偏好补到当前问题中，但只补缺失字段。
-- `app/services/agent_coordinator.py`：串联九个角色 agent，发布 `research_plan`、`agent_trace`、`tool_invocations`、`debate_rounds`、checkpoint、stage 和 artifact。
+- `app/agent_runtime/memory.py`：把最近一次会话里的偏好补到当前问题中，但只补缺失字段，并拦截过于模糊的当前输入。
+- `app/services/agent_coordinator.py`：串联九个角色 agent，发布 `research_plan`、`agent_trace`、`tool_invocations`、`debate_rounds`、记忆使用说明、checkpoint、stage 和 artifact。
 - `app/services/agent_service.py`：保留旧导入兼容层，实际指向 `AgentCoordinator`。
 - `app/services/analysis_service.py`：做筛选、数据聚合和研究快照拼装。
 - `app/services/toolkit.py`：统一调度各类数据抓取器（价格、技术、新闻、审计、宏观等）。
@@ -28,21 +28,22 @@
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，标记证据时效、来源可靠性、引用映射和历史资料缺口。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、历史资料缺口、数据降级和时间范围。
 - `app/services/backtest_service.py`：根据历史建议计算组合收益、基准对比、逐票贡献和保守回测口径。
-- `app/services/profile_service.py`：把长期偏好写入本地数据库，并提供读取、更新和清空能力。
+- `app/services/profile_service.py`：把长期偏好写入本地数据库，普通偏好可自动学习，关键偏好需要确认后保存。
 - `app/services/run_audit_service.py`：把完整 run 结果压缩成历史页可读的简版审计摘要。
 - `app/tools/fetchers/yfinance_proxy_router.py`：统一控制 yfinance 的直连/代理/自动重试路由。
-- `app/repositories/sqlite_run_repository.py`：保存 run、stage、artifact、event、backtest 和最近偏好。
+- `app/repositories/sqlite_run_repository.py`：保存 run、stage、artifact、event、backtest、账户和长期偏好。
 - `app/repositories/sqlite_knowledge_repository.py`：保存知识库证据文档，并用 SQLite FTS5 做本地全文检索。
 - `web/src/views/Terminal.tsx`：面向用户的研究终端页面（四页结构：开始研究、研究结论、回测页、历史页）。
+- `web/src/components/terminal/AccountPanel.tsx`：终端顶部个人投研档案中心，负责登录、档案展示、偏好编辑、同步和清空。
 - `web/src/views/Landing.tsx`：首页入口页面（品牌主视觉、动态研究场景、三步引导、语言切换、进入终端）。
 - `web/src/views/Workbench.tsx`：面向开发者的调试与诊断页面（五标签：概览/阶段/智能体/产物/原始 JSON）。
 - `web/src/hooks/useResearchConsole.ts`：前端核心状态管理与 API 调用编排，并同步任务进度、历史和当前 run。
-- `web/src/lib/terminalMemory.ts`：保存轻量记忆与三条标准演示问题，并支持按语言清空本地轻量记忆。
+- `web/src/lib/terminalMemory.ts`：保存浏览器临时记忆与三条标准演示问题，并支持按语言清空本地轻量记忆。
 - `web/src/lib/clientIdentity.ts`：为每个浏览器生成并持久化 `client_id`，作为长期记忆的隔离单位。
 - `web/src/components/ProfileMemoryCard.tsx`：调试或旧入口可复用的长期偏好编辑卡片。
 - `web/src/components/MotionBackdrop.tsx`：全局动态背景层（粒子、流线、光晕）。
-- `web/src/components/TerminalTrustPanels.tsx`：旧版可信度概览组件，用户终端前台不再直接使用。
-- `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要和导出操作。
+- `web/src/components/TerminalTrustPanels.tsx`：可信度概览组件，可展示系统理解、证据、谨慎提示和记忆使用说明。
+- `web/src/components/ReportPanel.tsx`：展示正式研究报告、结论依据、证据引用、校验摘要、记忆使用说明和导出操作。
 - `web/src/components/SimpleInvestmentReport.tsx`：渲染简单版两页展示报告，让网页和 PDF 使用同一套内容结构。
 - `web/src/components/AgentTracePanel.tsx`：展示 debug 专用的 agent 时间线、工具调用、正反论证、checkpoint 和恢复按钮。
 - `web/src/components/BacktestPanel.tsx`：展示回测参数、收益指标、曲线、逐票表格和本次回测口径。
@@ -60,35 +61,37 @@
 6. 前端调用 `POST /api/runs` 创建 run。
 7. `RunService` 根据模式调度 `financial_agent` 或 `structured_analysis` workflow。
 8. `AgentCoordinator` 启动可控多智能体流程，并先由 `IntakeAgent` 完成意图解析。
-9. 前端普通请求会自动带上 `X-Client-Id`，后端据此区分不同浏览器的长期记忆。
-10. 如果当前问题没写清风险、期限或风格，`memory.py` 会把当前浏览器最近一次已知偏好补进来，但不会覆盖本次明确输入。
-11. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，并按当前 `client_id` 写回数据库。
-12. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
-13. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、任务图、工具白名单、辩论策略、恢复策略、失败降级策略和预期输出。
-14. `DataAgent` 通过 `ToolRunner` 调用 Planner 授权的行情研究工具，拉取并组装多源数据。
-15. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
-16. `EvidenceAgent` 通过授权工具写入知识库、检索证据并生成引用映射。
-17. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决。
-18. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
-19. `ValidatorAgent` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
-20. `report_outputs.py` 生成三报告输出；简单版额外生成 `display_model`，作为网页和 PDF 的共同母版。
-21. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
-22. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-23. `/terminal/conclusion` 中 `ReportPanel` 默认选择简单版，并把 `display_model` 交给 `SimpleInvestmentReport` 渲染两页展示报告。
-24. 用户导出简单版 PDF 时，`PdfExportService` 读取同一份 `display_model`；若当前 run 已有最新回测，则第三张图优先切为“组合 vs SPY”。
-25. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
-26. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-27. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-28. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-29. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-30. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
+9. 前端普通请求会自动带上 `X-Client-Id`；未登录时按浏览器隔离长期记忆，登录后优先使用账户档案。
+10. 如果当前问题没写清风险、期限或风格，`memory.py` 会先确认本次问题有明确投资信号，才把最近一次已知偏好补进来；空泛愿望会先进入追问。
+11. `AgentCoordinator` 会把本次用了哪些长期偏好、哪些信息缺失所以没有假设，写入结果和 artifact。
+12. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`；普通偏好自动学习，资金、风险、投资目标等关键偏好进入待确认队列。
+13. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
+14. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、任务图、工具白名单、辩论策略、恢复策略、失败降级策略和预期输出。
+15. `DataAgent` 通过 `ToolRunner` 调用 Planner 授权的行情研究工具，拉取并组装多源数据。
+16. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
+17. `EvidenceAgent` 通过授权工具写入知识库、检索证据并生成引用映射。
+18. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决。
+19. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
+20. `ValidatorAgent` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
+21. `report_outputs.py` 生成三报告输出；简单版额外生成 `display_model`，作为网页和 PDF 的共同母版。
+22. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
+23. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+24. `/terminal/conclusion` 中 `ReportPanel` 默认选择简单版，并把 `display_model` 交给 `SimpleInvestmentReport` 渲染两页展示报告。
+25. 用户导出简单版 PDF 时，`PdfExportService` 读取同一份 `display_model`；若当前 run 已有最新回测，则第三张图优先切为“组合 vs SPY”。
+26. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
+27. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
+28. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+29. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+30. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+31. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
 
 ## 关键设计决定与原因
 
 - 保留 `/terminal` 与 `/debug` 双界面：用户体验和开发排障各自清晰，不互相干扰。
 - 动效采用“高强度默认 + 手动开关 + 系统低动态自动降级”：保证演示质感，同时兼顾性能与可访问性。
-- 长期记忆采用“浏览器本地 `client_id` + 后端按浏览器隔离保存 + 只补缺不覆盖”：先做出连续上下文体验，同时避免在没有登录系统时把不同人的偏好混在一起。
-- 长期记忆继续复用现有 `user_preferences` 存储，而不是新开一套账户系统：这样改动最小，也最稳。
+- 长期记忆采用“浏览器本地 `client_id` + 账户档案优先 + 只补缺不覆盖 + 模糊输入不自动补全”：先做出连续上下文体验，同时避免空泛愿望被误生成投资建议。
+- 长期记忆继续复用现有 `user_preferences` 存储，并用确认状态区分普通偏好和关键偏好：这样改动最小，也能向用户展示系统不会滥用记忆。
+- 浏览器记忆同步到账户必须由用户主动触发：避免登录后把临时测试偏好静默写进账户档案。
 - 历史页单独消费审计摘要接口，而不是直接使用整份 run 结果：这样更稳定，也更适合前台展示。
 - 当研究停在 `needs_clarification` 时，继续研究采用“沿用原问题 + 追加一句补充信息”的方式：减少用户重新填写整份输入的负担。
 - 公开展示优先采用 Docker 单服务部署：因为前后端已经由同一个 FastAPI 服务托管，最适合直接在 Railway 这类平台上公开发布。

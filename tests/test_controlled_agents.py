@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from app.agent_runtime.controlled_agents import PlannerAgent
-from app.agent_runtime.models import AgentRunRequest
+from app.agent_runtime.models import AgentMemoryContext, AgentRunRequest
 from app.services.agent_coordinator import AgentCoordinator, AgentRunHooks
 
 
@@ -250,3 +250,56 @@ async def test_agent_coordinator_stops_before_data_agent_when_clarification_need
     assert response["status"] == "needs_clarification"
     assert "follow_up_question" in response
     assert [item["agent_name"] for item in response["agent_trace"]] == ["IntakeAgent"]
+
+
+@pytest.mark.asyncio
+async def test_agent_coordinator_does_not_turn_vague_goal_into_advice_with_memory():
+    """历史偏好不能把模糊致富愿望直接补成投资建议。"""
+    coordinator = AgentCoordinator(FakeAnalysisService(), FakeReportService())
+    payload = AgentRunRequest(
+        query="I want to be rich",
+        memory_context=AgentMemoryContext(
+            capital_amount=50000,
+            currency="USD",
+            risk_tolerance="Medium",
+            investment_horizon="Long-term",
+            investment_style="Quality",
+        ),
+    )
+
+    response = await coordinator.run(payload)
+
+    assert response["status"] == "needs_clarification"
+    assert "follow_up_question" in response
+    assert "analysis" not in response
+    assert response["memory_resolution"]["reused_memory"] is False
+    assert [item["agent_name"] for item in response["agent_trace"]] == ["IntakeAgent"]
+
+
+@pytest.mark.asyncio
+async def test_agent_coordinator_can_reuse_memory_for_generic_stock_request():
+    """明确投研请求仍可复用历史偏好，减少重复追问。"""
+    coordinator = AgentCoordinator(FakeAnalysisService(), FakeReportService())
+    payload = AgentRunRequest(
+        query="Recommend some stocks",
+        memory_context=AgentMemoryContext(
+            capital_amount=50000,
+            currency="USD",
+            risk_tolerance="Medium",
+            investment_horizon="Long-term",
+            investment_style="Quality",
+        ),
+    )
+
+    response = await coordinator.run(payload)
+
+    assert response["status"] == "completed"
+    assert response["memory_resolution"]["reused_memory"] is True
+    assert response["memory_usage_summary"]["applied_fields"] == response["memory_applied_fields"]
+    assert response["memory_usage_summary"]["unused_missing_fields"] == []
+    assert response["memory_applied_fields"] == [
+        "capital_amount",
+        "risk_tolerance",
+        "investment_horizon",
+        "investment_style",
+    ]

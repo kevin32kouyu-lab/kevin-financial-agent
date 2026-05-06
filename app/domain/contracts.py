@@ -92,13 +92,22 @@ class RunListResponse(BaseModel):
 
 class UserPreferenceValues(BaseModel):
     capital_amount: int | None = None
+    capital_range_min: int | None = None
+    capital_range_max: int | None = None
     currency: str | None = None
     risk_tolerance: str | None = None
+    investment_goal: str | None = None
     investment_horizon: str | None = None
     investment_style: str | None = None
+    default_market: str | None = None
     preferred_sectors: list[str] = Field(default_factory=list)
     preferred_industries: list[str] = Field(default_factory=list)
+    excluded_sectors: list[str] = Field(default_factory=list)
+    excluded_industries: list[str] = Field(default_factory=list)
+    excluded_tickers: list[str] = Field(default_factory=list)
     explicit_tickers: list[str] = Field(default_factory=list)
+    confirmed_fields: list[str] = Field(default_factory=list)
+    pending_confirmations: dict[str, Any] = Field(default_factory=dict)
 
 
 class UserPreferenceSummary(BaseModel):
@@ -114,13 +123,21 @@ class UserPreferenceSummary(BaseModel):
 
 class PreferenceUpdateRequest(BaseModel):
     capital_amount: int | None = None
+    capital_range_min: int | None = None
+    capital_range_max: int | None = None
     currency: str | None = None
     risk_tolerance: str | None = None
+    investment_goal: str | None = None
     investment_horizon: str | None = None
     investment_style: str | None = None
+    default_market: str | None = None
     preferred_sectors: list[str] = Field(default_factory=list)
     preferred_industries: list[str] = Field(default_factory=list)
+    excluded_sectors: list[str] = Field(default_factory=list)
+    excluded_industries: list[str] = Field(default_factory=list)
+    excluded_tickers: list[str] = Field(default_factory=list)
     explicit_tickers: list[str] = Field(default_factory=list)
+    confirmed_fields: list[str] = Field(default_factory=list)
     locale: str = "zh"
     research_mode: str | None = None
     source_query: str | None = None

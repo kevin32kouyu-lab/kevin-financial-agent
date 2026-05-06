@@ -321,9 +321,19 @@ class AgentCoordinator:
             "applied_fields": intake.memory_applied_fields,
             "applied_labels": list(intake.memory_summary.get("applied_labels") or []),
             "note": intake.memory_summary.get("note"),
+            "skipped_reason": intake.memory_summary.get("skipped_reason"),
+        }
+        response["memory_usage_summary"] = {
+            "source": "account_or_browser_profile" if intake.memory_summary.get("used") else "current_input_only",
+            "applied_fields": intake.memory_applied_fields,
+            "applied_labels": list(intake.memory_summary.get("applied_labels") or []),
+            "note": intake.memory_summary.get("note"),
+            "unused_missing_fields": [] if intake.memory_summary.get("used") else list(intake.parsed_intent.agent_control.missing_critical_info),
+            "skipped_reason": intake.memory_summary.get("skipped_reason"),
         }
         await self._publish_artifact(hooks, "derived", "parsed_intent", response["parsed_intent"])
         await self._publish_artifact(hooks, "derived", "memory_resolution", response["memory_resolution"])
+        await self._publish_artifact(hooks, "derived", "memory_usage_summary", response["memory_usage_summary"])
         if payload.memory_context is not None:
             response["memory_context"] = payload.memory_context.model_dump()
             await self._publish_artifact(hooks, "derived", "memory_context", response["memory_context"])
