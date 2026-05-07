@@ -41,6 +41,31 @@ def test_dual_report_outputs_keep_final_report_compatible() -> None:
     assert outputs["development"]["diagnostics"]["validation_warning_count"] == 1
 
 
+def test_development_report_names_langgraph_workflow_when_agent_v2_runs() -> None:
+    """agent_v2 的开发报告应明文标识 LangGraph，便于用户证明实际运行版本。"""
+    outputs = build_dual_report_outputs(
+        bundle=_sample_bundle(),
+        query="Find conservative long-term compounders.",
+        language_code="en",
+        agent_trace=[
+            {"agent_name": "IntakeNode", "status": "completed", "output_summary": "Parsed mandate."},
+            {"agent_name": "ReportQualityGate", "status": "completed", "output_summary": "Report passed."},
+        ],
+        research_plan={
+            "objective": "Find conservative quality compounders.",
+            "agent_architecture": "langgraph_limited_autonomous_multi_agent",
+            "workflow_key": "agent_v2",
+        },
+    )
+
+    markdown = outputs["development"]["markdown"]
+    assert "Workflow engine: LangGraph" in markdown
+    assert "Workflow key: agent_v2" in markdown
+    assert "Architecture: langgraph_limited_autonomous_multi_agent" in markdown
+    assert outputs["development"]["diagnostics"]["workflow_engine"] == "LangGraph"
+    assert outputs["development"]["diagnostics"]["workflow_key"] == "agent_v2"
+
+
 def test_core_holdings_count_follows_risk_profile_and_single_stock_request() -> None:
     """核心持仓数量应根据风险画像和单票请求调整。"""
     low_risk = _sample_bundle()

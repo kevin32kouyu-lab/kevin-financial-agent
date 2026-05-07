@@ -28,7 +28,7 @@
 - `app/tools/fetchers.py`：对接外部数据源并提供主源/备用源回退。
 - `app/services/investment_memo.py`：把结构化研究结果整理成用户画像、依据、校验和安全摘要。
 - `app/services/report_service.py`：提供报告包构建、RAG 证据接入、正式报告生成和最终校验入口。
-- `app/services/report_outputs.py`：把同一次 run 的结果整理成简单版、专业版和开发报告，并为简单版生成网页/PDF 共用展示母版。
+- `app/services/report_outputs.py`：把同一次 run 的结果整理成简单版、专业版和开发报告，为简单版生成网页/PDF 共用展示母版，并在开发报告里明示 LangGraph 或旧版工作流身份。
 - `app/services/pdf_export_service.py`：把报告展示母版或专业/开发报告内容渲染成后端真实 PDF。
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，标记证据时效、来源可靠性、引用映射和历史资料缺口。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、历史资料缺口、数据降级和时间范围。
@@ -107,6 +107,7 @@
 - LangGraph `agent_v2` 与旧版 `agent` 并存，并作为默认自然语言研究流程；旧版保留用于环境变量回退。
 - `agent_v2` 的质量门采用确定性规则：候选为空、核心行情缺失或证据为空会阻断，新闻缺失或证据偏少只降级提醒。
 - LangGraph checkpoint 使用独立 SQLite 文件，现有 run/artifact/event SQLite 仍负责前端展示、历史记录和 debug。
+- 开发者报告必须明文展示 `workflow_key`、工作流引擎和架构名：这样不用打开 SQLite，也能证明当前 run 是否走了 LangGraph `agent_v2`。
 - 工具调用统一经过 `ToolRegistry` / `ToolRunner`：这样权限、重试、超时和审计口径一致，也方便以后接 MCP / Skills 式工具。
 - 恢复策略采用“从指定 agent 重跑到下游”：上游 checkpoint 可复用，下游依赖可能变化，所以不保留旧下游结果。
 - `agent_trace` 记录时间、状态、证据数量和错误原因：这样 debug 能看到每个环节是否真的执行，以及慢点或失败点在哪里。

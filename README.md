@@ -58,7 +58,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 - 支持本地知识库 RAG：每次研究会把新闻摘要、SEC、评分、宏观和数据来源写入 SQLite 知识库
 - 支持结论一致性校验：报告生成后会检查优先标的、评分排序、风险、数据降级、证据时效和时间范围是否一致
 - 支持正反论证：Bull / Bear 提出支持和反对观点，Arbiter 汇总成报告可用裁决
-- 支持细粒度恢复：debug 中可从某个 agent 的 checkpoint 继续，只重跑该 agent 及下游
+- 支持旧版细粒度恢复：debug 中可从某个 agent 的 checkpoint 继续；`agent_v2` 另用 LangGraph checkpoint 保存图执行状态
 - 支持历史资料缺口提示：历史模式缺新闻或 smart money 回放资料时会显式降级，不静默伪装完整
 - 支持历史审计摘要：历史页可直接看到本次研究用了哪些数据、哪里降级了、最终优先看什么
 - 支持更短的澄清追问：当问题关键信息不足时，用一句简短问题继续追问
@@ -79,6 +79,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 - 支持 Run / Step / Artifact / Event 级别追踪
 - 支持正式研究报告、图表摘要与报告导出，其中简单版投资 PDF 采用更短的平衡版模板，并由后端 Playwright/Chromium 生成真实 `.pdf` 文件
 - 支持一次研究生成三份报告：简单版投资报告回答“结论、仓位、风险和怎么执行”，专业版投资报告保留机构研究深度，开发者报告回答“Agent、RAG、校验和回测如何支撑结论”
+- 开发者报告会明文展示工作流引擎、`workflow_key` 和架构名；新版默认显示 LangGraph / `agent_v2`
 - 支持多数据源主源 / 备用源 / 本地缓存
 - 支持同公司多代码防错（如 GOOG/GOOGL）：默认去重，用户明确点名时保留多类别
 - 支持逐票卡片中的可点击新闻链接与 SEC 披露链接
@@ -186,7 +187,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 
 - 概览（运行状态、研究模式、as_of_date、warning flags、模型路由）
 - 阶段（阶段时间线）
-- 智能体（九个 agent 的时间线、工具调用、正反观点、Arbiter 裁决、checkpoint 和恢复入口）
+- 智能体（LangGraph 节点或旧版九个 agent 的时间线、工具调用、正反观点、Arbiter 裁决、checkpoint 和旧版恢复入口）
 - 产物（中间产物明细）
 - 原始 JSON（事件与快照原文）
 
@@ -264,27 +265,41 @@ flowchart LR
     G --> API
 
     API --> RUN["Run Service"]
-    RUN --> COORD["Agent Coordinator"]
-    COORD --> INTAKE["Intake Agent"]
-    COORD --> PLAN["Planner Agent"]
-    COORD --> TOOLRUN["Tool Registry / Runner"]
-    COORD --> DATAAGENT["Data Agent"]
-    COORD --> EVIDENCE["Evidence Agent"]
-    COORD --> BULL["Bull Analyst"]
-    COORD --> BEAR["Bear Analyst"]
-    COORD --> ARBITER["Arbiter Agent"]
-    COORD --> REPORTAGENT["Report Agent"]
-    COORD --> VALIDATOR["Validator Agent"]
+    RUN --> SWITCH["AGENT_WORKFLOW_VERSION<br/>默认 v2"]
+    SWITCH --> GRAPH["agent_v2<br/>LangGraph StateGraph"]
+    SWITCH -.-> LEGACY["agent v1 回退<br/>AgentCoordinator"]
+
+    GRAPH --> INTAKE["IntakeNode"]
+    INTAKE --> PLAN["PlannerNode"]
+    PLAN --> MARKET["MarketDataNode"]
+    PLAN --> FUND["FundamentalsNode"]
+    PLAN --> NEWS["NewsNode"]
+    PLAN --> SECMACRO["SecMacroNode"]
+    MARKET --> MERGE["DataMergeNode"]
+    FUND --> MERGE
+    NEWS --> MERGE
+    SECMACRO --> MERGE
+    MERGE --> DATAQ["DataQualityGate"]
+    DATAQ --> EVIDENCE["EvidenceNode"]
+    EVIDENCE --> EVIDQ["EvidenceQualityGate"]
+    EVIDQ --> BULL["BullCaseNode"]
+    EVIDQ --> BEAR["BearCaseNode"]
+    EVIDQ --> RISK["RiskCaseNode"]
+    BULL --> ARBITER["ArbiterNode"]
+    BEAR --> ARBITER
+    RISK --> ARBITER
+    ARBITER --> REPORTAGENT["ReportNode"]
+    REPORTAGENT --> REPORTQ["ReportQualityGate"]
+    REPORTQ --> FINALIZE["FinalizeNode"]
+
+    LEGACY --> COORD["旧版九角色 Coordinator"]
     RUN --> ANALYSIS["Analysis Service"]
-    DATAAGENT --> TOOLRUN
-    EVIDENCE --> TOOLRUN
-    REPORTAGENT --> TOOLRUN
-    VALIDATOR --> TOOLRUN
+    GRAPH --> TOOLRUN["Tool Registry / Runner"]
+    LEGACY --> TOOLRUN
     TOOLRUN --> ANALYSIS
     TOOLRUN --> REPORT["Report Service"]
-    BULL --> ARBITER
-    BEAR --> ARBITER
-    REPORT --> OUTPUTS["Three Report Outputs"]
+    FINALIZE --> OUTPUTS["Three Report Outputs"]
+    REPORT --> OUTPUTS
     OUTPUTS --> PDF["PDF Export Service"]
     ANALYSIS --> TOOLKIT["Market Toolkit"]
 
@@ -297,6 +312,7 @@ flowchart LR
     FETCH --> FRED["FRED"]
 
     RUN --> RUNDB["Run SQLite"]
+    GRAPH --> CHECKPOINT["LangGraph Checkpoint SQLite"]
     ANALYSIS --> MARKETDB["Market SQLite"]
 ```
 
@@ -316,25 +332,41 @@ flowchart TD
     API --> History["History / Profile / Auth / Backtest API"]
     RunService --> DB["Run SQLite<br/>run / stage / artifact / event / user / backtest / preference"]
     RunService --> Runner["WorkflowRunner"]
-    Runner --> AgentWorkflow["FinancialAgentWorkflow"]
+    Runner --> AgentV2["LangGraphFinancialAgentWorkflow<br/>agent_v2 默认"]
+    Runner -.-> AgentWorkflow["FinancialAgentWorkflow<br/>AGENT_WORKFLOW_VERSION=v1"]
     Runner --> StructuredWorkflow["StructuredAnalysisWorkflow"]
 
-    AgentWorkflow --> Coordinator["AgentCoordinator"]
-    Coordinator --> Intake["Intake<br/>理解问题并合并记忆"]
-    Intake --> Planner["Planner<br/>计划、任务图、工具白名单"]
-    Planner --> DataAgent["DataAgent"]
-    DataAgent --> EvidenceAgent["EvidenceAgent"]
-    EvidenceAgent --> BullBear["Bull / Bear"]
-    BullBear --> Arbiter["Arbiter"]
-    Arbiter --> ReportAgent["ReportAgent"]
-    ReportAgent --> Validator["ValidatorAgent"]
-    Validator --> Outputs["三报告输出<br/>简单版 / 专业版 / 开发者报告 / display_model"]
+    AgentV2 --> Graph["LangGraph StateGraph<br/>节点状态 / 条件路由 / checkpoint"]
+    Graph --> Intake["IntakeNode<br/>理解问题并合并记忆"]
+    Intake --> Planner["PlannerNode<br/>计划、任务图、质量门策略"]
+    Planner --> MarketNode["MarketDataNode"]
+    Planner --> FundamentalsNode["FundamentalsNode"]
+    Planner --> NewsNode["NewsNode"]
+    Planner --> SecMacroNode["SecMacroNode"]
+    MarketNode --> Merge["DataMergeNode"]
+    FundamentalsNode --> Merge
+    NewsNode --> Merge
+    SecMacroNode --> Merge
+    Merge --> DataGate["DataQualityGate<br/>候选 / 行情 / 缺口"]
+    DataGate --> EvidenceNode["EvidenceNode"]
+    EvidenceNode --> EvidenceGate["EvidenceQualityGate<br/>证据数量 / 引用"]
+    EvidenceGate --> Debate["Bull / Bear / Risk Case"]
+    Debate --> Arbiter["ArbiterNode"]
+    Arbiter --> ReportNode["ReportNode"]
+    ReportNode --> ReportGate["ReportQualityGate"]
+    ReportGate --> Finalize["FinalizeNode"]
+    Finalize --> Outputs["三报告输出<br/>简单版 / 专业版 / 开发者报告 / display_model"]
+
+    AgentWorkflow --> Coordinator["AgentCoordinator<br/>旧版九角色回退"]
+    Coordinator --> Outputs
 
     Planner --> ToolRunner["ToolRegistry / ToolRunner<br/>权限、重试、超时、工具审计"]
-    DataAgent --> ToolRunner
-    EvidenceAgent --> ToolRunner
-    ReportAgent --> ToolRunner
-    Validator --> ToolRunner
+    MarketNode --> ToolRunner
+    FundamentalsNode --> ToolRunner
+    NewsNode --> ToolRunner
+    SecMacroNode --> ToolRunner
+    EvidenceNode --> ToolRunner
+    ReportNode --> ToolRunner
 
     ToolRunner --> Analysis["AnalysisService<br/>股票筛选与研究快照"]
     Analysis --> Toolkit["MarketToolKit"]
@@ -347,6 +379,7 @@ flowchart TD
     ReportService --> Validation["RAG Validation<br/>证据、风险、评分和时间范围校验"]
 
     Outputs --> DB
+    Graph --> CheckpointDB["LangGraph SQLite checkpoint<br/>只负责图恢复"]
     DB --> SSE["SSE 事件流"]
     SSE --> Terminal
     DB --> Views["结论页 / 历史页 / Debug"]
@@ -372,7 +405,7 @@ flowchart TD
 ## Run 控制（新增）
 
 - `POST /api/runs/{run_id}/cancel`：撤回正在执行的任务
-- `POST /api/runs/{run_id}/resume-from-agent`：从指定 agent 的 checkpoint 继续，重跑该 agent 及下游
+- `POST /api/runs/{run_id}/resume-from-agent`：旧版 agent 从指定 checkpoint 继续，重跑该 agent 及下游
 - run 状态新增：`cancelled`
 - SSE 事件新增：`run.cancelled`
 
@@ -527,6 +560,7 @@ npx playwright install chromium
 - 品牌首页和四页终端。
 - 受限自治九角色 agent 流程。
 - LangGraph `agent_v2` 研究图、数据/证据/报告质量门和 SQLite checkpoint。
+- 开发者报告已明确显示 LangGraph / `agent_v2` / 架构名。
 - 工具调用审计、正反论证和 agent checkpoint 恢复。
 - 本地知识库 RAG。
 - 结论一致性校验。

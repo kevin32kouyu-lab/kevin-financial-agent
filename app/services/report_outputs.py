@@ -705,6 +705,7 @@ def _build_development_markdown(
     checks = _records(meta.get("validation_checks"))
     evidence = _records(meta.get("retrieved_evidence"))
     citation_map = _record(meta.get("citation_map"))
+    workflow_identity = _workflow_identity(research_plan=research_plan, agent_trace=agent_trace)
 
     if language_code == "zh":
         lines = [
@@ -712,6 +713,9 @@ def _build_development_markdown(
             "",
             "## Run Overview",
             f"- 报告模式：{_text(bundle.get('report_mode'), 'unknown')}",
+            f"- 工作流引擎：{workflow_identity['engine']}",
+            f"- 工作流键：{workflow_identity['workflow_key']}",
+            f"- 架构：{workflow_identity['architecture']}",
             f"- 模型路由：{_text(runtime.get('provider'), 'unknown')} / {_text(runtime.get('route_mode'), 'unknown')}",
             f"- 可信度：{_text(meta.get('confidence_level'), 'not rated')}",
             "",
@@ -723,6 +727,9 @@ def _build_development_markdown(
             "",
             "## Run Overview",
             f"- Report mode: {_text(bundle.get('report_mode'), 'unknown')}",
+            f"- Workflow engine: {workflow_identity['engine']}",
+            f"- Workflow key: {workflow_identity['workflow_key']}",
+            f"- Architecture: {workflow_identity['architecture']}",
             f"- Model route: {_text(runtime.get('provider'), 'unknown')} / {_text(runtime.get('route_mode'), 'unknown')}",
             f"- Confidence: {_text(meta.get('confidence_level'), 'not rated')}",
             "",
@@ -905,7 +912,11 @@ def _build_development_diagnostics(
     assumptions = _record(_record(backtest_payload.get("meta")).get("assumptions"))
     evidence_count = len(evidence)
     validation_check_count = len(checks)
+    workflow_identity = _workflow_identity(research_plan=research_plan, agent_trace=agent_trace)
     return {
+        "workflow_engine": workflow_identity["engine"],
+        "workflow_key": workflow_identity["workflow_key"],
+        "workflow_architecture": workflow_identity["architecture"],
         "agent_count": len(agent_trace),
         "evidence_count": evidence_count,
         "validation_check_count": validation_check_count,
@@ -917,6 +928,29 @@ def _build_development_diagnostics(
         "backtest_assumptions": [f"{key}={value}" for key, value in assumptions.items()],
         "report_mode": bundle.get("report_mode"),
         "report_error": bundle.get("report_error"),
+    }
+
+
+def _workflow_identity(*, research_plan: GenericRecord, agent_trace: list[GenericRecord]) -> GenericRecord:
+    """从研究计划和 trace 中推断本次开发报告对应的工作流版本。"""
+    architecture = _text(research_plan.get("agent_architecture"), "")
+    workflow_key = _text(research_plan.get("workflow_key"), "")
+    trace_names = [_text(item.get("agent_name"), "") for item in agent_trace]
+    looks_like_langgraph = (
+        workflow_key == "agent_v2"
+        or "langgraph" in architecture.lower()
+        or any(name.endswith("Node") or name.endswith("QualityGate") for name in trace_names)
+    )
+    if looks_like_langgraph:
+        return {
+            "engine": "LangGraph",
+            "workflow_key": workflow_key or "agent_v2",
+            "architecture": architecture or "langgraph_limited_autonomous_multi_agent",
+        }
+    return {
+        "engine": "Legacy AgentCoordinator",
+        "workflow_key": workflow_key or "agent",
+        "architecture": architecture or "controlled_multi_agent",
     }
 
 

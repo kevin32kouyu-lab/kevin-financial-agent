@@ -11,11 +11,16 @@
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
 - `app/api/profile.py`：提供当前浏览器长期偏好的读取、更新和清空接口。
 - `app/api/history.py`：提供历史研究列表、单条研究审计摘要和 PDF 导出接口。
-- `app/services/run_service.py`：管理 run 生命周期（含取消），并把任务交给对应 workflow。
-- `app/workflows/financial_agent.py`：执行自然语言研究流程。
-- `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Report、Validator 六个固定角色 agent，以及增强版计划和交接记录。
+- `app/services/run_service.py`：管理 run 生命周期（含取消），并按配置把自然语言任务交给默认 `agent_v2` 或旧版 `agent`。
+- `app/workflows/financial_agent.py`：执行旧版自然语言研究流程，保留为 `AGENT_WORKFLOW_VERSION=v1` 回退路径。
+- `app/workflows/langgraph_financial_agent.py`：执行 LangGraph 版自然语言研究图，并把节点状态同步回现有 stage、artifact 和 snapshot。
+- `app/agent_graph/state.py`：定义 LangGraph 共享状态、质量门结果和 warning 结构。
+- `app/agent_graph/graph.py`：用 LangGraph `StateGraph` 编排 intake、planner、数据拆分、质量门、证据、辩论、报告和 finalize。
+- `app/agent_graph/quality.py`：提供数据、证据和报告的确定性质量门规则。
+- `app/agent_graph/nodes/`：保存 LangGraph 各节点实现，复用现有分析、RAG、报告和正反论证能力。
+- `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个受限自治角色 agent，以及增强版计划和交接记录。
 - `app/agent_runtime/memory.py`：把最近一次会话里的偏好补到当前问题中，但只补缺失字段。
-- `app/services/agent_coordinator.py`：串联六个角色 agent，发布 `research_plan`、`agent_trace`、stage 和 artifact。
+- `app/services/agent_coordinator.py`：串联旧版九个角色 agent，发布 `research_plan`、`agent_trace`、stage 和 artifact。
 - `app/services/agent_service.py`：保留旧导入兼容层，实际指向 `AgentCoordinator`。
 - `app/services/analysis_service.py`：做筛选、数据聚合和研究快照拼装。
 - `app/services/toolkit.py`：统一调度各类数据抓取器（价格、技术、新闻、审计、宏观等）。
@@ -26,7 +31,7 @@
 - `app/services/pdf_export_service.py`：按 `kind=simple_investment/professional_investment/development` 把 run 的报告数据整理成打印版 HTML，并调用 Playwright 生成真实 PDF；旧 `kind=investment` 继续映射到简单版。
 - `app/services/rag_service.py`：把研究结果写入本地知识库，检索证据，并标记证据时效、来源可靠性和引用映射。
 - `app/services/rag_validation.py`：统一计算报告可信度，并检查证据时效、优先标的、评分排序、风险覆盖、数据降级和时间范围。
-- `app/services/tool_registry.py`：提供受控工具注册、权限检查、超时、重试、缓存和调用审计的基础层。
+- `app/agent_runtime/tool_registry.py`：提供受控工具注册、权限检查、超时、重试、缓存和调用审计的基础层。
 - `app/services/auth_service.py`：管理本地用户、会话 token、密码哈希和账户审计事件。
 - `app/services/backtest_service.py`：根据历史建议计算组合收益、基准对比、逐票贡献和回测 V2 口径。
 - `app/services/profile_service.py`：把长期偏好写入浏览器档案或账户档案，并支持登录后绑定浏览器记忆。
@@ -74,22 +79,22 @@
 9. 历史页通过 `/terminal/archive` 独立查看最近报告、持续跟踪列表，并把旧研究一键带回提问页继续跟进。
 10. 首页“看示例”和终端“引导”会走 `/terminal?guide=demo` 或本地重播信号，固定使用 `demo-guide-run`，不调用 `POST /api/runs`，也不创建后端回测。
 11. 前端调用 `POST /api/runs` 创建真实 run。
-12. `RunService` 根据模式调度 `financial_agent` 或 `structured_analysis` workflow。
-13. `AgentCoordinator` 启动可控多智能体流程，并先由 `IntakeAgent` 完成意图解析。
+12. `RunService` 根据模式和 `AGENT_WORKFLOW_VERSION` 调度 `agent_v2`、旧版 `agent` 或 `structured_analysis` workflow。
+13. 默认自然语言研究由 `LangGraphFinancialAgentWorkflow` 启动 `StateGraph`；旧版 `agent` 才由 `AgentCoordinator` 启动可控多智能体流程。
 14. 前端普通请求会自动带上 `X-Client-Id`，登录后还会通过账户会话识别用户。
 15. 未登录时后端继续按浏览器隔离长期记忆；登录后 `ProfileService` 优先使用账户档案。
 16. 如果当前问题没写清风险、期限或风格，`memory.py` 会把最近一次已知偏好补进来，但不会覆盖本次明确输入。
 17. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`，并写回浏览器或账户档案。
 18. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run、账户和偏好状态，供后续研究继续复用。
-19. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、数据需求、候选工具、失败降级策略和预期输出。
+19. `PlannerNode` 或旧版 `PlannerAgent` 生成 `research_plan`，明确本次研究目标、数据需求、候选工具、失败降级策略和预期输出。
 20. `ToolRegistry` 定义工具权限、超时、重试、缓存和审计口径，供后续 agent 工具调用统一接入。
-21. `DataAgent` 调用 `AnalysisService` 拉取并组装多源数据。
+21. `agent_v2` 的 market、fundamentals、news、sec_macro 数据节点复用 `AnalysisService` 拉取并拆分多源数据；旧版 `DataAgent` 仍走同一服务。
 22. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
-23. `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
-24. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
-25. `ValidatorAgent` 校验报告与结构化数据、RAG 证据是否一致，并统一回写可信度。
+23. `EvidenceNode` 或旧版 `EvidenceAgent` 通过 `ReportService` 和 `KnowledgeRagService` 写入知识库、检索证据并生成引用映射。
+24. `ReportNode` 或旧版 `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
+25. `agent_v2` 在数据、证据和报告后执行确定性质量门；旧版 `ValidatorAgent` 继续校验报告与结构化数据、RAG 证据是否一致。
 26. `report_outputs.py` 基于同一份 run 生成三份输出：简单版投资报告给普通用户快速决策，专业版投资报告保留机构研究深度，开发者报告说明 Agent、RAG、校验和回测支撑链路。
-27. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
+27. LangGraph 节点或旧版 `AgentCoordinator` 汇总 `agent_trace`，每个节点或 agent 的状态、开始/结束时间、耗时、输入、输出、证据数量、警告和产物都会进入 artifact。
 28. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
 29. Terminal 四页切换由 `useTerminalNavigation` 在前端内部完成，URL 仍保留 `/terminal/...` 与 `?run=<id>`。
 30. 结论页优先加载 run detail；artifact、audit summary 和 backtest 不阻塞正式报告阅读。
@@ -114,7 +119,11 @@
 - 公开发布优先采用 Docker 单服务部署：因为前后端已经由同一个 FastAPI 服务托管，最适合直接在 Railway 这类平台上公开发布。
 - Railway 的持久化卷挂到 `/app/data/runtime`：这样既能保留运行历史，也不会覆盖镜像里的 `data/seed` 种子文件。
 - 知识库采用本地 SQLite + FTS5，而不是外部向量数据库：保持 Railway 单服务部署简单，同时让报告证据可持久化、可回查。
-- 多智能体采用“可控多角色”而不是完全自治辩论：每个 agent 有固定职责和交接记录，稳定性优先。
+- 多智能体采用“可控多角色”而不是完全自治辩论：每个 agent 或图节点有固定职责和交接记录，稳定性优先。
+- LangGraph `agent_v2` 作为默认自然语言研究流程：把旧串联流程拆成节点状态、并行数据节点、质量门和 checkpoint，减少单个中间产物错误继续扩散。
+- 旧版 `agent` 继续保留为 `AGENT_WORKFLOW_VERSION=v1` 回退路径：上线新版时不删除已验证的旧流程。
+- `agent_v2` 的质量门采用确定性规则：候选为空、核心行情缺失或证据为空会阻断，新闻缺失或证据偏少只降级提醒。
+- LangGraph checkpoint 使用独立 SQLite 文件：现有 run/artifact/event SQLite 仍负责前端展示、历史记录和 debug。
 - `agent_trace` 记录时间、状态、证据数量和错误原因：这样 debug 能看到每个环节是否真的执行，以及慢点或失败点在哪里。
 - 保留 `AgentService` 兼容导入：旧 workflow 和外部调用不用跟着重命名，实际执行已经切到 `AgentCoordinator`。
 - LLM 路由统一使用 DeepSeek：减少供应商分叉，避免报告生成时出现主备模型口径不一致。
