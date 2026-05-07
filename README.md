@@ -11,7 +11,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 - 项目主题：AI-powered financial research agent for US equities。
 - 用户入口：`/terminal`，包含开始研究、研究结论、回测页、历史页。
 - 开发者入口：`/debug`，展示 agent trace、阶段、产物和原始 JSON。
-- 核心卖点：受限自治多智能体流程、本地知识库 RAG、工具调用审计、正反论证、结论一致性校验、三报告输出、真实 PDF 报告导出、回测 V2、长期记忆。
+- 核心卖点：受限自治多智能体流程、LangGraph `agent_v2` 研究图、本地知识库 RAG、工具调用审计、正反论证、结论一致性校验、三报告输出、真实 PDF 报告导出、回测 V2、长期记忆。
 - 部署方式：单仓库、单 Docker 服务，适合 Railway 发布。
 - 当前定位：研究型正式开源项目，不是投资建议平台，也不是完整生产交易系统。
 
@@ -37,6 +37,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 - 支持中文 / 英文投资需求输入
 - 支持自然语言 Agent 研究模式和结构化筛选模式
 - 支持受限自治多智能体投研流程：Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个角色分工协作
+- 支持 LangGraph 版 `agent_v2`：把自然语言研究拆成节点状态、数据拆分、质量门、证据门、报告门和 SQLite checkpoint，并作为默认自然语言研究流程
 - 支持内部工具中台：agent 只能调用 Planner 授权的工具，系统统一记录权限、重试、耗时和调用审计
 - 支持增强版 `research_plan` 与 `agent_trace`：每次研究都会留下任务图、工具白名单、辩论策略、checkpoint、agent 状态、耗时和证据数量
 - 支持 `/terminal` 双模式：实时研究 + 历史回测研究
@@ -102,6 +103,7 @@ GenAI based Agentic Financial Analyzer and Investment Advisor 是一个面向美
 - Pydantic
 - Uvicorn
 - pandas
+- LangGraph
 
 ### LLM
 
@@ -444,6 +446,7 @@ $env:DEEPSEEK_API_KEY="your-key"
 | `FINANCIAL_AGENT_MARKET_DB_PATH` | market 数据库路径 |
 | `FINANCIAL_AGENT_KNOWLEDGE_DB_PATH` | 本地知识库数据库路径 |
 | `FINANCIAL_AGENT_UNIVERSE_CSV` | CSV 种子路径 |
+| `AGENT_WORKFLOW_VERSION` / `FINANCIAL_AGENT_WORKFLOW_VERSION` | 自然语言研究编排版本，默认 `v2`，设为 `v1` 可临时回退旧版 |
 
 ## Railway 部署提醒
 
@@ -492,6 +495,13 @@ $env:MARKET_PROXY_URL="http://127.0.0.1:7890"
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+自然语言研究默认使用 LangGraph 版 `agent_v2`。如需临时回退旧版：
+
+```powershell
+$env:AGENT_WORKFLOW_VERSION="v1"
+.\.venv\Scripts\python.exe main.py
+```
+
 前端构建：
 
 ```powershell
@@ -516,6 +526,7 @@ npx playwright install chromium
 
 - 品牌首页和四页终端。
 - 受限自治九角色 agent 流程。
+- LangGraph `agent_v2` 研究图、数据/证据/报告质量门和 SQLite checkpoint。
 - 工具调用审计、正反论证和 agent checkpoint 恢复。
 - 本地知识库 RAG。
 - 结论一致性校验。
@@ -528,6 +539,7 @@ npx playwright install chromium
 仍有限制：
 
 - 当前不是完全开放自治系统，而是受 Planner 白名单限制的受限自治流程。
+- LangGraph `agent_v2` 已作为默认自然语言研究流程；旧版 `agent` 仍保留，可通过环境变量回退。
 - RAG 使用本地 SQLite FTS5，不是外部向量数据库。
 - 历史新闻和 smart money 仍可能降级。
 - 回测已经加入保守口径，但仍不是专业交易系统级别。
@@ -569,6 +581,7 @@ npx playwright install chromium
 - 2026-04-29：检索了 Fidelity、Schwab、Betterment、Morningstar 等公开报告/组合分析样例。结论：用户友好型报告通常先给结论和动作，再用仓位、评分、回测/风险、证据和校验支撑；本项目简单版报告采用两页展示型结构，并要求网页与 PDF 共用同一母版。
 - 2026-04-22：本轮按既定计划实现受限自治 agent、工具中台和 checkpoint 恢复，没有新增外部方案检索。
 - 2026-05-02：本轮按既定计划完善登录系统与长期记忆规则，没有新增外部方案检索。
+- 2026-05-07：检索 LangGraph 官方文档。结论：LangGraph 适合做节点化 Agent 编排、checkpoint 和条件路由；本项目第一版只引入 `agent_v2` 编排层，不重写数据源和前端。
 
 ## 已完成与待办
 
@@ -593,6 +606,7 @@ npx playwright install chromium
 - 本地知识库 RAG 与报告后结论校验层
 - 可控多智能体流程（六个角色 agent、研究计划、agent 交接记录）
 - 受限自治多智能体流程（九个角色 agent、工具白名单、正反论证、Arbiter 裁决）
+- LangGraph `agent_v2` 编排层（节点状态、质量门、条件路由、SQLite checkpoint、旧前端兼容输出）
 - 工具中台与调用审计（ToolRegistry / ToolRunner / tool_invocations）
 - agent checkpoint 与 debug 恢复入口
 - 历史资料回放缺口提示（新闻、smart money、SEC 摘要）

@@ -56,6 +56,7 @@ class AppSettings:
     universe_refresh_interval_hours: int = 24
     macro_refresh_interval_hours: int = 6
     pdf_export_timeout_seconds: int = 45
+    agent_workflow_version: str = "v2"
 
     alpha_vantage_api_key: str | None = None
     finnhub_api_key: str | None = None
@@ -119,6 +120,13 @@ class AppSettings:
             pdf_export_timeout_seconds = max(int(os.getenv("FINANCIAL_AGENT_PDF_EXPORT_TIMEOUT_SECONDS", "45")), 5)
         except ValueError:
             pdf_export_timeout_seconds = 45
+        agent_workflow_version = (
+            os.getenv("AGENT_WORKFLOW_VERSION", "").strip().lower()
+            or os.getenv("FINANCIAL_AGENT_WORKFLOW_VERSION", "").strip().lower()
+            or "v2"
+        )
+        if agent_workflow_version not in {"v1", "v2"}:
+            agent_workflow_version = "v1"
 
         alpha_vantage_api_key = (
             os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
@@ -192,6 +200,7 @@ class AppSettings:
             universe_refresh_interval_hours=universe_refresh_interval_hours,
             macro_refresh_interval_hours=macro_refresh_interval_hours,
             pdf_export_timeout_seconds=pdf_export_timeout_seconds,
+            agent_workflow_version=agent_workflow_version,
             alpha_vantage_api_key=alpha_vantage_api_key,
             finnhub_api_key=finnhub_api_key,
             alpaca_api_key=alpaca_api_key,

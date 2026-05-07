@@ -158,11 +158,13 @@ class RunService:
         *,
         profile_service: ProfileService,
         run_audit_service: RunAuditService,
+        agent_workflow_key: str = "agent",
     ):
         self.repository = repository
         self.runner = runner
         self.profile_service = profile_service
         self.run_audit_service = run_audit_service
+        self.agent_workflow_key = agent_workflow_key if agent_workflow_key in {"agent", "agent_v2"} else "agent"
 
     @staticmethod
     def _make_title(payload: RunCreateRequest) -> str:
@@ -172,6 +174,10 @@ class RunService:
 
         tickers = ", ".join((payload.structured.explicit_targets.tickers if payload.structured else [])[:3])
         return f"结构化筛选：{tickers}".strip("：") or "结构化筛选任务"
+
+    def _workflow_key_for_mode(self, mode: str) -> str:
+        """按运行模式和配置选择 workflow。"""
+        return self.agent_workflow_key if mode == "agent" else mode
 
     def _apply_stored_memory(self, payload: RunCreateRequest, *, client_id: str, user: AuthUser | None) -> RunCreateRequest:
         """新建研究时自动带上账户或浏览器长期记忆。"""
@@ -226,7 +232,7 @@ class RunService:
         self.repository.create_run(
             run_id=run_id,
             mode=payload.mode,
-            workflow_key=payload.mode,
+            workflow_key=self._workflow_key_for_mode(payload.mode),
             title=self._make_title(payload),
             parent_run_id=parent_run_id,
             metadata={"source": "api", "mode": payload.mode, "client_id": client_id, "user_id": user.id if user else None},

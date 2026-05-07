@@ -20,6 +20,7 @@ from app.services.run_audit_service import RunAuditService
 from app.services.run_service import RunService, WorkflowRunner
 from app.services.toolkit import MarketToolKit
 from app.workflows.financial_agent import FinancialAgentWorkflow
+from app.workflows.langgraph_financial_agent import LangGraphFinancialAgentWorkflow
 from app.workflows.structured_analysis import StructuredAnalysisWorkflow
 
 
@@ -72,9 +73,21 @@ def build_runtime(settings: AppSettings | None = None) -> ApplicationRuntime:
     workflows = {
         "structured": StructuredAnalysisWorkflow(analysis_service),
         "agent": FinancialAgentWorkflow(agent_service, profile_service=profile_service),
+        "agent_v2": LangGraphFinancialAgentWorkflow(
+            analysis_service,
+            report_service,
+            profile_service=profile_service,
+        ),
     }
     workflow_runner = WorkflowRunner(repository=repository, workflows=workflows)
-    run_service = RunService(repository=repository, runner=workflow_runner, profile_service=profile_service, run_audit_service=run_audit_service)
+    agent_workflow_key = "agent_v2" if resolved_settings.agent_workflow_version == "v2" else "agent"
+    run_service = RunService(
+        repository=repository,
+        runner=workflow_runner,
+        profile_service=profile_service,
+        run_audit_service=run_audit_service,
+        agent_workflow_key=agent_workflow_key,
+    )
     return ApplicationRuntime(
         settings=resolved_settings,
         repository=repository,

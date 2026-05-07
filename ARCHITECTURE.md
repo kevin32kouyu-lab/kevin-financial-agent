@@ -11,8 +11,13 @@
 - `app/api/backtests.py`：处理回测创建与回测结果查询。
 - `app/api/profile.py`：提供浏览器或账户长期偏好的读取、更新、清空和同步入口。
 - `app/api/history.py`：提供历史研究列表与单条研究审计摘要接口。
-- `app/services/run_service.py`：管理 run 生命周期（含取消和按 agent 恢复），并把任务交给对应 workflow。
+- `app/services/run_service.py`：管理 run 生命周期（含取消和按 agent 恢复），并按配置把自然语言任务交给旧版 `agent` 或新版 `agent_v2`。
 - `app/workflows/financial_agent.py`：执行自然语言研究流程，并在恢复任务时复用上游 checkpoint。
+- `app/workflows/langgraph_financial_agent.py`：执行 LangGraph 版自然语言研究图，并把节点状态同步回现有 stage、artifact 和 snapshot。
+- `app/agent_graph/state.py`：定义 LangGraph 共享状态、质量门结果和 warning 结构。
+- `app/agent_graph/graph.py`：用 LangGraph `StateGraph` 编排 intake、planner、数据拆分、质量门、证据、辩论、报告和 finalize。
+- `app/agent_graph/quality.py`：提供数据、证据和报告的确定性质量门规则。
+- `app/agent_graph/nodes/`：保存 LangGraph 各节点实现，复用现有分析、RAG、报告和正反论证能力。
 - `app/agent_runtime/tool_registry.py`：注册内部工具，统一处理 agent 工具权限、重试、超时和调用审计。
 - `app/agent_runtime/controlled_agents.py`：定义 Intake、Planner、Data、Evidence、Bull、Bear、Arbiter、Report、Validator 九个受限自治角色 agent，以及增强版计划和交接记录。
 - `app/agent_runtime/memory.py`：把最近一次会话里的偏好补到当前问题中，但只补缺失字段，并拦截过于模糊的当前输入。
@@ -59,31 +64,32 @@
 4. 回测页通过 `/terminal/backtest` 独立查看组合与单股回测。
 5. 历史页通过 `/terminal/archive` 独立查看最近报告并再次打开。
 6. 前端调用 `POST /api/runs` 创建 run。
-7. `RunService` 根据模式调度 `financial_agent` 或 `structured_analysis` workflow。
-8. `AgentCoordinator` 启动可控多智能体流程，并先由 `IntakeAgent` 完成意图解析。
+7. `RunService` 根据模式和 `AGENT_WORKFLOW_VERSION` 调度 `structured_analysis`、旧版 `agent` 或新版 `agent_v2` workflow。
+8. 旧版 `agent` 由 `AgentCoordinator` 启动可控多智能体流程；新版 `agent_v2` 由 LangGraph `StateGraph` 启动节点化研究图。
 9. 前端普通请求会自动带上 `X-Client-Id`；未登录时按浏览器隔离长期记忆，登录后优先使用账户档案。
 10. 如果当前问题没写清风险、期限或风格，`memory.py` 会先确认本次问题有明确投资信号，才把最近一次已知偏好补进来；空泛愿望会先进入追问。
-11. `AgentCoordinator` 会把本次用了哪些长期偏好、哪些信息缺失所以没有假设，写入结果和 artifact。
-12. `financial_agent` workflow 会把这次研究形成的偏好快照交给 `ProfileService`；普通偏好自动学习，资金、风险、投资目标等关键偏好进入待确认队列。
+11. `AgentCoordinator` 或 LangGraph 节点会把本次用了哪些长期偏好、哪些信息缺失所以没有假设，写入结果和 artifact。
+12. 自然语言 workflow 会把这次研究形成的偏好快照交给 `ProfileService`；普通偏好自动学习，资金、风险、投资目标等关键偏好进入待确认队列。
 13. `useResearchConsole` 会在 run 完成或需要补充信息时同步当前 run 与偏好状态，供后续研究继续复用。
-14. `PlannerAgent` 生成 `research_plan`，明确本次研究目标、任务图、工具白名单、辩论策略、恢复策略、失败降级策略和预期输出。
-15. `DataAgent` 通过 `ToolRunner` 调用 Planner 授权的行情研究工具，拉取并组装多源数据。
+14. `PlannerAgent` 或 `PlannerNode` 生成 `research_plan`，明确本次研究目标、任务图、工具白名单、辩论策略、恢复策略、失败降级策略和预期输出。
+15. 旧版 `DataAgent` 通过 `ToolRunner` 聚合数据；新版 `agent_v2` 先复用结构化分析服务，再拆成 market、fundamentals、news、sec_macro 数据包。
 16. `investment_memo` 把分析结果整理成“用户画像 / 依据 / 校验 / 安全摘要”。
 17. `EvidenceAgent` 通过授权工具写入知识库、检索证据并生成引用映射。
-18. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决。
-19. `ReportAgent` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
-20. `ValidatorAgent` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
-21. `report_outputs.py` 生成三报告输出；简单版额外生成 `display_model`，作为网页和 PDF 的共同母版。
-22. `AgentCoordinator` 汇总 `agent_trace`，每个 agent 的状态、开始/结束时间、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
-23. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
-24. `/terminal/conclusion` 中 `ReportPanel` 默认选择简单版，并把 `display_model` 交给 `SimpleInvestmentReport` 渲染两页展示报告。
-25. 用户导出简单版 PDF 时，`PdfExportService` 读取同一份 `display_model`；若当前 run 已有最新回测，则第三张图优先切为“组合 vs SPY”。
-26. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
-27. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
-28. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
-29. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
-30. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
-31. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
+18. `agent_v2` 会在数据、证据和报告后执行质量门；`block` 时停止报告生成，`warning` 时继续但写入降级说明。
+19. `BullAnalystAgent` 和 `BearAnalystAgent` 分别提出支持和反对观点，`ArbiterAgent` 汇总成报告可用裁决；`agent_v2` 额外把质量门风险送入 `RiskCaseNode`。
+20. `ReportAgent` 或 `ReportNode` 生成正式报告（模型可用则走模型，不可用则回退结构化报告）。
+21. `ValidatorAgent` 或 `ReportQualityGate` 校验报告与结构化数据、RAG 证据、历史缺口是否一致，并统一回写可信度。
+22. `report_outputs.py` 生成三报告输出；简单版额外生成 `display_model`，作为网页和 PDF 的共同母版。
+23. `AgentCoordinator` 或 `agent_v2` 图状态汇总 `agent_trace`，每个节点的状态、耗时、输入、输出、工具调用、证据数量、警告、checkpoint 和产物都会进入 artifact。
+24. 结果写入 SQLite（run/stage/artifact/event），并通过 SSE 推送给前端。
+25. `/terminal/conclusion` 中 `ReportPanel` 默认选择简单版，并把 `display_model` 交给 `SimpleInvestmentReport` 渲染两页展示报告。
+26. 用户导出简单版 PDF 时，`PdfExportService` 读取同一份 `display_model`；若当前 run 已有最新回测，则第三张图优先切为“组合 vs SPY”。
+27. `/debug` 可调用 `POST /api/runs/{run_id}/resume-from-agent`，复用上游 checkpoint 并重跑指定 agent 及下游。
+28. 用户触发回测时，前端调用 `POST /api/v1/backtests`。
+29. `BacktestService` 从历史 run 恢复组合，按保守口径计入交易成本和滑点，优先用 `SPY` 作为基准，失败时自动切换备用基准后再持久化回测结果。
+30. 历史页通过 `GET /api/v1/runs/{run_id}/audit-summary` 读取精简后的审计摘要，而不是直接消费原始大结果。
+31. 用户可调用 `POST /api/runs/{run_id}/cancel` 撤回任务，run 状态更新为 `cancelled`。
+32. 部署到 Railway 时，容器会启动 `main.py`，由运行时自动读取平台分配的 `PORT`，并通过 `/healthz` 提供健康检查。
 
 ## 关键设计决定与原因
 
@@ -98,6 +104,9 @@
 - Railway 的持久化卷挂到 `/app/data/runtime`：这样既能保留运行历史，也不会覆盖镜像里的 `data/seed` 种子文件。
 - 知识库采用本地 SQLite + FTS5，而不是外部向量数据库：保持 Railway 单服务部署简单，同时让报告证据可持久化、可回查。
 - 多智能体采用“受限自治”而不是完全开放自治：agent 可以在白名单工具内选择调用并做一轮正反论证，但不能无限调用工具或自由执行代码。
+- LangGraph `agent_v2` 与旧版 `agent` 并存，并作为默认自然语言研究流程；旧版保留用于环境变量回退。
+- `agent_v2` 的质量门采用确定性规则：候选为空、核心行情缺失或证据为空会阻断，新闻缺失或证据偏少只降级提醒。
+- LangGraph checkpoint 使用独立 SQLite 文件，现有 run/artifact/event SQLite 仍负责前端展示、历史记录和 debug。
 - 工具调用统一经过 `ToolRegistry` / `ToolRunner`：这样权限、重试、超时和审计口径一致，也方便以后接 MCP / Skills 式工具。
 - 恢复策略采用“从指定 agent 重跑到下游”：上游 checkpoint 可复用，下游依赖可能变化，所以不保留旧下游结果。
 - `agent_trace` 记录时间、状态、证据数量和错误原因：这样 debug 能看到每个环节是否真的执行，以及慢点或失败点在哪里。
